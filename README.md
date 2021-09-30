@@ -1,37 +1,21 @@
 # KubeOS
+KubeOS is an OS fully designed for Cloud Native environment. It simplifies 
+OS updating by utilizing an operator in kubernetes cluster. The operator 
+updates the whole OS as an entirety in the form of image instead 
+of software packages. So workload and system can be managed in the 
+same way which reduces the complexity of updating. Operator manages OS like 
+deployments in kubernetes, including rolling update.
 
-#### 介绍
-Kubernetes Operating System simplifies OS updating
+## Build from source
+Please see [quick-tart.md](docs/quick-start.md).
 
-#### 软件架构
-软件架构说明
+## Deploy
+Please see [quick-start.md](docs/quick-start.md) first and must be very careful about RBAC when deploying in production. KubeOS will let kubernetes 
+to manage node updates and reboots, so use at your own risk.
 
+## How to Contribute
+We always welcome new contributors. We are happy to provide guidance for the new 
+contributors. You can contribute via issues and merge requests.
 
-#### 安装教程
-
-1.  xxxx
-2.  xxxx
-3.  xxxx
-
-#### 使用说明
-
-1.  xxxx
-2.  xxxx
-3.  xxxx
-
-#### 参与贡献
-
-1.  Fork 本仓库
-2.  新建 Feat_xxx 分支
-3.  提交代码
-4.  新建 Pull Request
-
-
-#### 特技
-
-1.  使用 Readme\_XXX.md 来支持不同的语言，例如 Readme\_en.md, Readme\_zh.md
-2.  Gitee 官方博客 [blog.gitee.com](https://blog.gitee.com)
-3.  你可以 [https://gitee.com/explore](https://gitee.com/explore) 这个地址来了解 Gitee 上的优秀开源项目
-4.  [GVP](https://gitee.com/gvp) 全称是 Gitee 最有价值开源项目，是综合评定出的优秀开源项目
-5.  Gitee 官方提供的使用手册 [https://gitee.com/help](https://gitee.com/help)
-6.  Gitee 封面人物是一档用来展示 Gitee 会员风采的栏目 [https://gitee.com/gitee-stars/](https://gitee.com/gitee-stars/)
+## Licensing
+KubeOS is licensed under the Mulan PSL v2.
