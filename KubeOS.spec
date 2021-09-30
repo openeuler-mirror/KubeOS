@@ -2,7 +2,7 @@
 
 Name:           KubeOS
 Version:        1.0.0
-Release:        2
+Release:        3
 Summary:        O&M platform used to update the whole OS as an entirety
 License:        Mulan PSL v2
 Source0:        https://gitee.com/openeuler/isula-build/repository/archive/v%{version}.tar.gz
@@ -34,8 +34,8 @@ make
 %install
 install -d %{buildroot}%{_bindir}
 #install binary
-install -p -m 0500 ./bin/os-agent %{buildroot}%{_bindir}/os-agent
 install -d -m 0740 %{buildroot}/opt/kubeOS/bin
+install -p -m 0500 ./bin/os-agent %{buildroot}/opt/kubeOS/bin
 install -p -m 0500 ./bin/proxy %{buildroot}/opt/kubeOS/bin
 install -p -m 0500 ./bin/operator %{buildroot}/opt/kubeOS/bin
 
@@ -46,23 +46,23 @@ install -p -m 0500 ./scripts/generate.sh %{buildroot}/opt/kubeOS/scripts
 install -p -m 0500 ./scripts/set_in_chroot.sh %{buildroot}/opt/kubeOS/scripts
 install -p -m 0600 ./scripts/grub.cfg %{buildroot}/opt/kubeOS/scripts
 
-install -d %{buildroot}%{_prefix}/lib/systemd/system
-install -p -m 0600 ./files/boot-grub2.mount %{buildroot}%{_prefix}/lib/systemd/system
-install -p -m 0600 ./files/etc.mount %{buildroot}%{_prefix}/lib/systemd/system
-install -p -m 0600 ./files/persist.mount %{buildroot}%{_prefix}/lib/systemd/system
-install -p -m 0600 ./files/var.mount %{buildroot}%{_prefix}/lib/systemd/system
-install -p -m 0600 ./files/os-agent.service %{buildroot}%{_prefix}/lib/systemd/system
-install -p -m 0600 ./files/os-release %{buildroot}%{_prefix}/lib
+install -d -m 0740 %{buildroot}/opt/kubeOS/files
+install -p -m 0600 ./files/boot-grub2.mount %{buildroot}/opt/kubeOS/files
+install -p -m 0600 ./files/etc.mount %{buildroot}/opt/kubeOS/files
+install -p -m 0600 ./files/persist.mount %{buildroot}/opt/kubeOS/files
+install -p -m 0600 ./files/var.mount %{buildroot}/opt/kubeOS/files
+install -p -m 0600 ./files/os-agent.service %{buildroot}/opt/kubeOS/files
+install -p -m 0600 ./files/os-release %{buildroot}/opt/kubeOS/files
 
 %files
-%attr(0500,root,root) %{_bindir}/os-agent
+%attr(0500,root,root) /opt/kubeOS/bin/os-agent
 %defattr(-,root,root,0500)
-%attr(0600,root,root) %{_prefix}/lib/systemd/system/boot-grub2.mount
-%attr(0600,root,root) %{_prefix}/lib/systemd/system/etc.mount
-%attr(0600,root,root) %{_prefix}/lib/systemd/system/persist.mount
-%attr(0600,root,root) %{_prefix}/lib/systemd/system/var.mount
-%attr(0600,root,root) %{_prefix}/lib/systemd/system/os-agent.service
-%attr(0600,root,root) %{_prefix}/lib/os-release
+%attr(0600,root,root) /opt/kubeOS/files/boot-grub2.mount
+%attr(0600,root,root) /opt/kubeOS/files/etc.mount
+%attr(0600,root,root) /opt/kubeOS/files/persist.mount
+%attr(0600,root,root) /opt/kubeOS/files/var.mount
+%attr(0600,root,root) /opt/kubeOS/files/os-agent.service
+%attr(0600,root,root) /opt/kubeOS/files/os-release
 
 %files scripts
 %attr(0500,root,root) /opt/kubeOS/bin/proxy
@@ -77,6 +77,12 @@ install -p -m 0600 ./files/os-release %{buildroot}%{_prefix}/lib
 rm -rfv %{buildroot}
 
 %changelog
+* Thu Sep 30 2021 liyuanrong<liyuanrong1@huawei.com> - 1.0.0-2
+- Type:requirement
+- CVE:NA
+- SUG:restart
+- DESC:update spec
+
 * Thu Sep 30 2021 liyuanrong<liyuanrong1@huawei.com> - 1.0.0-2
 - Type:requirement
 - CVE:NA
