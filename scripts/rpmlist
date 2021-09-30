@@ -1,0 +1,15 @@
+kernel
+passwd
+grub2
+dhcp
+NetworkManager
+openssh-server
+docker
+kubernetes-kubeadm
+kubernetes-kubelet
+containernetworking-plugins
+socat
+conntrack-tools
+ebtables
+ethtool
+rsyslog

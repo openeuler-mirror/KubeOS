@@ -1,0 +1,10 @@
+apiVersion: upgrade.openeuler.org/v1alpha1
+kind: OS
+metadata:
+  name: os-sample
+spec:
+  osversion: KubeOS 1.0.0
+  imageurl: edit.image.url
+  maxunavailable: 1
+  flagSafe: false
+  checksum: your img`s checksum
