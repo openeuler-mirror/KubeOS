@@ -291,7 +291,7 @@ if [ $# != 4 ];then
 fi
 
 set +eE
-for i in $*
+for i in $1 $2 $3
 do
    echo "$i" | grep -v -E ${CHECK_REGEX}
    filterParam=$(echo "$i" | grep -v -E ${CHECK_REGEX})
