@@ -40,11 +40,11 @@ var log = ctrl.Log.WithName("operator").WithName("OS")
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
-func (r *OSReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
+func (r *OSReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	if r.Client == nil {
 		return values.NoRequeue, nil
 	}
-	ctx := context.Background()
+	ctx = context.Background()
 	return Reconcile(ctx, r, req)
 }
 
