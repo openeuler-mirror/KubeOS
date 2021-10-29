@@ -69,8 +69,8 @@ func NewOSReconciler(mgr manager.Manager) *OSReconciler {
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
-func (r *OSReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
-	ctx := context.Background()
+func (r *OSReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+	ctx = context.Background()
 	osInstance, node := getOSAndNodeStatus(ctx, r, req.NamespacedName, r.hostName)
 	osVersionSpec := osInstance.Spec.OSVersion
 	osVersionNode := node.Status.NodeInfo.OSImage
