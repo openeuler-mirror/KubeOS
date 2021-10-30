@@ -145,7 +145,7 @@ function check_path() {
 		exit 5
 	fi
 
-	if mount 2>/dev/null | grep -q "${ISO_PATH}"; then
+	if mount 2>/dev/null | grep -w -q "${ISO_PATH}"; then
 		echo "$ISO_PATH has already been mounted."
 		exit 4
 	fi
@@ -153,11 +153,13 @@ function check_path() {
 
 function check_disk_space() {
 	local disk_ava="$(df ${PWD} -h | awk 'NR==2{print}' | awk '{print $4}')"
-	if echo "${disk_ava}" | grep -q G$; then
-		disk_ava="$(echo ${disk_ava} | awk -F G '{print $1}' | awk -F . '{print $1}')"
-		if [ "${disk_ava}" -lt 25 ]; then
-			echo "The available disk space is not enough, at least 25GB."
-			exit 6
+	if echo "${disk_ava}" | grep -q [GT]$; then
+		if echo "${disk_ava}" | grep -q G$; then 
+			disk_ava="$(echo ${disk_ava} | awk -F G '{print $1}' | awk -F . '{print $1}')"
+			if [ "${disk_ava}" -lt 25 ]; then
+				echo "The available disk space is not enough, at least 25GB."
+				exit 6
+			fi
 		fi
 	else
 		echo "The available disk space is not enough, at least 25G."
@@ -293,7 +295,7 @@ fi
 set +eE
 for i in $1 $2 $3
 do
-   echo "$i" | grep -v -E ${CHECK_REGEX}
+   echo "$i" | grep -v -E -q ${CHECK_REGEX}
    filterParam=$(echo "$i" | grep -v -E ${CHECK_REGEX})
    if [[ "${filterParam}" != "$i" ]]; then
       echo "error: params $i is invalid, please check it."

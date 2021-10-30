@@ -21,10 +21,10 @@ import (
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 	ctrl "sigs.k8s.io/controller-runtime"
 
-	upgradev1 "openeuler.org/saiyan/api/v1alpha1"
-	"openeuler.org/saiyan/cmd/operator/controllers"
-	"openeuler.org/saiyan/pkg/common"
-	"openeuler.org/saiyan/pkg/version"
+	upgradev1 "openeuler.org/KubeOS/api/v1alpha1"
+	"openeuler.org/KubeOS/cmd/operator/controllers"
+	"openeuler.org/KubeOS/pkg/common"
+	"openeuler.org/KubeOS/pkg/version"
 	//+kubebuilder:scaffold:imports
 )
 

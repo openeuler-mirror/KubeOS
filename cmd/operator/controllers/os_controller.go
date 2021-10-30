@@ -25,9 +25,9 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	upgradev1 "openeuler.org/saiyan/api/v1alpha1"
-	"openeuler.org/saiyan/pkg/common"
-	"openeuler.org/saiyan/pkg/values"
+	upgradev1 "openeuler.org/KubeOS/api/v1alpha1"
+	"openeuler.org/KubeOS/pkg/common"
+	"openeuler.org/KubeOS/pkg/values"
 )
 
 // OSReconciler reconciles an OS object

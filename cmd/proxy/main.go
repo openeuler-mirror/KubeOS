@@ -22,12 +22,12 @@ import (
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 	ctrl "sigs.k8s.io/controller-runtime"
 
-	upgradev1 "openeuler.org/saiyan/api/v1alpha1"
-	"openeuler.org/saiyan/cmd/agent/server"
-	"openeuler.org/saiyan/cmd/proxy/controllers"
-	"openeuler.org/saiyan/pkg/agentclient"
-	"openeuler.org/saiyan/pkg/common"
-	"openeuler.org/saiyan/pkg/version"
+	upgradev1 "openeuler.org/KubeOS/api/v1alpha1"
+	"openeuler.org/KubeOS/cmd/agent/server"
+	"openeuler.org/KubeOS/cmd/proxy/controllers"
+	"openeuler.org/KubeOS/pkg/agentclient"
+	"openeuler.org/KubeOS/pkg/common"
+	"openeuler.org/KubeOS/pkg/version"
 	//+kubebuilder:scaffold:imports
 )
 

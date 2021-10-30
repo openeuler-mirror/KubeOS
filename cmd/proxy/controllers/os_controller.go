@@ -26,10 +26,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 
-	upgradev1 "openeuler.org/saiyan/api/v1alpha1"
-	"openeuler.org/saiyan/pkg/agentclient"
-	"openeuler.org/saiyan/pkg/common"
-	"openeuler.org/saiyan/pkg/values"
+	upgradev1 "openeuler.org/KubeOS/api/v1alpha1"
+	"openeuler.org/KubeOS/pkg/agentclient"
+	"openeuler.org/KubeOS/pkg/common"
+	"openeuler.org/KubeOS/pkg/values"
 )
 
 // OSReconciler reconciles a OS object
@@ -137,9 +137,9 @@ func evictNode(drainer *drain.Helper, node *corev1.Node) error {
 	}
 	if err := drain.RunNodeDrain(drainer, node.Name); err != nil {
 		log.Error(err, "unable to drain node")
-		if err := drain.RunCordonOrUncordon(drainer, node, false); err != nil {
-			log.Error(err, "unable to uncordon node when an error occurs in draining node")
-			return err
+		if terr := drain.RunCordonOrUncordon(drainer, node, false); terr != nil {
+			log.Error(terr, "unable to uncordon node when an error occurs in draining node")
+			return terr
 		}
 		return err
 	}
