@@ -29,7 +29,7 @@ import (
 	"time"
 
 	"github.com/sirupsen/logrus"
-	pb "openeuler.org/saiyan/cmd/agent/api"
+	pb "openeuler.org/KubeOS/cmd/agent/api"
 )
 
 const (

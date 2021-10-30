@@ -17,9 +17,9 @@ import (
 
 	"github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
-	pb "openeuler.org/saiyan/cmd/agent/api"
-	"openeuler.org/saiyan/cmd/agent/server"
-	"openeuler.org/saiyan/pkg/version"
+	pb "openeuler.org/KubeOS/cmd/agent/api"
+	"openeuler.org/KubeOS/cmd/agent/server"
+	"openeuler.org/KubeOS/pkg/version"
 )
 
 func main() {

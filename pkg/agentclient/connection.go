@@ -21,7 +21,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/backoff"
 
-	pb "openeuler.org/saiyan/cmd/agent/api"
+	pb "openeuler.org/KubeOS/cmd/agent/api"
 )
 
 // Client defines the client stub for OS service

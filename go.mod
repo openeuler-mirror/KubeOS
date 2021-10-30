@@ -1,4 +1,4 @@
-module openeuler.org/saiyan
+module openeuler.org/KubeOS
 
 go 1.15
 
