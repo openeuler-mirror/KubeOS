@@ -1,14 +1,14 @@
 # Copyright (c) Huawei Technologies Co., Ltd. 2021. All rights reserved.
 
 Name:           KubeOS
-Version:        1.0.0
-Release:        4
+Version:        1.0.1
+Release:        3
 Summary:        O&M platform used to update the whole OS as an entirety
 License:        Mulan PSL v2
-Source0:        https://gitee.com/openeuler/isula-build/repository/archive/v%{version}.tar.gz
+Source0:        https://gitee.com/openeuler/KubeOS/repository/archive/v%{version}.tar.gz
+Patch1:         0001-KubeOS-modify-checks-in-generate.sh-and-change-modul.patch
 ExclusiveArch:  x86_64
 BuildRoot:      %{_tmppath}/%{name}-%{version}-build
-Patch1: 0001-argumentchange.patch
 BuildRequires:  make
 BuildRequires:  golang >= 1.13
 %description
@@ -78,6 +78,24 @@ install -p -m 0600 ./files/os-release %{buildroot}/opt/kubeOS/files
 rm -rfv %{buildroot}
 
 %changelog
+* Thu Nov 11 2021 liyuanrong<liyuanrong1@huawei.com> - 1.0.1-3
+- Type:requirement
+- CVE:NA
+- SUG:restart
+- DESC:fix bugs of checks in generate.sh and change module path
+
+* Fri Oct 30 2021 liyuanrong<liyuanrong1@huawei.com> - 1.0.1-2
+- Type:requirement
+- CVE:NA
+- SUG:restart
+- DESC:update compressed package
+
+* Fri Oct 29 2021 linxiaoxu<linxiaoxu@huawei.com> - 1.0.1-1
+- Type:requirement
+- CVE:NA
+- SUG:restart
+- DESC:update version to v1.0.1
+
 * Tue Oct 19 2021 linxiaoxu<linxiaoxu@huawei.com> - 1.0.0-4
 - Type:requirement
 - CVE:NA
