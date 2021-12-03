@@ -22,6 +22,7 @@ TMP_MOUNT_PATH="${PWD}/mnt"
 RPM_ROOT="${PWD}/rootfs"
 LOCK=./test.lock
 CHECK_REGEX='\||;|&|&&|\|\||>|>>|<|,|#|!|\$'
+ARCH=$(arch)
 
 function show_options() {
 	cat << EOF
@@ -76,9 +77,14 @@ function init_part() {
 	offset=$(echo "${offset}*512" | bc)
 	local loop=$(losetup -f)
 	losetup -o "${offset}" --sizelimit "${sizelimit}" "${loop}" system.img
-	mkfs.ext4 -L "$2" "${loop}"
-	mount -t ext4 "${loop}" "$3"
-	rm -rf "$3/lost+found"
+        if [ $2 == "BOOT" ];then
+                mkfs.vfat -n "$2" "${loop}"
+                mount -t vfat "${loop}" "$3"
+        else
+                mkfs.ext4 -L "$2" "${loop}"
+                mount -t ext4 "${loop}" "$3"
+                rm -rf "$3/lost+found"      
+        fi
 }
 
 function delete_dir() {
@@ -183,12 +189,15 @@ function install_packages() {
 	fi
 
 	local rpms=$(cat ./rpmlist | tr "\n" " ")
-	yum -y --installroot="${RPM_ROOT}" install --nogpgcheck --setopt install_weak_deps=False ${rpms}
-	yum -y --installroot="${RPM_ROOT}" clean all
+        if [ "${ARCH}" == "x86_64" ]; then
+                yum -y --installroot="${RPM_ROOT}" install --nogpgcheck --setopt install_weak_deps=False ${rpms} grub2 grub2-efi-x64-modules grub2-pc-modules
+        elif [ "${ARCH}" == "aarch64" ]; then
+                yum -y --installroot="${RPM_ROOT}" install --nogpgcheck --setopt install_weak_deps=False ${rpms} grub2-efi-aa64-modules
+        fi
+        yum -y --installroot="${RPM_ROOT}" clean all
 }
 
 function install_misc() {
-	cp grub.cfg "${RPM_ROOT}/boot/grub2/"
 	cp ../files/*mount ../files/os-agent.service "${RPM_ROOT}/usr/lib/systemd/system/"
 	cp ../files/os-release "${RPM_ROOT}/usr/lib/"
 	cp "${AGENT_PATH}" "${RPM_ROOT}/usr/bin"
@@ -204,38 +213,46 @@ EOF
 	mv "${RPM_ROOT}"/boot/initramfs* "${RPM_ROOT}/boot/initramfs.img"
 
 	cp set_in_chroot.sh "${RPM_ROOT}"
-	ROOT_PWD="${PASSWD}" chroot "$RPM_ROOT" bash /set_in_chroot.sh
+	ROOT_PWD="${PASSWD}" chroot "${RPM_ROOT}" bash /set_in_chroot.sh
 	rm "${RPM_ROOT}/set_in_chroot.sh"
 }
 
 function create_img() {
 	rm -f system.img update.img
 	qemu-img create system.img ${IMG_SIZE}G
-	parted system.img -- mklabel msdos
-	parted system.img -- mkpart primary ext4 1MiB 20MiB
-	parted system.img -- mkpart primary ext4 20MiB 2120MiB
-	parted system.img -- mkpart primary ext4 2120MiB 4220MiB
-	parted system.img -- mkpart primary ext4 4220MiB 100%
+        parted system.img -- mklabel msdos
+        parted system.img -- mkpart primary fat16 1MiB 60MiB
+        parted system.img -- mkpart primary ext4 60MiB 2160MiB
+        parted system.img -- mkpart primary ext4 2160MiB 4260MiB
+        parted system.img -- mkpart primary ext4 4260MiB 100%
 
-	local device=$(losetup -f)
-	losetup "${device}" system.img
+        local device=$(losetup -f)
+        losetup "${device}" system.img
 
-	mkdir -p "${TMP_MOUNT_PATH}"
+        mkdir -p "${TMP_MOUNT_PATH}"
 
-	init_part system.img2 ROOT-A "${TMP_MOUNT_PATH}"
-	local grub2_path="${TMP_MOUNT_PATH}/boot/grub2"
-	mkdir -p "${grub2_path}"
-	init_part system.img1 GRUB2 "${grub2_path}"
+        init_part system.img2 ROOT-A "${TMP_MOUNT_PATH}"
+        local BOOT_PATH=${TMP_MOUNT_PATH}/boot
+        mkdir -p ${BOOT_PATH}
+        chmod 755 ${BOOT_PATH}
+        init_part system.img1 BOOT "${BOOT_PATH}"
 
-	tar -x -C "${TMP_MOUNT_PATH}" -f os.tar
-	sync
+        mv -f ${RPM_ROOT}/boot/* ${BOOT_PATH} || true
+        [ -d ${RPM_ROOT}/boot/ ] && rm -rf ${RPM_ROOT}/boot/
+        sudo mv -t ${TMP_MOUNT_PATH} ${RPM_ROOT}/* || true
+        cp bootloader.sh "${TMP_MOUNT_PATH}"
+        mount_proc_dev_sys "${TMP_MOUNT_PATH}"
+        DEVICE="${device}" chroot "${TMP_MOUNT_PATH}" bash bootloader.sh
+        cp grub.cfg ${TMP_MOUNT_PATH}/boot/grub2
+        cp grub.cfg ${TMP_MOUNT_PATH}/boot/efi/EFI/openEuler
+        rm -rf "${TMP_MOUNT_PATH}/bootloader.sh"     
+        sync
+	
+        dd if=/dev/disk/by-label/ROOT-A of=update.img bs=8M
+        sync
+        unmount_dir "${TMP_MOUNT_PATH}"
 
-	dd if=/dev/disk/by-label/ROOT-A of=update.img bs=8M
-	mount_proc_dev_sys "${TMP_MOUNT_PATH}"
-	chroot "${TMP_MOUNT_PATH}" grub2-install --modules="biosdisk part_msdos" "${device}"
-	sync
-	unmount_dir "${TMP_MOUNT_PATH}"
-
+	
 	init_part system.img3 ROOT-B "${TMP_MOUNT_PATH}"
 	umount "${TMP_MOUNT_PATH}"
 
@@ -251,8 +268,6 @@ function create_os_tar() {
 	install_packages
 	install_misc
 	unmount_dir "${RPM_ROOT}"
-
-	tar -C "${RPM_ROOT}" -cf ./os.tar .
 }
 
 test_lock

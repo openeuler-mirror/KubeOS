@@ -174,7 +174,10 @@ func install(imagePath string, mainPart string, partB string) error {
 	if side != partB {
 		next = "A"
 	}
-	return runCommand("grub2-set-default", next)
+	if err := runCommand("grub2-set-default", next); err != nil {
+		return err
+	}
+	return runCommand("cp", "/boot/grub2/grubenv", "/boot/efi/EFI/openEuler")
 }
 
 func (s *Server) reboot() error {

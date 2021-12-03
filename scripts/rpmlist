@@ -1,6 +1,7 @@
 kernel
 passwd
-grub2
+grub2-efi
+grub2-tools
 dhcp
 NetworkManager
 openssh-server
