@@ -56,10 +56,10 @@
     进入scripts目录，执行脚本
         ```
         cd scripts
-        bash generate.sh ISO_PATH VERSION AGENT_PATH ENCRYPTED_PASSWD
+        bash generate.sh REPO_PATH VERSION AGENT_PATH ENCRYPTED_PASSWD
         ```
     - 参数说明：
-      - ISO_PATH ：全量iso的路径
+      - REPO_PATH ：全量repo的路径
       - VERSION ：制作的容器OS镜像的版本
       - AGENT_PATH：构建出来的os-agent的路径
       - ENCRYPTED_PASSWD：镜像的root用户密码，加密后的带盐值的密码。可以用openssl、kiwi等命令生成
