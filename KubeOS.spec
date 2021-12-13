@@ -2,11 +2,12 @@
 
 Name:           KubeOS
 Version:        1.0.1
-Release:        3
+Release:        4
 Summary:        O&M platform used to update the whole OS as an entirety
 License:        Mulan PSL v2
 Source0:        https://gitee.com/openeuler/KubeOS/repository/archive/v%{version}.tar.gz
 Patch1:         0001-KubeOS-modify-checks-in-generate.sh-and-change-modul.patch
+Patch2:         0002-change-generate-argument-from-isopath-to-repopath.patch
 ExclusiveArch:  x86_64
 BuildRoot:      %{_tmppath}/%{name}-%{version}-build
 BuildRequires:  make
@@ -78,6 +79,12 @@ install -p -m 0600 ./files/os-release %{buildroot}/opt/kubeOS/files
 rm -rfv %{buildroot}
 
 %changelog
+* Wed Dec 08 2021 linxiaoxu<linxiaoxu@huawei.com> - 1.0.1-4
+- Type:requirement
+- CVE:NA
+- SUG:restart
+- DESC:fix bugs of change generate argument from isopath to repopath
+
 * Thu Nov 11 2021 liyuanrong<liyuanrong1@huawei.com> - 1.0.1-3
 - Type:requirement
 - CVE:NA
