@@ -12,8 +12,7 @@
 set -e
 
 NAME=KubeOS
-ISO_PATH="/mnt"
-ISO=""
+REPO=""
 VERSION=""
 AGENT_PATH=""
 PASSWD=""
@@ -27,7 +26,7 @@ CHECK_REGEX='\||;|&|&&|\|\||>|>>|<|,|#|!|\$'
 function show_options() {
 	cat << EOF
 
-usage example: sh generate.sh isopath osversion agentpath passwd(encrypted)
+usage example: sh generate.sh repopath osversion agentpath passwd(encrypted)
 
 options:
     -h,--help       show help information
@@ -114,7 +113,6 @@ function delete_file() {
 function clean_space() {
 	delete_dir "${RPM_ROOT}"
 	delete_dir "${TMP_MOUNT_PATH}"
-	unmount_dir "${ISO_PATH}"
 	delete_file os.tar
 	rm -rf "${LOCK}"
 }
@@ -135,19 +133,14 @@ function test_lock() {
 }
 
 function check_path() {
-	if [ ! -f "${ISO}" ];then
-		echo "ISO path is invalid."
+	if [ ! -f "${REPO}" ];then
+		echo "REPO path is invalid."
 		exit 3
 	fi
 
 	if [ -d "${RPM_ROOT}" ]; then
 		echo "there is a rootfs folder. please confirm if rootfs is being used, if not, please remove ${RPM_ROOT} first."
 		exit 5
-	fi
-
-	if mount 2>/dev/null | grep -w -q "${ISO_PATH}"; then
-		echo "$ISO_PATH has already been mounted."
-		exit 4
 	fi
 }
 
@@ -168,24 +161,13 @@ function check_disk_space() {
 }
 
 function prepare_yum() {
-	mount "${ISO}" "${ISO_PATH}"
-	if [ ! -d "/mnt/Packages" ]; then
-		echo "please use ISO file path as ${ISO}."
-		exit 2
-	fi
-
 	# init rpmdb
 	rpm --root "${RPM_ROOT}" --initdb
 	mkdir -p "${RPM_ROOT}"{/etc/yum.repos.d,/persist,/proc,/dev/pts,/sys}
 	mount_proc_dev_sys "${RPM_ROOT}"
 	# init yum repo
 	local iso_repo="${RPM_ROOT}/etc/yum.repos.d/iso.repo"
-	echo "[base]" >"${iso_repo}"
-	{
-		echo "name=ISO base"
-		echo "baseurl=file://${ISO_PATH}"
-		echo "enabled=1"
-	} >>"${iso_repo}"
+        cat "${REPO}" > ${RPM_ROOT}/etc/yum.repos.d/iso.repo
 }
 
 function install_packages() {
@@ -304,7 +286,7 @@ do
 done
 set -eE
 
-ISO=$1
+REPO=$1
 VERSION=$2
 AGENT_PATH=$3
 PASSWD=$4
