@@ -15,9 +15,9 @@ Conflicts=umount.target
 Before=local-fs.target umount.target
 
 [Mount]
-What=/dev/disk/by-label/GRUB2
-Where=/boot/grub2
-Type=ext4
+What=/dev/disk/by-label/BOOT
+Where=/boot
+Type=vfat
 Options=defaults
 
 [Install]

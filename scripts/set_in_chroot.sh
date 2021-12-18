@@ -1,7 +1,7 @@
 #!/bin/bash
 ln -s /usr/lib/systemd/system/os-agent.service /usr/lib/systemd/system/multi-user.target.wants/os-agent.service
 ln -s /usr/lib/systemd/system/kubelet.service /usr/lib/systemd/system/multi-user.target.wants/kubelet.service
-ln -s /usr/lib/systemd/system/boot-grub2.mount /lib/systemd/system/local-fs.target.wants/boot-grub2.mount
+ln -s /usr/lib/systemd/system/boot.mount /lib/systemd/system/local-fs.target.wants/boot.mount
 ln -s /usr/lib/systemd/system/etc.mount /lib/systemd/system/local-fs.target.wants/etc.mount
 
 str=`sed -n '/^root:/p' /etc/shadow | awk -F "root:" '{print $2}'`
