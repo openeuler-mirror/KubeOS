@@ -258,6 +258,7 @@ function create_img() {
 
 	init_part system.img4 PERSIST "${TMP_MOUNT_PATH}"
 	mkdir ${TMP_MOUNT_PATH}/{var,etc,etcwork}
+	mkdir -p ${TMP_MOUNT_PATH}/etc/KubeOS/certs
 	umount "${TMP_MOUNT_PATH}"
 
 	losetup -D

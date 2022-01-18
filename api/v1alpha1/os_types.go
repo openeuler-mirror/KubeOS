@@ -22,8 +22,12 @@ type OSSpec struct {
 	ImageURL       string `json:"imageurl"`
 	MaxUnavailable int    `json:"maxunavailable"`
 	CheckSum       string `json:"checksum"`
-	FlagSafe       bool `json:"flagSafe"`
-
+	FlagSafe       bool   `json:"flagSafe"`
+	// +kubebuilder:default=true
+	MTLS       bool   `json:"mTLS"`
+	CaCert     string `json:"cacert"`
+	ClientCert string `json:"clientcert"`
+	ClientKey  string `json:"clientkey"`
 }
 
 // +kubebuilder:subresource:status

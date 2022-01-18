@@ -102,10 +102,17 @@ func (r *OSReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Re
 			return values.RequeueNow, err
 		}
 		version := osVersionSpec
-		imageURL := osInstance.Spec.ImageURL
-		checkSum := osInstance.Spec.CheckSum
-		flagSafe:= osInstance.Spec.FlagSafe
-		if err := r.Connection.UpdateSpec(version, imageURL, flagSafe,checkSum); err != nil {
+		downloadInfo := &agentclient.DownloadInfo{
+			ImageURL:   osInstance.Spec.ImageURL,
+			FlagSafe:   osInstance.Spec.FlagSafe,
+			CheckSum:   osInstance.Spec.CheckSum,
+			CaCert:     osInstance.Spec.CaCert,
+			ClientCert: osInstance.Spec.ClientCert,
+			ClientKey:  osInstance.Spec.ClientKey,
+			MTLS:       osInstance.Spec.MTLS,
+		}
+
+		if err := r.Connection.UpdateSpec(version, downloadInfo); err != nil {
 			return values.RequeueNow, err
 		}
 	}
