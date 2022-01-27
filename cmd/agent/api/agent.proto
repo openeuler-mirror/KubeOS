@@ -25,6 +25,14 @@ message UpdateRequest {
   string image_url = 2;
   string check_sum = 3;
   bool flagSafe = 4;
+  bool mTLS = 5;
+  CertsInfo certs = 6;
+}
+
+message CertsInfo {
+  string ca_caert = 1;
+  string client_cert = 2;
+  string client_key = 3;
 }
 
 message UpdateResponse {

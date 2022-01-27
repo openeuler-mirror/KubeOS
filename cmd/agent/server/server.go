@@ -16,9 +16,12 @@ package server
 import (
 	"context"
 	"crypto/sha256"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/hex"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"net/http"
 	"os"
 	"os/exec"
@@ -35,7 +38,8 @@ import (
 const (
 	mainPart      = "/dev/sda2"
 	partB         = "/dev/sda3"
-	Locked        = 1
+	certPath      = "/etc/KubeOS/certs/"
+	locked        = 1
 	unLocked      = 0
 	buffer        = 1024 * 10240
 	imgPermission = 0600
@@ -48,7 +52,7 @@ type Lock struct {
 
 // TryLock acquires the lock. On success returns true. On failure return false.
 func (l *Lock) TryLock() bool {
-	return atomic.CompareAndSwapUint32(&l.state, unLocked, Locked)
+	return atomic.CompareAndSwapUint32(&l.state, unLocked, locked)
 }
 
 // Unlock unlocks for lock.
@@ -65,20 +69,13 @@ type Server struct {
 
 // Update implements the OSServer.Update
 func (s *Server) Update(_ context.Context, req *pb.UpdateRequest) (*pb.UpdateResponse, error) {
-	if !strings.HasPrefix(req.ImageUrl, "https://") {
-		if !req.FlagSafe {
-			logrus.Errorln("this imageUrl is not safe")
-			return &pb.UpdateResponse{}, fmt.Errorf("this imageUrl is not safe")
-		}
-	}
-
 	if !s.mutex.TryLock() {
 		return &pb.UpdateResponse{}, fmt.Errorf("server is processing another request")
 	}
 	defer s.mutex.Unlock()
 
 	logrus.Infoln("start to update to imageURL " + req.ImageUrl)
-	if err := s.update(req.ImageUrl, req.CheckSum); err != nil {
+	if err := s.update(req); err != nil {
 		logrus.Errorln("update error " + err.Error())
 		return &pb.UpdateResponse{}, err
 	}
@@ -86,12 +83,12 @@ func (s *Server) Update(_ context.Context, req *pb.UpdateRequest) (*pb.UpdateRes
 	return &pb.UpdateResponse{}, nil
 }
 
-func (s *Server) update(imageUrl, checkSum string) error {
-	imagePath, err := download(imageUrl)
+func (s *Server) update(req *pb.UpdateRequest) error {
+	imagePath, err := download(req)
 	if err != nil {
 		return err
 	}
-	if err = checkSumMatch(imagePath, checkSum); err != nil {
+	if err = checkSumMatch(imagePath, req.CheckSum); err != nil {
 		return err
 	}
 	if err = install(imagePath, mainPart, partB); err != nil {
@@ -100,14 +97,14 @@ func (s *Server) update(imageUrl, checkSum string) error {
 	return s.reboot()
 }
 
-func download(imageURL string) (string, error) {
-	resp, err := http.Get(imageURL)
+func download(req *pb.UpdateRequest) (string, error) {
+	resp, err := getImageURL(req)
 	if err != nil {
 		return "", err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("URL %s returns error %s", imageURL, resp.Status)
+		return "", fmt.Errorf("URL %s returns error %s", req.ImageUrl, resp.Status)
 	}
 	fs := syscall.Statfs_t{}
 	if err = syscall.Statfs(PersistDir, &fs); err != nil {
@@ -194,6 +191,118 @@ func runCommand(name string, args ...string) error {
 	out, err := exec.Command(name, args...).CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("fail to run command:%s %v out:%s err:%s", name, args, out, err)
+	}
+	return nil
+}
+
+func getImageURL(req *pb.UpdateRequest) (*http.Response, error) {
+	imageURL := req.ImageUrl
+	flagSafe := req.FlagSafe
+	mTLS := req.MTLS
+	caCert := req.Certs.CaCaert
+	clientCert := req.Certs.ClientCert
+	clientKey := req.Certs.ClientKey
+
+	if !strings.HasPrefix(imageURL, "https://") {
+		if !flagSafe {
+			logrus.Errorln("this imageUrl is not safe")
+			return &http.Response{}, fmt.Errorf("this imageUrl is not safe")
+		}
+		resp, err := http.Get(imageURL)
+		if err != nil {
+			return &http.Response{}, err
+		}
+		return resp, nil
+	} else if mTLS {
+		client, err := loadClientCerts(caCert, clientCert, clientKey)
+		if err != nil {
+			return &http.Response{}, err
+		}
+		resp, err := client.Get(imageURL)
+		if err != nil {
+			return &http.Response{}, err
+		}
+		return resp, nil
+	} else {
+		client, err := loadCaCerts(caCert)
+		if err != nil {
+			return &http.Response{}, err
+		}
+		resp, err := client.Get(imageURL)
+		if err != nil {
+			return &http.Response{}, err
+		}
+		return resp, nil
+	}
+
+	return &http.Response{}, nil
+}
+
+func loadCaCerts(caCert string) (*http.Client, error) {
+	pool := x509.NewCertPool()
+	err := certExist(caCert)
+	if err != nil {
+		return &http.Client{}, err
+	}
+	ca, err := ioutil.ReadFile(certPath + caCert)
+	if err != nil {
+		return &http.Client{}, fmt.Errorf("read the ca certificate error ", err)
+	}
+	pool.AppendCertsFromPEM(ca)
+	tr := &http.Transport{
+		TLSClientConfig: &tls.Config{
+			RootCAs: pool,
+		},
+	}
+	client := &http.Client{Transport: tr}
+	return client, nil
+}
+
+func loadClientCerts(caCert, clientCert, clientKey string) (*http.Client, error) {
+	pool := x509.NewCertPool()
+	err := certExist(caCert)
+	if err != nil {
+		return &http.Client{}, err
+	}
+	ca, err := ioutil.ReadFile(certPath + caCert)
+	if err != nil {
+		return &http.Client{}, err
+	}
+	pool.AppendCertsFromPEM(ca)
+	err = certExist(clientCert)
+	if err != nil {
+		return &http.Client{}, err
+	}
+	err = certExist(clientKey)
+	if err != nil {
+		return &http.Client{}, err
+	}
+	cliCrt, err := tls.LoadX509KeyPair(certPath+clientCert, certPath+clientKey)
+	if err != nil {
+		return &http.Client{}, err
+	}
+
+	tr := &http.Transport{
+		TLSClientConfig: &tls.Config{
+			RootCAs:      pool,
+			Certificates: []tls.Certificate{cliCrt},
+		},
+	}
+
+	client := &http.Client{Transport: tr}
+	return client, nil
+}
+
+func certExist(certFile string) error {
+	if certFile == "" {
+		return fmt.Errorf("please provide the certificate")
+	}
+	_, err := os.Stat(certPath + certFile)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf("certificate is not exist ", err)
+		}
+		return fmt.Errorf("certificate has an error ", err)
 	}
 	return nil
 }

@@ -30,6 +30,17 @@ type Client struct {
 	client   pb.OSClient
 }
 
+// DownloadInfo contains the information required for image download
+type DownloadInfo struct {
+	ImageURL   string
+	FlagSafe   bool
+	CheckSum   string
+	CaCert     string
+	ClientCert string
+	ClientKey  string
+	MTLS       bool
+}
+
 // New create a gRPC channel to communicate with the server and return a client stub to perform RPCs
 func New(sockAddr string) (*Client, error) {
 	if sockAddr == "" {
@@ -51,8 +62,20 @@ func New(sockAddr string) (*Client, error) {
 }
 
 // UpdateSpec send requests to the server in os-agent
-func (c *Client) UpdateSpec(version string, imageURL string, flagSafe bool,checkSum string) error {
-	_, err := c.client.Update(context.Background(), &pb.UpdateRequest{Version: version, ImageUrl: imageURL,
-		FlagSafe: flagSafe, CheckSum: checkSum})
+func (c *Client) UpdateSpec(version string, downloadInfo *DownloadInfo) error {
+	certs := &pb.CertsInfo{
+		CaCaert:    downloadInfo.CaCert,
+		ClientCert: downloadInfo.ClientCert,
+		ClientKey:  downloadInfo.ClientKey,
+	}
+	_, err := c.client.Update(context.Background(),
+		&pb.UpdateRequest{
+			Version:  version,
+			ImageUrl: downloadInfo.ImageURL,
+			FlagSafe: downloadInfo.FlagSafe,
+			CheckSum: downloadInfo.CheckSum,
+			MTLS:     downloadInfo.MTLS,
+			Certs:    certs,
+		})
 	return err
 }

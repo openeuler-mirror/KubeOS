@@ -32,19 +32,27 @@ spec:
           spec:
             description: OSSpec defines the desired state of OS
             properties:
+              cacert:
+                type: string
               checksum:
+                type: string
+              clientcert:
+                type: string
+              clientkey:
                 type: string
               flagSafe:
                 type: boolean
               imageurl:
                 type: string
+              mTLS:
+                default: true
+                type: boolean
               maxunavailable:
                 type: integer
               osversion:
                 type: string
             required:
             - checksum
-            - flagSafe
             - imageurl
             - maxunavailable
             - osversion

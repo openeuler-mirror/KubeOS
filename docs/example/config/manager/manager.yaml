@@ -62,6 +62,8 @@ spec:
         name: operator
         securityContext:
           allowPrivilegeEscalation: false
+          runAsUser: 6552
+          runAsGroup: 6552
         resources:
           limits:
             cpu: 100m
