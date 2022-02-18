@@ -2,12 +2,13 @@
 
 Name:           KubeOS
 Version:        1.0.1
-Release:        3
+Release:        5
 Summary:        O&M platform used to update the whole OS as an entirety
 License:        Mulan PSL v2
 Source0:        https://gitee.com/openeuler/KubeOS/repository/archive/v%{version}.tar.gz
 Patch1:         0001-KubeOS-modify-checks-in-generate.sh-and-change-modul.patch
-ExclusiveArch:  x86_64
+Patch2:         0002-change-generate-argument-from-isopath-to-repopath.patch
+Patch3:         0003-KubeOS-add-arm-architecture-support-to-the-OS-image.patch
 BuildRoot:      %{_tmppath}/%{name}-%{version}-build
 BuildRequires:  make
 BuildRequires:  golang >= 1.13
@@ -20,7 +21,7 @@ it should be running in kubernetes environment.
 
 %package scripts
 Summary: Scripts to build the os image and binaries of os-proxy and os-operator
-Requires: qemu-img, parted, bc, tar, docker
+Requires: qemu-img, parted, bc, tar, docker, dosfstools
 %description scripts
 The scripts package includes scripts which could build the os image and binaries of os-proxy and os-operator
 
@@ -46,9 +47,10 @@ install -p -m 0600 ./scripts/rpmlist %{buildroot}/opt/kubeOS/scripts
 install -p -m 0500 ./scripts/generate.sh %{buildroot}/opt/kubeOS/scripts
 install -p -m 0500 ./scripts/set_in_chroot.sh %{buildroot}/opt/kubeOS/scripts
 install -p -m 0600 ./scripts/grub.cfg %{buildroot}/opt/kubeOS/scripts
+install -p -m 0500 ./scripts/bootloader.sh %{buildroot}/opt/kubeOS/scripts
 
 install -d -m 0740 %{buildroot}/opt/kubeOS/files
-install -p -m 0600 ./files/boot-grub2.mount %{buildroot}/opt/kubeOS/files
+install -p -m 0600 ./files/boot.mount %{buildroot}/opt/kubeOS/files
 install -p -m 0600 ./files/etc.mount %{buildroot}/opt/kubeOS/files
 install -p -m 0600 ./files/persist.mount %{buildroot}/opt/kubeOS/files
 install -p -m 0600 ./files/var.mount %{buildroot}/opt/kubeOS/files
@@ -58,7 +60,7 @@ install -p -m 0600 ./files/os-release %{buildroot}/opt/kubeOS/files
 %files
 %attr(0500,root,root) /opt/kubeOS/bin/os-agent
 %defattr(-,root,root,0500)
-%attr(0600,root,root) /opt/kubeOS/files/boot-grub2.mount
+%attr(0600,root,root) /opt/kubeOS/files/boot.mount
 %attr(0600,root,root) /opt/kubeOS/files/etc.mount
 %attr(0600,root,root) /opt/kubeOS/files/persist.mount
 %attr(0600,root,root) /opt/kubeOS/files/var.mount
@@ -73,11 +75,24 @@ install -p -m 0600 ./files/os-release %{buildroot}/opt/kubeOS/files
 %attr(0500,root,root) /opt/kubeOS/scripts/generate.sh
 %attr(0500,root,root) /opt/kubeOS/scripts/set_in_chroot.sh
 %attr(0600,root,root) /opt/kubeOS/scripts/grub.cfg
+%attr(0500,root,root) /opt/kubeOS/scripts/bootloader.sh
 
 %clean
 rm -rfv %{buildroot}
 
 %changelog
+* Fri Dec 17 2021 liyuanrong<liyuanrong1@huawei.com> - 1.0.1-5
+- Type:requirement
+- CVE:NA
+- SUG:restart
+- DESC:add arm architecture support to the OS image
+
+* Wed Dec 08 2021 linxiaoxu<linxiaoxu@huawei.com> - 1.0.1-4
+- Type:requirement
+- CVE:NA
+- SUG:restart
+- DESC:fix bugs of change generate argument from isopath to repopath
+
 * Thu Nov 11 2021 liyuanrong<liyuanrong1@huawei.com> - 1.0.1-3
 - Type:requirement
 - CVE:NA
