@@ -2,7 +2,7 @@
 
 Name:           KubeOS
 Version:        1.0.1
-Release:        6
+Release:        7
 Summary:        O&M platform used to update the whole OS as an entirety
 License:        Mulan PSL v2
 Source0:        https://gitee.com/openeuler/KubeOS/repository/archive/v%{version}.tar.gz
@@ -10,6 +10,7 @@ Patch1:         0001-KubeOS-modify-checks-in-generate.sh-and-change-modul.patch
 Patch2:         0002-change-generate-argument-from-isopath-to-repopath.patch
 Patch3:         0003-KubeOS-add-arm-architecture-support-to-the-OS-image.patch
 Patch4:         0004-KubOS-increase-the-space-of-the-boot-partition.patch
+Patch5:         0005-KubeOS-fix-sshd-startup-failed.patch
 BuildRoot:      %{_tmppath}/%{name}-%{version}-build
 BuildRequires:  make
 BuildRequires:  golang >= 1.13
@@ -82,6 +83,12 @@ install -p -m 0600 ./files/os-release %{buildroot}/opt/kubeOS/files
 rm -rfv %{buildroot}
 
 %changelog
+* Wed Mar 02 2022 liyuanrong<liyuanrong1@huawei.com> - 1.0.1-7
+- Type:requirement
+- CVE:NA
+- SUG:restart
+- DESC:fix sshd startup failed
+
 * Wed Mar 02 2022 liyuanrong<liyuanrong1@huawei.com> - 1.0.1-6
 - Type:requirement
 - CVE:NA
