@@ -1,0 +1,37 @@
+From 999df1ce10a9adb48554573c6acfc289f3f2c46f Mon Sep 17 00:00:00 2001
+From: liyuanrong <liyuanrong1@huawei.com>
+Date: Wed, 2 Mar 2022 19:15:06 +0800
+Subject: [PATCH] KubOS:increase the space of the boot partition
+
+Since openEuler 22.03-LTS, the space required by grub-related
+packages is increased. Therefore, the space of the boot partition
+is not enough. Therefore, the space of the boot partition needs to
+be increased
+
+Signed-off-by: liyuanrong <liyuanrong1@huawei.com>
+---
+ scripts/generate.sh | 8 ++++----
+ 1 file changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/scripts/generate.sh b/scripts/generate.sh
+index c481e30..5a97033 100644
+--- a/scripts/generate.sh
++++ b/scripts/generate.sh
+@@ -221,10 +221,10 @@ function create_img() {
+ 	rm -f system.img update.img
+ 	qemu-img create system.img ${IMG_SIZE}G
+         parted system.img -- mklabel msdos
+-        parted system.img -- mkpart primary fat16 1MiB 60MiB
+-        parted system.img -- mkpart primary ext4 60MiB 2160MiB
+-        parted system.img -- mkpart primary ext4 2160MiB 4260MiB
+-        parted system.img -- mkpart primary ext4 4260MiB 100%
++        parted system.img -- mkpart primary fat16 1MiB 100MiB
++        parted system.img -- mkpart primary ext4 100MiB 2200MiB
++        parted system.img -- mkpart primary ext4 2200MiB 4300MiB
++        parted system.img -- mkpart primary ext4 4300MiB 100%
+ 
+         local device=$(losetup -f)
+         losetup "${device}" system.img
+-- 
+1.8.3.1
+
