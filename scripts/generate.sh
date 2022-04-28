@@ -221,10 +221,10 @@ function create_img() {
 	rm -f system.img update.img
 	qemu-img create system.img ${IMG_SIZE}G
         parted system.img -- mklabel msdos
-        parted system.img -- mkpart primary fat16 1MiB 60MiB
-        parted system.img -- mkpart primary ext4 60MiB 2160MiB
-        parted system.img -- mkpart primary ext4 2160MiB 4260MiB
-        parted system.img -- mkpart primary ext4 4260MiB 100%
+        parted system.img -- mkpart primary fat16 1MiB 100MiB
+        parted system.img -- mkpart primary ext4 100MiB 2200MiB
+        parted system.img -- mkpart primary ext4 2200MiB 4300MiB
+        parted system.img -- mkpart primary ext4 4300MiB 100%
 
         local device=$(losetup -f)
         losetup "${device}" system.img
