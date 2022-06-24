@@ -16,7 +16,7 @@ Before=local-fs.target umount.target
 
 [Mount]
 What=/dev/disk/by-label/BOOT
-Where=/boot
+Where=/boot/efi
 Type=vfat
 Options=defaults
 

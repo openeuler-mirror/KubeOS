@@ -232,14 +232,12 @@ function create_img() {
         mkdir -p "${TMP_MOUNT_PATH}"
 
         init_part system.img2 ROOT-A "${TMP_MOUNT_PATH}"
-        local BOOT_PATH=${TMP_MOUNT_PATH}/boot
+        local BOOT_PATH=${TMP_MOUNT_PATH}/boot/efi
         mkdir -p ${BOOT_PATH}
         chmod 755 ${BOOT_PATH}
         init_part system.img1 BOOT "${BOOT_PATH}"
 
-        mv -f ${RPM_ROOT}/boot/* ${BOOT_PATH} || true
-        [ -d ${RPM_ROOT}/boot/ ] && rm -rf ${RPM_ROOT}/boot/
-        sudo mv -t ${TMP_MOUNT_PATH} ${RPM_ROOT}/* || true
+        sudo cp -t ${TMP_MOUNT_PATH} ${RPM_ROOT}/* || true
         cp bootloader.sh "${TMP_MOUNT_PATH}"
         mount_proc_dev_sys "${TMP_MOUNT_PATH}"
         DEVICE="${device}" chroot "${TMP_MOUNT_PATH}" bash bootloader.sh

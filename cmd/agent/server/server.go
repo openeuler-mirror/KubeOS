@@ -39,6 +39,7 @@ const (
 	mainPart      = "/dev/sda2"
 	partB         = "/dev/sda3"
 	certPath      = "/etc/KubeOS/certs/"
+	grubenvPath   = "/boot/efi/EFI/openEuler/grubenv"
 	locked        = 1
 	unLocked      = 0
 	buffer        = 1024 * 10240
@@ -171,10 +172,7 @@ func install(imagePath string, mainPart string, partB string) error {
 	if side != partB {
 		next = "A"
 	}
-	if err := runCommand("grub2-set-default", next); err != nil {
-		return err
-	}
-	return runCommand("cp", "/boot/grub2/grubenv", "/boot/efi/EFI/openEuler")
+	return runCommand("grub2-editenv", grubenvPath, "set", "saved_entry="+next)
 }
 
 func (s *Server) reboot() error {
