@@ -2,7 +2,7 @@
 
 Name:           KubeOS
 Version:        1.0.1
-Release:        5
+Release:        8
 Summary:        O&M platform used to update the whole OS as an entirety
 License:        Mulan PSL v2
 Source0:        https://gitee.com/openeuler/KubeOS/repository/archive/v%{version}.tar.gz
@@ -81,6 +81,12 @@ install -p -m 0600 ./files/os-release %{buildroot}/opt/kubeOS/files
 rm -rfv %{buildroot}
 
 %changelog
+* Tue Aug 02 2022 liyuanrong<liyuanrong1@huawei.com> - 1.0.1-8
+- Type:requirement
+- CVE:NA
+- SUG:restart
+- DESC:update to 1.0.1-8
+
 * Fri Dec 17 2021 liyuanrong<liyuanrong1@huawei.com> - 1.0.1-5
 - Type:requirement
 - CVE:NA
