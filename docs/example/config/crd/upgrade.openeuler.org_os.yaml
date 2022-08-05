@@ -40,21 +40,32 @@ spec:
                 type: string
               clientkey:
                 type: string
+              dockerimage:
+                type: string
               flagSafe:
                 type: boolean
+              imagetype:
+                type: string
               imageurl:
                 type: string
-              mTLS:
-                default: true
-                type: boolean
               maxunavailable:
                 type: integer
+              mtls:
+                default: true
+                type: boolean
+              opstype:
+                type: string
               osversion:
                 type: string
             required:
             - checksum
+            - dockerimage
+            - flagSafe
+            - imagetype
             - imageurl
             - maxunavailable
+            - mtls
+            - opstype
             - osversion
             type: object
         type: object

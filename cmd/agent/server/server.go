@@ -15,17 +15,8 @@ package server
 
 import (
 	"context"
-	"crypto/sha256"
-	"crypto/tls"
-	"crypto/x509"
-	"encoding/hex"
 	"fmt"
-	"io"
-	"io/ioutil"
-	"net/http"
-	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"syscall"
@@ -36,14 +27,17 @@ import (
 )
 
 const (
-	mainPart      = "/dev/sda2"
-	partB         = "/dev/sda3"
 	certPath      = "/etc/KubeOS/certs/"
 	grubenvPath   = "/boot/efi/EFI/openEuler/grubenv"
 	locked        = 1
 	unLocked      = 0
 	buffer        = 1024 * 10240
 	imgPermission = 0600
+)
+
+var (
+	partA string
+	partB string
 )
 
 // Lock is a custom Lock to implement a spin lock
@@ -68,6 +62,16 @@ type Server struct {
 	disableReboot bool
 }
 
+func init() {
+	out, err := exec.Command("sh", "-c", "df / | awk 'NR==2{print}' | awk '{print $1}'").CombinedOutput()
+	if err != nil {
+		logrus.Errorln("init error " + err.Error())
+	}
+	curRootfs := strings.TrimSpace(string(out))
+	partA = curRootfs[:len(curRootfs)-1] + "2"
+	partB = curRootfs[:len(curRootfs)-1] + "3"
+}
+
 // Update implements the OSServer.Update
 func (s *Server) Update(_ context.Context, req *pb.UpdateRequest) (*pb.UpdateResponse, error) {
 	if !s.mutex.TryLock() {
@@ -75,7 +79,7 @@ func (s *Server) Update(_ context.Context, req *pb.UpdateRequest) (*pb.UpdateRes
 	}
 	defer s.mutex.Unlock()
 
-	logrus.Infoln("start to update to imageURL " + req.ImageUrl)
+	logrus.Infoln("start to update to " + req.Version)
 	if err := s.update(req); err != nil {
 		logrus.Errorln("update error " + err.Error())
 		return &pb.UpdateResponse{}, err
@@ -84,95 +88,60 @@ func (s *Server) Update(_ context.Context, req *pb.UpdateRequest) (*pb.UpdateRes
 	return &pb.UpdateResponse{}, nil
 }
 
+// Rollback implements the OSServer.Rollback
+func (s *Server) Rollback(_ context.Context, req *pb.RollbackRequest) (*pb.RollbackResponse, error) {
+	if !s.mutex.TryLock() {
+		return &pb.RollbackResponse{}, fmt.Errorf("server is processing another request")
+	}
+	defer s.mutex.Unlock()
+
+	logrus.Infoln("start to rollback ")
+	if err := s.rollback(); err != nil {
+		return &pb.RollbackResponse{}, err
+	}
+	return &pb.RollbackResponse{}, nil
+}
+
 func (s *Server) update(req *pb.UpdateRequest) error {
-	imagePath, err := download(req)
+	action := req.ImageType
+	var imagePath string
+	var err error
+	switch action {
+	case "docker":
+		imagePath, err = pullOSImage(req)
+		if err != nil {
+			return err
+		}
+	case "disk":
+		imagePath, err = download(req)
+		if err != nil {
+			return err
+		}
+		if err = checkSumMatch(imagePath, req.CheckSum); err != nil {
+			return err
+		}
+	default:
+		return fmt.Errorf("image type %s cannot be recognized", action)
+	}
+	side, next, err := getNextPart(partA, partB)
 	if err != nil {
 		return err
 	}
-	if err = checkSumMatch(imagePath, req.CheckSum); err != nil {
-		return err
-	}
-	if err = install(imagePath, mainPart, partB); err != nil {
+	if err = install(imagePath, side, next); err != nil {
 		return err
 	}
 	return s.reboot()
 }
 
-func download(req *pb.UpdateRequest) (string, error) {
-	resp, err := getImageURL(req)
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("URL %s returns error %s", req.ImageUrl, resp.Status)
-	}
-	fs := syscall.Statfs_t{}
-	if err = syscall.Statfs(PersistDir, &fs); err != nil {
-		return "", err
-	}
-	if int64(fs.Bfree)*fs.Bsize < resp.ContentLength+buffer { // these data come from disk size, will not overflow
-		return "", fmt.Errorf("space is not enough for downloaing")
-	}
-
-	out, err := os.Create(filepath.Join(PersistDir, "update.img"))
-	if err != nil {
-		return "", err
-	}
-	defer out.Close()
-	err = os.Chmod(out.Name(), imgPermission)
-	if err != nil {
-		return "", err
-	}
-	logrus.Infoln("downloading to file " + out.Name())
-	if _, err = io.Copy(out, resp.Body); err != nil {
-		os.Remove(out.Name())
-		return "", err
-	}
-	return out.Name(), nil
-}
-
-func checkSumMatch(filePath, checkSum string) error {
-	file, err := os.Open(filePath)
+func (s *Server) rollback() error {
+	_, next, err := getNextPart(partA, partB)
 	if err != nil {
 		return err
 	}
-	defer file.Close()
-	hash := sha256.New()
-	if _, err := io.Copy(hash, file); err != nil {
+	if err = runCommand("grub2-editenv", grubenvPath, "set", "saved_entry="+next); err != nil {
 		return err
 	}
-	if calSum := hex.EncodeToString(hash.Sum(nil)); calSum != checkSum {
-		defer os.Remove(filePath)
-		return fmt.Errorf("checkSum %s mismatch to %s", calSum, checkSum)
-	}
-	return nil
-}
-
-func install(imagePath string, mainPart string, partB string) error {
-	out, err := exec.Command("lsblk", "-no", "MOUNTPOINT", mainPart).CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("fail to lsblk %s out:%s err:%s", mainPart, out, err)
-	}
-	mountPoint := strings.TrimSpace(string(out))
-	logrus.Infoln(mainPart + " mounted on " + mountPoint)
-
-	side := mainPart
-	if mountPoint == "/" {
-		side = partB
-	}
-	logrus.Infoln("side is " + side)
-
-	if err := runCommand("dd", "if="+imagePath, "of="+side, "bs=8M"); err != nil {
-		return err
-	}
-	defer os.Remove(imagePath)
-
-	next := "B"
-	if side != partB {
-		next = "A"
-	}
-	return runCommand("grub2-editenv", grubenvPath, "set", "saved_entry="+next)
+	return s.reboot()
 }
 
 func (s *Server) reboot() error {
@@ -183,124 +152,4 @@ func (s *Server) reboot() error {
 		return nil
 	}
 	return syscall.Reboot(syscall.LINUX_REBOOT_CMD_RESTART)
-}
-
-func runCommand(name string, args ...string) error {
-	out, err := exec.Command(name, args...).CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("fail to run command:%s %v out:%s err:%s", name, args, out, err)
-	}
-	return nil
-}
-
-func getImageURL(req *pb.UpdateRequest) (*http.Response, error) {
-	imageURL := req.ImageUrl
-	flagSafe := req.FlagSafe
-	mTLS := req.MTLS
-	caCert := req.Certs.CaCaert
-	clientCert := req.Certs.ClientCert
-	clientKey := req.Certs.ClientKey
-
-	if !strings.HasPrefix(imageURL, "https://") {
-		if !flagSafe {
-			logrus.Errorln("this imageUrl is not safe")
-			return &http.Response{}, fmt.Errorf("this imageUrl is not safe")
-		}
-		resp, err := http.Get(imageURL)
-		if err != nil {
-			return &http.Response{}, err
-		}
-		return resp, nil
-	} else if mTLS {
-		client, err := loadClientCerts(caCert, clientCert, clientKey)
-		if err != nil {
-			return &http.Response{}, err
-		}
-		resp, err := client.Get(imageURL)
-		if err != nil {
-			return &http.Response{}, err
-		}
-		return resp, nil
-	} else {
-		client, err := loadCaCerts(caCert)
-		if err != nil {
-			return &http.Response{}, err
-		}
-		resp, err := client.Get(imageURL)
-		if err != nil {
-			return &http.Response{}, err
-		}
-		return resp, nil
-	}
-
-	return &http.Response{}, nil
-}
-
-func loadCaCerts(caCert string) (*http.Client, error) {
-	pool := x509.NewCertPool()
-	err := certExist(caCert)
-	if err != nil {
-		return &http.Client{}, err
-	}
-	ca, err := ioutil.ReadFile(certPath + caCert)
-	if err != nil {
-		return &http.Client{}, fmt.Errorf("read the ca certificate error ", err)
-	}
-	pool.AppendCertsFromPEM(ca)
-	tr := &http.Transport{
-		TLSClientConfig: &tls.Config{
-			RootCAs: pool,
-		},
-	}
-	client := &http.Client{Transport: tr}
-	return client, nil
-}
-
-func loadClientCerts(caCert, clientCert, clientKey string) (*http.Client, error) {
-	pool := x509.NewCertPool()
-	err := certExist(caCert)
-	if err != nil {
-		return &http.Client{}, err
-	}
-	ca, err := ioutil.ReadFile(certPath + caCert)
-	if err != nil {
-		return &http.Client{}, err
-	}
-	pool.AppendCertsFromPEM(ca)
-	err = certExist(clientCert)
-	if err != nil {
-		return &http.Client{}, err
-	}
-	err = certExist(clientKey)
-	if err != nil {
-		return &http.Client{}, err
-	}
-	cliCrt, err := tls.LoadX509KeyPair(certPath+clientCert, certPath+clientKey)
-	if err != nil {
-		return &http.Client{}, err
-	}
-
-	tr := &http.Transport{
-		TLSClientConfig: &tls.Config{
-			RootCAs:      pool,
-			Certificates: []tls.Certificate{cliCrt},
-		},
-	}
-
-	client := &http.Client{Transport: tr}
-	return client, nil
-}
-
-func certExist(certFile string) error {
-	if certFile == "" {
-		return fmt.Errorf("please provide the certificate")
-	}
-	_, err := os.Stat(certPath + certFile)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return fmt.Errorf("certificate is not exist ", err)
-		}
-		return fmt.Errorf("certificate has an error ", err)
-	}
-	return nil
 }
