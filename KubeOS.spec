@@ -1,14 +1,12 @@
 # Copyright (c) Huawei Technologies Co., Ltd. 2021. All rights reserved.
 
 Name:           KubeOS
-Version:        1.0.1
-Release:        8
+Version:        1.0.2
+Release:        2
 Summary:        O&M platform used to update the whole OS as an entirety
 License:        Mulan PSL v2
 Source0:        https://gitee.com/openeuler/KubeOS/repository/archive/v%{version}.tar.gz
-Patch1:         0001-KubeOS-modify-checks-in-generate.sh-and-change-modul.patch
-Patch2:         0002-change-generate-argument-from-isopath-to-repopath.patch
-Patch3:         0003-KubeOS-add-arm-architecture-support-to-the-OS-image.patch
+Patch1:         0001-Write-a-tool-to-support-KubeOS-deployment-on-physica.patch
 BuildRoot:      %{_tmppath}/%{name}-%{version}-build
 BuildRequires:  make
 BuildRequires:  golang >= 1.13
@@ -17,7 +15,7 @@ This is an O&M platform used to update the whole OS as an entirety,
 it should be running in kubernetes environment.
 
 %prep
-%autosetup -n %{name} -p1
+%autosetup -n %{name}-v%{version} -p1
 
 %package scripts
 Summary: Scripts to build the os image and binaries of os-proxy and os-operator
@@ -44,13 +42,28 @@ install -p -m 0500 ./bin/operator %{buildroot}/opt/kubeOS/bin
 #install artifacts
 install -d -m 0740 %{buildroot}/opt/kubeOS/scripts
 install -p -m 0600 ./scripts/rpmlist %{buildroot}/opt/kubeOS/scripts
-install -p -m 0500 ./scripts/generate.sh %{buildroot}/opt/kubeOS/scripts
+install -p -m 0500 ./scripts/kbimg.sh %{buildroot}/opt/kubeOS/scripts
 install -p -m 0500 ./scripts/set_in_chroot.sh %{buildroot}/opt/kubeOS/scripts
 install -p -m 0600 ./scripts/grub.cfg %{buildroot}/opt/kubeOS/scripts
 install -p -m 0500 ./scripts/bootloader.sh %{buildroot}/opt/kubeOS/scripts
+install -p -m 0500 ./scripts/Dockerfile %{buildroot}/opt/kubeOS/scripts
+
+install -d -m 0740 %{buildroot}/opt/kubeOS/scripts/common
+install -p -m 0500 ./scripts/common/globalVariables.sh %{buildroot}/opt/kubeOS/scripts/common
+install -p -m 0500 ./scripts/common/log.sh %{buildroot}/opt/kubeOS/scripts/common
+install -p -m 0500 ./scripts/common/utils.sh %{buildroot}/opt/kubeOS/scripts/common
+
+install -d -m 0740 %{buildroot}/opt/kubeOS/scripts/create
+install -p -m 0500 ./scripts/create/imageCreate.sh %{buildroot}/opt/kubeOS/scripts/create
+install -p -m 0500 ./scripts/create/rootfsCreate.sh %{buildroot}/opt/kubeOS/scripts/create
+
+install -d -m 0740 %{buildroot}/opt/kubeOS/scripts/00bootup
+install -p -m 0600 ./scripts/00bootup/Global.cfg %{buildroot}/opt/kubeOS/scripts/00bootup
+install -p -m 0500 ./scripts/00bootup/module-setup.sh %{buildroot}/opt/kubeOS/scripts/00bootup
+install -p -m 0500 ./scripts/00bootup/mount.sh %{buildroot}/opt/kubeOS/scripts/00bootup
 
 install -d -m 0740 %{buildroot}/opt/kubeOS/files
-install -p -m 0600 ./files/boot.mount %{buildroot}/opt/kubeOS/files
+install -p -m 0600 ./files/boot-efi.mount %{buildroot}/opt/kubeOS/files
 install -p -m 0600 ./files/etc.mount %{buildroot}/opt/kubeOS/files
 install -p -m 0600 ./files/persist.mount %{buildroot}/opt/kubeOS/files
 install -p -m 0600 ./files/var.mount %{buildroot}/opt/kubeOS/files
@@ -60,7 +73,7 @@ install -p -m 0600 ./files/os-release %{buildroot}/opt/kubeOS/files
 %files
 %attr(0500,root,root) /opt/kubeOS/bin/os-agent
 %defattr(-,root,root,0500)
-%attr(0600,root,root) /opt/kubeOS/files/boot.mount
+%attr(0600,root,root) /opt/kubeOS/files/boot-efi.mount
 %attr(0600,root,root) /opt/kubeOS/files/etc.mount
 %attr(0600,root,root) /opt/kubeOS/files/persist.mount
 %attr(0600,root,root) /opt/kubeOS/files/var.mount
@@ -72,15 +85,34 @@ install -p -m 0600 ./files/os-release %{buildroot}/opt/kubeOS/files
 %attr(0500,root,root) /opt/kubeOS/bin/operator
 %defattr(-,root,root,0500)
 %attr(0600,root,root) /opt/kubeOS/scripts/rpmlist
-%attr(0500,root,root) /opt/kubeOS/scripts/generate.sh
+%attr(0500,root,root) /opt/kubeOS/scripts/kbimg.sh
 %attr(0500,root,root) /opt/kubeOS/scripts/set_in_chroot.sh
 %attr(0600,root,root) /opt/kubeOS/scripts/grub.cfg
 %attr(0500,root,root) /opt/kubeOS/scripts/bootloader.sh
+%attr(0500,root,root) /opt/kubeOS/scripts/Dockerfile
+
+%attr(0500,root,root) /opt/kubeOS/scripts/common/globalVariables.sh
+%attr(0500,root,root) /opt/kubeOS/scripts/common/log.sh
+%attr(0500,root,root) /opt/kubeOS/scripts/common/utils.sh
+
+%attr(0500,root,root) /opt/kubeOS/scripts/create/imageCreate.sh
+%attr(0500,root,root) /opt/kubeOS/scripts/create/rootfsCreate.sh
+
+%attr(0600,root,root) /opt/kubeOS/scripts/00bootup/Global.cfg
+%attr(0500,root,root) /opt/kubeOS/scripts/00bootup/module-setup.sh
+%attr(0500,root,root) /opt/kubeOS/scripts/00bootup/mount.sh
+
 
 %clean
 rm -rfv %{buildroot}
 
 %changelog
+* Fri Aug 05 2022 liyuanrong<liyuanrong1@huawei.com> - 1.0.2-2
+- Type:requirement
+- CVE:NA
+- SUG:restart
+- DESC:update to 1.0.2-2
+
 * Tue Aug 02 2022 liyuanrong<liyuanrong1@huawei.com> - 1.0.1-8
 - Type:requirement
 - CVE:NA
