@@ -32,13 +32,15 @@ type Client struct {
 
 // DownloadInfo contains the information required for image download
 type DownloadInfo struct {
-	ImageURL   string
-	FlagSafe   bool
-	CheckSum   string
-	CaCert     string
-	ClientCert string
-	ClientKey  string
-	MTLS       bool
+	ImageURL    string
+	FlagSafe    bool
+	CheckSum    string
+	CaCert      string
+	ClientCert  string
+	ClientKey   string
+	MTLS        bool
+	ImageType   string
+	DockerImage string
 }
 
 // New create a gRPC channel to communicate with the server and return a client stub to perform RPCs
@@ -61,7 +63,7 @@ func New(sockAddr string) (*Client, error) {
 	return &Client{sockAddr: sockAddr, client: pb.NewOSClient(conn)}, nil
 }
 
-// UpdateSpec send requests to the server in os-agent
+// UpdateSpec send update requests to the server in os-agent
 func (c *Client) UpdateSpec(version string, downloadInfo *DownloadInfo) error {
 	certs := &pb.CertsInfo{
 		CaCaert:    downloadInfo.CaCert,
@@ -70,12 +72,20 @@ func (c *Client) UpdateSpec(version string, downloadInfo *DownloadInfo) error {
 	}
 	_, err := c.client.Update(context.Background(),
 		&pb.UpdateRequest{
-			Version:  version,
-			ImageUrl: downloadInfo.ImageURL,
-			FlagSafe: downloadInfo.FlagSafe,
-			CheckSum: downloadInfo.CheckSum,
-			MTLS:     downloadInfo.MTLS,
-			Certs:    certs,
+			Version:     version,
+			ImageUrl:    downloadInfo.ImageURL,
+			FlagSafe:    downloadInfo.FlagSafe,
+			CheckSum:    downloadInfo.CheckSum,
+			MTLS:        downloadInfo.MTLS,
+			Certs:       certs,
+			ImageType:   downloadInfo.ImageType,
+			DockerImage: downloadInfo.DockerImage,
 		})
+	return err
+}
+
+// RollbackSpec send rollback requests to the server in os-agent
+func (c *Client) RollbackSpec() error {
+	_, err := c.client.Rollback(context.Background(), &pb.RollbackRequest{})
 	return err
 }

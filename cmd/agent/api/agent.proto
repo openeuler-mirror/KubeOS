@@ -18,6 +18,7 @@ package agent;
 
 service OS {
   rpc Update(UpdateRequest) returns (UpdateResponse) {}
+  rpc Rollback(RollbackRequest) returns (RollbackResponse) {}
 }
 
 message UpdateRequest {
@@ -26,7 +27,9 @@ message UpdateRequest {
   string check_sum = 3;
   bool flagSafe = 4;
   bool mTLS = 5;
-  CertsInfo certs = 6;
+  string image_type = 6;
+  string docker_image = 7;
+  CertsInfo certs = 8;
 }
 
 message CertsInfo {
@@ -36,5 +39,11 @@ message CertsInfo {
 }
 
 message UpdateResponse {
+  int32 err = 1;
+}
+
+message RollbackRequest {}
+
+message RollbackResponse {
   int32 err = 1;
 }

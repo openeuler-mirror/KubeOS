@@ -101,19 +101,26 @@ func (r *OSReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Re
 		if err := evictNode(drainer, &node); err != nil {
 			return values.RequeueNow, err
 		}
-		version := osVersionSpec
-		downloadInfo := &agentclient.DownloadInfo{
-			ImageURL:   osInstance.Spec.ImageURL,
-			FlagSafe:   osInstance.Spec.FlagSafe,
-			CheckSum:   osInstance.Spec.CheckSum,
-			CaCert:     osInstance.Spec.CaCert,
-			ClientCert: osInstance.Spec.ClientCert,
-			ClientKey:  osInstance.Spec.ClientKey,
-			MTLS:       osInstance.Spec.MTLS,
-		}
-
-		if err := r.Connection.UpdateSpec(version, downloadInfo); err != nil {
-			return values.RequeueNow, err
+		opsType := osInstance.Spec.OpsType
+		switch opsType {
+		case "upgrade":
+			version := osVersionSpec
+			downloadInfo := &agentclient.DownloadInfo{
+				ImageURL:   osInstance.Spec.ImageURL,
+				FlagSafe:   osInstance.Spec.FlagSafe,
+				CheckSum:   osInstance.Spec.CheckSum,
+				CaCert:     osInstance.Spec.CaCert,
+				ClientCert: osInstance.Spec.ClientCert,
+				ClientKey:  osInstance.Spec.ClientKey,
+				MTLS:       osInstance.Spec.MTLS,
+			}
+			if err := r.Connection.UpdateSpec(version, downloadInfo); err != nil {
+				return values.RequeueNow, err
+			}
+		case "rollback":
+			if err := r.Connection.RollbackSpec(); err != nil {
+				return values.RequeueNow, err
+			}
 		}
 	}
 	return values.Requeue, nil
