@@ -14,3 +14,11 @@ conntrack-tools
 ebtables
 ethtool
 rsyslog
+vi
+net-tools
+hwinfo
+dracut
+coreutils
+gawk
+parted
+dosfstools

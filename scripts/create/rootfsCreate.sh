@@ -61,6 +61,7 @@ EOF
         mv "${RPM_ROOT}"/boot/initramfs* "${RPM_ROOT}/boot/initramfs.img"
         cp grub.cfg "${RPM_ROOT}"/boot/grub2
         cp grub.cfg "${RPM_ROOT}"/boot/efi/EFI/openEuler
+	cp -r ./00bootup ${RPM_ROOT}/usr/lib/dracut/modules.d/ 
         cp set_in_chroot.sh "${RPM_ROOT}"
         ROOT_PWD="${PASSWD}" chroot "${RPM_ROOT}" bash /set_in_chroot.sh
         rm "${RPM_ROOT}/set_in_chroot.sh"
