@@ -62,12 +62,12 @@ function create_pxe_img() {
   case $opt in
   "repo")
     create_os_tar_from_repo "$@"
-    tar -xvf os.tar  ./boot/initramfs.img
+    tar -xvf os.tar  ./initramfs.img
     tar -xvf os.tar  ./boot/vmlinuz
     ;;
   "docker")
     create_os_tar_from_docker "$@"
-    tar -xvf os.tar  boot/initramfs.img
+    tar -xvf os.tar  initramfs.img
     tar -xvf os.tar  boot/vmlinuz
     ;;
   esac

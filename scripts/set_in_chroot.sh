@@ -11,3 +11,6 @@ sed -i '/^root:/d' /etc/shadow_bak
 echo "root:"${ROOT_PWD}${str:1} > /etc/shadow
 cat /etc/shadow_bak >> /etc/shadow
 rm -rf /etc/shadow_bak
+
+dracut -f -v --add bootup /initramfs.img --kver `ls /lib/modules`
+rm -rf /usr/lib/dracut/modules.d/00bootup
