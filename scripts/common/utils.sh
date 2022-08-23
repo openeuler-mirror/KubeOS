@@ -87,6 +87,13 @@ function delete_file() {
         return 0
 }
 
+function check_binary_exist() {
+        if [ ! -f "$1" ];then
+                log_error_print "binary path is invalid."
+                exit 3
+        fi
+}
+
 function check_repo_path() {
         if [ ! -f "$1" ];then
                 log_error_print "REPO path is invalid."

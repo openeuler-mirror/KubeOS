@@ -24,20 +24,17 @@ function CheckSpace() {
 }
 
 function GetDisk() {
-    disks=$(hwinfo --disk --short | grep -vi "^disk" | awk '{print $1}')
-    if [ ! -z ${disks} ]; then
-        if [ ! -z ${disk} ] && echo "${disks[@]}" | grep -wq "${disk}" ; then
+    disks=(`hwinfo --disk --short 2>&1 | grep -vi "^disk" | awk '{print $1}'`)
+    if [ ${#disks[*]} -gt 0 ]; then
+        if [ -n "${disk}" ] && echo "${disks[@]}" | grep -wq "${disk}" ; then
             echo "${disk} exists, start partition"  | tee -a ${log}
         else
-            echo "disk not exist, choose default disk"  | tee -a ${log}
-            disk=$(echo ${disks[0]})
+            echo "disk not exist, please choose correct disk"  | tee -a ${log}
         fi
     else
         echo "no disk found" | tee -a ${log}
         return 1
     fi
-    
-
     CheckSpace
     if [ $? -ne 0 ]; then
         echo "no enough space on ${disk}" | tee -a ${log}
@@ -115,9 +112,18 @@ function PartitionAndFormatting() {
 
 function InitNetwork() {
     echo "Initializing network..."
-    # 获取网卡信息，默认只有一个网卡
-    net_name=`ifconfig -a | awk '{print $1}' | grep : | grep '^e' | awk -F: '{print $1}'`
-    # dhclient --timeout 60 >> ${log} 2>&1
+    netNames=(`ifconfig -a | awk '{print $1}' | grep : | grep '^e' | awk -F: '{print $1}'`)
+    if [ ${#netNames[*]} -gt 0 ]; then
+        if [ -n "${net_name}" ] && echo "${netNames[@]}" | grep -wq "${net_name}" ; then
+            echo "${net_name} exists, start set ip"  | tee -a ${log}
+        else
+            echo "net_name not exist, choose default net"  | tee -a ${log}
+            net_name=${netNames[0]}
+        fi
+    else
+        echo "no net Device found" | tee -a ${log}
+        return 1
+    fi
 
     ifconfig ${net_name} up
     if [ $? -ne 0 ]; then
@@ -126,7 +132,7 @@ function InitNetwork() {
     fi
     sleep 3
 
-    ifconfig ${net_name} ${local_ip} netmask 255.255.255.0  >> ${log} 2>&1
+    ifconfig ${net_name} ${local_ip} netmask ${netmask}  >> ${log} 2>&1
     if [ $? -ne 0 ]; then
         echo "ip set failed" | tee -a ${log}
         return 1
@@ -139,9 +145,6 @@ function InitNetwork() {
         return 1
     fi
     sleep 3
-
-    
-
     return 0
 }
 
@@ -249,6 +252,7 @@ function SetBoot() {
             return 1
         fi
     fi
+    sed -i 's#/dev/sda#'${disk}'#g' /sysroot/boot/efi/EFI/openEuler/grub.cfg
 
     return 0
 }
@@ -329,4 +333,3 @@ if [ ${ret} -eq 0 ]; then
 else
     echo "kubeOS install failed, see install.log" | tee -a ${log}
 fi
-
