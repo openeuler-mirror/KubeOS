@@ -2,11 +2,12 @@
 
 Name:           KubeOS
 Version:        1.0.2
-Release:        2
+Release:        3
 Summary:        O&M platform used to update the whole OS as an entirety
 License:        Mulan PSL v2
 Source0:        https://gitee.com/openeuler/KubeOS/repository/archive/v%{version}.tar.gz
 Patch1:         0001-Write-a-tool-to-support-KubeOS-deployment-on-physica.patch
+Patch2:         0002-KubeOS-fix-the-kbimg.sh-exception-and-pxe-installati.patch
 BuildRoot:      %{_tmppath}/%{name}-%{version}-build
 BuildRequires:  make
 BuildRequires:  golang >= 1.13
@@ -107,6 +108,12 @@ install -p -m 0600 ./files/os-release %{buildroot}/opt/kubeOS/files
 rm -rfv %{buildroot}
 
 %changelog
+* Tue Aug 23 2022 liyuanrong<liyuanrong1@huawei.com> - 1.0.2-3
+- Type:requirement
+- CVE:NA
+- SUG:restart
+- DESC:fix the kbimg.sh exception and pxe installation
+
 * Fri Aug 05 2022 liyuanrong<liyuanrong1@huawei.com> - 1.0.2-2
 - Type:requirement
 - CVE:NA
