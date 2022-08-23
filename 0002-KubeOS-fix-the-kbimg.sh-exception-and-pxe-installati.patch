@@ -1,0 +1,341 @@
+From f64c9587a20cc44036b0f622105501ff142729d7 Mon Sep 17 00:00:00 2001
+From: liyuanr <liyuanrong1@huawei.com>
+Date: Tue, 23 Aug 2022 15:32:36 +0800
+Subject: [PATCH] KubeOS:fix the kbimg.sh exception and pxe installation
+ problem.
+
+Fixed the issue of abnormal usage printing of the kbimg.sh parameter,
+no verification of the -b parameter, and environment clearance in
+the concurrent scenario.
+Fix the problem that disks and network adapters cannot be found
+due to disk and network adapter verification during PXE installation.
+Fix the problem that os-proxy does not transfer imagetype and dockerimage
+to the os-agent.
+
+Signed-off-by: liyuanr <liyuanrong1@huawei.com>
+---
+ cmd/proxy/controllers/os_controller.go | 16 ++++++------
+ scripts/00bootup/Global.cfg            | 12 ++++++---
+ scripts/00bootup/mount.sh              | 35 ++++++++++++++------------
+ scripts/common/utils.sh                |  7 ++++++
+ scripts/create/imageCreate.sh          |  4 +--
+ scripts/kbimg.sh                       | 30 +++++++++++++---------
+ 6 files changed, 62 insertions(+), 42 deletions(-)
+
+diff --git a/cmd/proxy/controllers/os_controller.go b/cmd/proxy/controllers/os_controller.go
+index f73c750..09e58f9 100644
+--- a/cmd/proxy/controllers/os_controller.go
++++ b/cmd/proxy/controllers/os_controller.go
+@@ -106,13 +106,15 @@ func (r *OSReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Re
+ 		case "upgrade":
+ 			version := osVersionSpec
+ 			downloadInfo := &agentclient.DownloadInfo{
+-				ImageURL:   osInstance.Spec.ImageURL,
+-				FlagSafe:   osInstance.Spec.FlagSafe,
+-				CheckSum:   osInstance.Spec.CheckSum,
+-				CaCert:     osInstance.Spec.CaCert,
+-				ClientCert: osInstance.Spec.ClientCert,
+-				ClientKey:  osInstance.Spec.ClientKey,
+-				MTLS:       osInstance.Spec.MTLS,
++				ImageURL:    osInstance.Spec.ImageURL,
++				FlagSafe:    osInstance.Spec.FlagSafe,
++				CheckSum:    osInstance.Spec.CheckSum,
++				CaCert:      osInstance.Spec.CaCert,
++				ClientCert:  osInstance.Spec.ClientCert,
++				ClientKey:   osInstance.Spec.ClientKey,
++				MTLS:        osInstance.Spec.MTLS,
++				ImageType:   osInstance.Spec.ImageType,
++				DockerImage: osInstance.Spec.DockerImage,
+ 			}
+ 			if err := r.Connection.UpdateSpec(version, downloadInfo); err != nil {
+ 				return values.RequeueNow, err
+diff --git a/scripts/00bootup/Global.cfg b/scripts/00bootup/Global.cfg
+index cad4e33..dd78617 100644
+--- a/scripts/00bootup/Global.cfg
++++ b/scripts/00bootup/Global.cfg
+@@ -4,9 +4,13 @@ rootfs_name=kubeos.tar
+ # select the target disk to install kubeOS
+ disk=/dev/sda
+ 
+-# address where stores the rootfs on the http server
++# pxe server ip address where stores the rootfs on the http server
+ server_ip=192.168.1.50
+-
++# target machine ip
+ local_ip=192.168.1.100
+-
+-route_ip=192.168.1.1
+\ No newline at end of file
++# target machine route
++route_ip=192.168.1.1
++# target machine netmask
++netmask=255.255.255.0
++# target machine netDevice name
++net_name=eth0
+diff --git a/scripts/00bootup/mount.sh b/scripts/00bootup/mount.sh
+index a04a364..1bc83ff 100644
+--- a/scripts/00bootup/mount.sh
++++ b/scripts/00bootup/mount.sh
+@@ -24,20 +24,17 @@ function CheckSpace() {
+ }
+ 
+ function GetDisk() {
+-    disks=$(hwinfo --disk --short | grep -vi "^disk" | awk '{print $1}')
+-    if [ ! -z ${disks} ]; then
+-        if [ ! -z ${disk} ] && echo "${disks[@]}" | grep -wq "${disk}" ; then
++    disks=(`hwinfo --disk --short 2>&1 | grep -vi "^disk" | awk '{print $1}'`)
++    if [ ${#disks[*]} -gt 0 ]; then
++        if [ -n "${disk}" ] && echo "${disks[@]}" | grep -wq "${disk}" ; then
+             echo "${disk} exists, start partition"  | tee -a ${log}
+         else
+-            echo "disk not exist, choose default disk"  | tee -a ${log}
+-            disk=$(echo ${disks[0]})
++            echo "disk not exist, please choose correct disk"  | tee -a ${log}
+         fi
+     else
+         echo "no disk found" | tee -a ${log}
+         return 1
+     fi
+-    
+-
+     CheckSpace
+     if [ $? -ne 0 ]; then
+         echo "no enough space on ${disk}" | tee -a ${log}
+@@ -115,9 +112,18 @@ function PartitionAndFormatting() {
+ 
+ function InitNetwork() {
+     echo "Initializing network..."
+-    # 获取网卡信息，默认只有一个网卡
+-    net_name=`ifconfig -a | awk '{print $1}' | grep : | grep '^e' | awk -F: '{print $1}'`
+-    # dhclient --timeout 60 >> ${log} 2>&1
++    netNames=(`ifconfig -a | awk '{print $1}' | grep : | grep '^e' | awk -F: '{print $1}'`)
++    if [ ${#netNames[*]} -gt 0 ]; then
++        if [ -n "${net_name}" ] && echo "${netNames[@]}" | grep -wq "${net_name}" ; then
++            echo "${net_name} exists, start set ip"  | tee -a ${log}
++        else
++            echo "net_name not exist, choose default net"  | tee -a ${log}
++            net_name=${netNames[0]}
++        fi
++    else
++        echo "no net Device found" | tee -a ${log}
++        return 1
++    fi
+ 
+     ifconfig ${net_name} up
+     if [ $? -ne 0 ]; then
+@@ -126,7 +132,7 @@ function InitNetwork() {
+     fi
+     sleep 3
+ 
+-    ifconfig ${net_name} ${local_ip} netmask 255.255.255.0  >> ${log} 2>&1
++    ifconfig ${net_name} ${local_ip} netmask ${netmask}  >> ${log} 2>&1
+     if [ $? -ne 0 ]; then
+         echo "ip set failed" | tee -a ${log}
+         return 1
+@@ -139,9 +145,6 @@ function InitNetwork() {
+         return 1
+     fi
+     sleep 3
+-
+-    
+-
+     return 0
+ }
+ 
+@@ -249,6 +252,7 @@ function SetBoot() {
+             return 1
+         fi
+     fi
++    sed -i 's#/dev/sda#'${disk}'#g' /sysroot/boot/efi/EFI/openEuler/grub.cfg
+ 
+     return 0
+ }
+@@ -328,5 +332,4 @@ if [ ${ret} -eq 0 ]; then
+     cp ${log} /persist
+ else
+     echo "kubeOS install failed, see install.log" | tee -a ${log}
+-fi
+-
++fi
+\ No newline at end of file
+diff --git a/scripts/common/utils.sh b/scripts/common/utils.sh
+index 902a6ae..3546c8c 100644
+--- a/scripts/common/utils.sh
++++ b/scripts/common/utils.sh
+@@ -87,6 +87,13 @@ function delete_file() {
+         return 0
+ }
+ 
++function check_binary_exist() {
++        if [ ! -f "$1" ];then
++                log_error_print "binary path is invalid."
++                exit 3
++        fi
++}
++
+ function check_repo_path() {
+         if [ ! -f "$1" ];then
+                 log_error_print "REPO path is invalid."
+diff --git a/scripts/create/imageCreate.sh b/scripts/create/imageCreate.sh
+index 95ebcde..564c740 100644
+--- a/scripts/create/imageCreate.sh
++++ b/scripts/create/imageCreate.sh
+@@ -56,19 +56,17 @@ function create_img() {
+ }
+ 
+ function create_pxe_img() {
+-  rm -rf boot/ kubeos.tar
++  rm -rf initramfs.img kubeos.tar
+   local opt=$1
+   shift
+   case $opt in
+   "repo")
+     create_os_tar_from_repo "$@"
+     tar -xvf os.tar  ./initramfs.img
+-    tar -xvf os.tar  ./boot/vmlinuz
+     ;;
+   "docker")
+     create_os_tar_from_docker "$@"
+     tar -xvf os.tar  initramfs.img
+-    tar -xvf os.tar  boot/vmlinuz
+     ;;
+   esac
+   mv os.tar kubeos.tar
+diff --git a/scripts/kbimg.sh b/scripts/kbimg.sh
+index 1268700..a77d62e 100644
+--- a/scripts/kbimg.sh
++++ b/scripts/kbimg.sh
+@@ -72,12 +72,12 @@ options:
+ EOF
+ }
+ 
+-function show_vm_image_usage() {
++function show_vm_pxe_image_usage() {
+   cat << EOF
+ 
+-Usage : kbimg create vm-image -p iso-path -v os-version -b os-agent-dir -e os-password
++Usage : kbimg create [vm-image|pxe-image] -p iso-path -v os-version -b os-agent-dir -e os-password
+       or
+-        kbimg create vm-image -d repository/name:tag
++        kbimg create [vm-image|pxe-image] -d repository/name:tag
+ 
+ options:
+     -p                       repo path
+@@ -130,7 +130,7 @@ function clean_space() {
+ function clean_img() {
+   delete_file system.img
+   delete_file update.img
+-  delete_dir boot
++  delete_file initramfs.img
+   delete_file kubeos.tar
+ }
+ 
+@@ -170,6 +170,7 @@ function verify_upgrade_image_input() {
+           ;;
+        *)
+          log_error_print "option $opt not found"
++         show_upgrade_image_usage
+          exit 3
+          ;;
+       esac
+@@ -183,6 +184,7 @@ function verify_repo_input() {
+     echo "$@" | grep -q "\-$i "
+     if [ "$?" -ne 0 ];then
+           log_error_print "option -$i is mandatory, please check input"
++          show_vm_pxe_image_usage
+           exit 3
+     fi
+   done
+@@ -208,6 +210,7 @@ function verify_repo_input() {
+             ;;
+           *)
+             log_error_print "option $opt not found"
++            show_vm_pxe_image_usage
+             exit 3
+            ;;
+         esac
+@@ -215,7 +218,8 @@ function verify_repo_input() {
+ }
+ function verify_docker_input() {
+   if [ $1 != "-d" ]; then
+-    log_error_print "option $opt not found"
++    log_error_print "option $1 not found"
++    show_vm_pxe_image_usage
+     exit 3
+   fi
+   check_param $2
+@@ -242,13 +246,14 @@ function verify_create_input() {
+     check_disk_space "docker"
+     verify_upgrade_image_input "$@"
+     check_repo_path "${REPO}"
++    check_binary_exist "${AGENT_PATH}"
+     create_docker_image "${REPO}" "${VERSION}" "${AGENT_PATH}" "${PASSWD}" "${DOCKER_IMG}"
+     ;;
+   "vm-image")
+     shift
+      if [ $# -eq 1 ]; then
+       if [ "$1" == "-h" ] || [ "$1" == "--help" ]; then
+-        show_vm_image_usage
++        show_vm_pxe_image_usage
+         exit 0
+       fi
+     fi
+@@ -256,6 +261,7 @@ function verify_create_input() {
+     if [ $# -eq 8 ]; then
+       verify_repo_input "$@"
+       check_repo_path "${REPO}"
++      check_binary_exist "${AGENT_PATH}"
+       create_vm_img "repo" "${REPO}" "${VERSION}" "${AGENT_PATH}" "${PASSWD}"
+     elif [ $# -eq 2 ]; then
+       verify_docker_input "$@"
+@@ -263,7 +269,7 @@ function verify_create_input() {
+       create_vm_img "docker" "${DOCKER_IMG}"
+     else
+       log_error_print "the number of parameters is incorrect, please check it."
+-      show_vm_image_usage
++      show_vm_pxe_image_usage
+       exit 3
+     fi
+     ;;
+@@ -271,7 +277,7 @@ function verify_create_input() {
+     shift
+      if [ $# -eq 1 ]; then
+       if [ "$1" == "-h" ] || [ "$1" == "--help" ]; then
+-        show_pxe_image_usage
++        show_vm_pxe_image_usage
+         exit 0
+       fi
+     fi
+@@ -279,6 +285,7 @@ function verify_create_input() {
+     if [ $# -eq 8 ]; then
+       verify_repo_input "$@"
+       check_repo_path "${REPO}"
++      check_binary_exist "${AGENT_PATH}"
+       create_pxe_img "repo" "${REPO}" "${VERSION}" "${AGENT_PATH}" "${PASSWD}"
+     elif [ $# -eq 2 ]; then
+       verify_docker_input "$@"
+@@ -286,7 +293,7 @@ function verify_create_input() {
+       create_pxe_img "docker" "${DOCKER_IMG}"
+     else
+       log_error_print "the number of parameters is incorrect, please check it."
+-      show_pxe_image_usage
++      show_vm_pxe_image_usage
+       exit 3
+     fi
+     ;;
+@@ -327,9 +334,8 @@ function kubeos_image_main() {
+   esac
+ }
+ 
++test_lock
+ trap clean_space EXIT
+ trap clean_img ERR
+ 
+-test_lock
+-kubeos_image_main "$@"
+-
++kubeos_image_main "$@"
+\ No newline at end of file
+-- 
+2.33.0.windows.2
+
