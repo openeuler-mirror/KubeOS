@@ -72,12 +72,12 @@ options:
 EOF
 }
 
-function show_vm_image_usage() {
+function show_vm_pxe_image_usage() {
   cat << EOF
 
-Usage : kbimg create vm-image -p iso-path -v os-version -b os-agent-dir -e os-password
+Usage : kbimg create [vm-image|pxe-image] -p iso-path -v os-version -b os-agent-dir -e os-password
       or
-        kbimg create vm-image -d repository/name:tag
+        kbimg create [vm-image|pxe-image] -d repository/name:tag
 
 options:
     -p                       repo path
@@ -130,7 +130,7 @@ function clean_space() {
 function clean_img() {
   delete_file system.img
   delete_file update.img
-  delete_dir boot
+  delete_file initramfs.img
   delete_file kubeos.tar
 }
 
@@ -170,6 +170,7 @@ function verify_upgrade_image_input() {
           ;;
        *)
          log_error_print "option $opt not found"
+         show_upgrade_image_usage
          exit 3
          ;;
       esac
@@ -183,6 +184,7 @@ function verify_repo_input() {
     echo "$@" | grep -q "\-$i "
     if [ "$?" -ne 0 ];then
           log_error_print "option -$i is mandatory, please check input"
+          show_vm_pxe_image_usage
           exit 3
     fi
   done
@@ -208,6 +210,7 @@ function verify_repo_input() {
             ;;
           *)
             log_error_print "option $opt not found"
+            show_vm_pxe_image_usage
             exit 3
            ;;
         esac
@@ -215,7 +218,8 @@ function verify_repo_input() {
 }
 function verify_docker_input() {
   if [ $1 != "-d" ]; then
-    log_error_print "option $opt not found"
+    log_error_print "option $1 not found"
+    show_vm_pxe_image_usage
     exit 3
   fi
   check_param $2
@@ -242,13 +246,14 @@ function verify_create_input() {
     check_disk_space "docker"
     verify_upgrade_image_input "$@"
     check_repo_path "${REPO}"
+    check_binary_exist "${AGENT_PATH}"
     create_docker_image "${REPO}" "${VERSION}" "${AGENT_PATH}" "${PASSWD}" "${DOCKER_IMG}"
     ;;
   "vm-image")
     shift
      if [ $# -eq 1 ]; then
       if [ "$1" == "-h" ] || [ "$1" == "--help" ]; then
-        show_vm_image_usage
+        show_vm_pxe_image_usage
         exit 0
       fi
     fi
@@ -256,6 +261,7 @@ function verify_create_input() {
     if [ $# -eq 8 ]; then
       verify_repo_input "$@"
       check_repo_path "${REPO}"
+      check_binary_exist "${AGENT_PATH}"
       create_vm_img "repo" "${REPO}" "${VERSION}" "${AGENT_PATH}" "${PASSWD}"
     elif [ $# -eq 2 ]; then
       verify_docker_input "$@"
@@ -263,7 +269,7 @@ function verify_create_input() {
       create_vm_img "docker" "${DOCKER_IMG}"
     else
       log_error_print "the number of parameters is incorrect, please check it."
-      show_vm_image_usage
+      show_vm_pxe_image_usage
       exit 3
     fi
     ;;
@@ -271,7 +277,7 @@ function verify_create_input() {
     shift
      if [ $# -eq 1 ]; then
       if [ "$1" == "-h" ] || [ "$1" == "--help" ]; then
-        show_pxe_image_usage
+        show_vm_pxe_image_usage
         exit 0
       fi
     fi
@@ -279,6 +285,7 @@ function verify_create_input() {
     if [ $# -eq 8 ]; then
       verify_repo_input "$@"
       check_repo_path "${REPO}"
+      check_binary_exist "${AGENT_PATH}"
       create_pxe_img "repo" "${REPO}" "${VERSION}" "${AGENT_PATH}" "${PASSWD}"
     elif [ $# -eq 2 ]; then
       verify_docker_input "$@"
@@ -286,7 +293,7 @@ function verify_create_input() {
       create_pxe_img "docker" "${DOCKER_IMG}"
     else
       log_error_print "the number of parameters is incorrect, please check it."
-      show_pxe_image_usage
+      show_vm_pxe_image_usage
       exit 3
     fi
     ;;
@@ -327,9 +334,8 @@ function kubeos_image_main() {
   esac
 }
 
+test_lock
 trap clean_space EXIT
 trap clean_img ERR
 
-test_lock
 kubeos_image_main "$@"
-
