@@ -23,14 +23,13 @@ type OSSpec struct {
 	MaxUnavailable int    `json:"maxunavailable"`
 	CheckSum       string `json:"checksum"`
 	FlagSafe       bool   `json:"flagSafe"`
-	// +kubebuilder:default=true
-	MTLS        bool   `json:"mtls"`
-	ImageType   string `json:"imagetype"`
-	DockerImage string `json:"dockerimage"`
-	OpsType     string `json:"opstype"`
-	CaCert      string `json:"cacert"`
-	ClientCert  string `json:"clientcert"`
-	ClientKey   string `json:"clientkey"`
+	MTLS           bool   `json:"mtls"`
+	ImageType      string `json:"imagetype"`
+	DockerImage    string `json:"dockerimage"`
+	OpsType        string `json:"opstype"`
+	CaCert         string `json:"cacert"`
+	ClientCert     string `json:"clientcert"`
+	ClientKey      string `json:"clientkey"`
 }
 
 // +kubebuilder:subresource:status

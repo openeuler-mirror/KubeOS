@@ -51,7 +51,6 @@ spec:
               maxunavailable:
                 type: integer
               mtls:
-                default: true
                 type: boolean
               opstype:
                 type: string

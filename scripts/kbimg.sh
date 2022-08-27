@@ -24,6 +24,7 @@ source common/log.sh &>/dev/null
 source common/utils.sh &>/dev/null
 source create/rootfsCreate.sh &>/dev/null
 source create/imageCreate.sh &>/dev/null
+source 00bootup/Global.cfg &>/dev/null
 
 function show_options() {
    cat << EOF
@@ -78,23 +79,6 @@ function show_vm_pxe_image_usage() {
 Usage : kbimg create [vm-image|pxe-image] -p iso-path -v os-version -b os-agent-dir -e os-password
       or
         kbimg create [vm-image|pxe-image] -d repository/name:tag
-
-options:
-    -p                       repo path
-    -v                       KubeOS version
-    -b                       directory of os-agent binary
-    -e                       os encrypted password
-    -d                       docker image like repository/name:tag
-    -h,--help                show help information
-EOF
-}
-
-function show_pxe_image_usage() {
-  cat << EOF
-
-Usage : kbimg create pxe-image -p iso-path -v os-version -b os-agent-dir -e os-password
-      or
-        kbimg create pxe-image -d repository/name:tag
 
 options:
     -p                       repo path
@@ -282,6 +266,7 @@ function verify_create_input() {
       fi
     fi
     check_disk_space "pxe"
+    check_conf_valid ${rootfs_name} ${disk} ${server_ip} ${local_ip} ${route_ip} ${netmask} ${net_name}
     if [ $# -eq 8 ]; then
       verify_repo_input "$@"
       check_repo_path "${REPO}"

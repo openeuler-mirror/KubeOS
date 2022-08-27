@@ -1,3 +1,3 @@
 FROM scratch
-ADD os.tar /
+COPY os.tar /
 CMD ["/bin/sh"]
