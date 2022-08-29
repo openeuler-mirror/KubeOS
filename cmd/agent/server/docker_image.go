@@ -54,7 +54,7 @@ func pullOSImage(req *pb.UpdateRequest) (string, error) {
 		return "", err
 	}
 	defer cli.ContainerRemove(ctx, info.ID, types.ContainerRemoveOptions{})
-	tarStream, stat, err := cli.CopyFromContainer(ctx, info.ID, "/")
+	tarStream, stat, err := cli.CopyFromContainer(ctx, info.ID, "/os.tar")
 	if err != nil {
 		return "", err
 	}
@@ -71,6 +71,15 @@ func pullOSImage(req *pb.UpdateRequest) (string, error) {
 		return "", fmt.Errorf("space is not enough for downloaing")
 	}
 
+	srcInfo := archive.CopyInfo{
+		Path:   "/",
+		Exists: true,
+		IsDir:  stat.Mode.IsDir(),
+	}
+	if err = archive.CopyTo(tarStream, srcInfo, PersistDir); err != nil {
+		return "", err
+	}
+
 	tmpMountPath := filepath.Join(PersistDir, "/kubeos-update")
 	if err = os.Mkdir(tmpMountPath, imgPermission); err != nil {
 		return "", err
@@ -80,25 +89,23 @@ func pullOSImage(req *pb.UpdateRequest) (string, error) {
 	if err = runCommand("dd", "if=/dev/zero", "of="+imagePath, "bs=2M", "count=1024"); err != nil {
 		return "", err
 	}
-	if err = runCommand("mkfs.ext4", imagePath); err != nil {
+	_, next, err := getNextPart(partA, partB)
+	if err = runCommand("mkfs.ext4", "-L", "ROOT-"+next, imagePath); err != nil {
 		return "", err
 	}
 	if err = runCommand("mount", "-o", "loop", imagePath, tmpMountPath); err != nil {
 		return "", err
 	}
 	defer func() {
-		runCommand("losetup", "-D")
 		syscall.Unmount(tmpMountPath, 0)
-
+		runCommand("losetup", "-D")
 	}()
-	srcInfo := archive.CopyInfo{
-		Path:   "/",
-		Exists: true,
-		IsDir:  stat.Mode.IsDir(),
-	}
+
 	logrus.Infoln("downloading to file " + imagePath)
-	if err = archive.CopyTo(tarStream, srcInfo, tmpMountPath); err != nil {
+	tmpTarPath := filepath.Join(PersistDir, "/os.tar")
+	if err = runCommand("tar", "-xvf", tmpTarPath, "-C", tmpMountPath); err != nil {
 		return "", err
 	}
+	defer os.Remove(tmpTarPath)
 	return imagePath, nil
 }

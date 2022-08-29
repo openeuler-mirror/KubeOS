@@ -62,13 +62,12 @@ function create_pxe_img() {
   case $opt in
   "repo")
     create_os_tar_from_repo "$@"
-    tar -xvf os.tar  ./initramfs.img
     ;;
   "docker")
     create_os_tar_from_docker "$@"
-    tar -xvf os.tar  initramfs.img
     ;;
   esac
+  tar -xvf os.tar  ./initramfs.img
   mv os.tar kubeos.tar
 }
 function create_docker_image() {

@@ -87,19 +87,53 @@ function delete_file() {
         return 0
 }
 
-function check_binary_exist() {
-        if [ ! -f "$1" ];then
-                log_error_print "binary path is invalid."
+function check_file_valid() {
+        local file="$1"
+        local mesg="$2"
+        if [ ! -e "${file}" ]; then
+                log_error_print "${mesg} is not exist."
+		exit 3
+        fi
+        if [ ! -f "${file}" ];then
+                log_error_print "${mesg} is not a file."
                 exit 3
         fi
 }
 
-function check_repo_path() {
-        if [ ! -f "$1" ];then
-                log_error_print "REPO path is invalid."
+function check_conf_valid() {
+        local conf_path="${PWD}/00bootup/Global.cfg"
+        check_file_valid ${conf_path} "Globab.cfg"
+        if [ $# != 7 ];then
+                log_error_print "configure configured in Global.cfg is empty."
                 exit 3
         fi
+        for addr in ${server_ip} ${local_ip} ${route_ip} ${netmask}; do
+                check_ip_valid $addr
+        done
+}
 
+function check_ip_valid() {
+        local ipaddr="$1";
+        if [[ ! $ipaddr =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]] ; then
+                log_error_print "ip address configured in Global.cfg is not valid."
+                exit 3;
+        fi
+        for quad in $(echo "${ipaddr//./ }"); do
+                if [ $quad -ge 0 ] && [ $quad -le 255 ];then
+                        continue
+                fi
+                log_error_print "ip address configured in Global.cfg is not valid."
+                exit 3;
+        done
+
+}
+
+function check_binary_exist() {
+        check_file_valid "$1" "os-agent binary"
+}
+
+function check_repo_path() {
+        check_file_valid $1 "REPO file"
         if [ -d "${RPM_ROOT}" ]; then
                 log_error_print "there is a rootfs folder. please confirm if rootfs is being used, if not, please remove ${RPM_ROOT} first."
                 exit 5
@@ -117,7 +151,7 @@ function check_disk_space() {
           fi
           ;;
         vm)
-          local maxsize=$((5*1024*1024))
+          local maxsize=$((25*1024*1024))
           if [ "${disk_ava}" -lt "${maxsize}" ]; then
              log_error_print "The available disk space is not enough, at least 25GiB."
              exit 6

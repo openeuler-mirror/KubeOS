@@ -65,8 +65,6 @@ EOF
         cp set_in_chroot.sh "${RPM_ROOT}"
         ROOT_PWD="${PASSWD}" chroot "${RPM_ROOT}" bash /set_in_chroot.sh
         rm "${RPM_ROOT}/set_in_chroot.sh"
-
-        #todo:chroot create initramfs.img to include install-scripts for PXE install
 }
 
 function create_os_tar_from_repo() {
@@ -80,9 +78,9 @@ function create_os_tar_from_repo() {
         tar -C "$RPM_ROOT" -cf ./os.tar .
 }
 function create_os_tar_from_docker() {
-  local DOCKER_IMG=$1
-  container_id=$(docker create ${DOCKER_IMG})
-  echo "$container_id"
-  docker export $container_id > os.tar
-  docker rm $container_id
+        local DOCKER_IMG=$1
+        container_id=$(docker create ${DOCKER_IMG})
+        echo "$container_id"
+        docker cp $container_id:/os.tar ./
+        docker rm $container_id
 }
