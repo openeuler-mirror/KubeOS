@@ -15,6 +15,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"os"
@@ -47,9 +48,18 @@ func pullOSImage(req *pb.UpdateRequest) (string, error) {
 		return "", err
 	}
 
+	containerName := "kubeos-temp"
+	containers, err := cli.ContainerList(ctx, types.ContainerListOptions{All: true})
+	for _, container := range containers {
+		if container.Names[0] == "/"+containerName {
+			if err = cli.ContainerRemove(ctx, container.ID, types.ContainerRemoveOptions{}); err != nil {
+				return "", err
+			}
+		}
+	}
 	info, err := cli.ContainerCreate(ctx, &container.Config{
 		Image: imageName,
-	}, nil, nil, "kubeos-temp")
+	}, nil, nil, containerName)
 	if err != nil {
 		return "", err
 	}
@@ -71,22 +81,31 @@ func pullOSImage(req *pb.UpdateRequest) (string, error) {
 		return "", fmt.Errorf("space is not enough for downloaing")
 	}
 
+	tmpUpdatePath := filepath.Join(PersistDir, "/KubeOS-Update")
+	tmpMountPath := filepath.Join(tmpUpdatePath, "/kubeos-update")
+	tmpTarPath := filepath.Join(tmpUpdatePath, "/os.tar")
+	imagePath := filepath.Join(PersistDir, "/update.img")
+
+	if err = cleanSpace(tmpUpdatePath, tmpMountPath, imagePath); err != nil {
+		return "", err
+	}
+	if err = os.MkdirAll(tmpMountPath, imgPermission); err != nil {
+		return "", err
+	}
+	defer os.RemoveAll(tmpUpdatePath)
+
 	srcInfo := archive.CopyInfo{
 		Path:   "/",
 		Exists: true,
 		IsDir:  stat.Mode.IsDir(),
 	}
-	if err = archive.CopyTo(tarStream, srcInfo, PersistDir); err != nil {
+	if err = archive.CopyTo(tarStream, srcInfo, tmpUpdatePath); err != nil {
 		return "", err
 	}
-
-	tmpMountPath := filepath.Join(PersistDir, "/kubeos-update")
-	if err = os.Mkdir(tmpMountPath, imgPermission); err != nil {
-		return "", err
-	}
-	defer os.Remove(tmpMountPath)
-	imagePath := filepath.Join(PersistDir, "/update.img")
 	if err = runCommand("dd", "if=/dev/zero", "of="+imagePath, "bs=2M", "count=1024"); err != nil {
+		return "", err
+	}
+	if err = os.Chmod(imagePath, imgPermission); err != nil {
 		return "", err
 	}
 	_, next, err := getNextPart(partA, partB)
@@ -102,10 +121,62 @@ func pullOSImage(req *pb.UpdateRequest) (string, error) {
 	}()
 
 	logrus.Infoln("downloading to file " + imagePath)
-	tmpTarPath := filepath.Join(PersistDir, "/os.tar")
 	if err = runCommand("tar", "-xvf", tmpTarPath, "-C", tmpMountPath); err != nil {
 		return "", err
 	}
-	defer os.Remove(tmpTarPath)
 	return imagePath, nil
+}
+
+func cleanSpace(updatePath, mountPath, imagePath string) error {
+	isFileExist, err := checkFileExist(mountPath)
+	if err != nil {
+		return err
+	}
+	if isFileExist {
+		var st syscall.Stat_t
+		if err := syscall.Lstat(mountPath, &st); err != nil {
+			return err
+		}
+		dev := st.Dev
+		parent := filepath.Dir(mountPath)
+		if err := syscall.Lstat(parent, &st); err != nil {
+			return err
+		}
+		if dev != st.Dev {
+			if err := syscall.Unmount(mountPath, 0); err != nil {
+				return err
+			}
+		}
+	}
+
+	if err = deleteFile(updatePath); err != nil {
+		return err
+	}
+
+	if err = deleteFile(imagePath); err != nil {
+		return err
+	}
+	return nil
+}
+
+func deleteFile(path string) error {
+	isFileExist, err := checkFileExist(path)
+	if err != nil {
+		return err
+	}
+	if isFileExist {
+		if err = os.RemoveAll(path); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+func checkFileExist(path string) (bool, error) {
+	if _, err := os.Stat(path); err == nil {
+		return true, nil
+	} else if errors.Is(err, os.ErrNotExist) {
+		return false, nil
+	} else {
+		return false, err
+	}
 }
