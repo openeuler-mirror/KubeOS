@@ -1,0 +1,254 @@
+From a1bf179490d33c25dd49fe6c363eec5e0e8fe532 Mon Sep 17 00:00:00 2001
+From: liyuanr <liyuanrong1@huawei.com>
+Date: Sat, 3 Sep 2022 14:21:54 +0800
+Subject: [PATCH] KubeOS:add the configuration of /etc/resolv.conf and change
+ the VM disk to gpt.
+
+Add the user-defined /etc/resolv.conf file and change the VM disk to gpt
+to be the same as that on the physical machine.
+
+Signed-off-by: liyuanr <liyuanrong1@huawei.com>
+---
+ cmd/agent/server/docker_image.go |  3 +-
+ scripts/00bootup/mount.sh        | 50 ++++++++++++++++++--------------
+ scripts/bootloader.sh            |  4 +--
+ scripts/create/imageCreate.sh    | 12 ++++----
+ scripts/create/rootfsCreate.sh   |  4 +++
+ scripts/grub.cfg                 |  8 ++---
+ 6 files changed, 45 insertions(+), 36 deletions(-)
+
+diff --git a/cmd/agent/server/docker_image.go b/cmd/agent/server/docker_image.go
+index 4f9edc1..735ace0 100644
+--- a/cmd/agent/server/docker_image.go
++++ b/cmd/agent/server/docker_image.go
+@@ -108,8 +108,7 @@ func pullOSImage(req *pb.UpdateRequest) (string, error) {
+ 	if err = os.Chmod(imagePath, imgPermission); err != nil {
+ 		return "", err
+ 	}
+-	_, next, err := getNextPart(partA, partB)
+-	if err = runCommand("mkfs.ext4", "-L", "ROOT-"+next, imagePath); err != nil {
++	if err = runCommand("mkfs.ext4", "-L", "ROOT-A", imagePath); err != nil {
+ 		return "", err
+ 	}
+ 	if err = runCommand("mount", "-o", "loop", imagePath, tmpMountPath); err != nil {
+diff --git a/scripts/00bootup/mount.sh b/scripts/00bootup/mount.sh
+index 1bc83ff..7f00fd6 100644
+--- a/scripts/00bootup/mount.sh
++++ b/scripts/00bootup/mount.sh
+@@ -23,6 +23,14 @@ function CheckSpace() {
+     return 0
+ }
+ 
++function mount_proc_dev_sys() {
++        local tmp_root=$1
++        mount -t proc none "${tmp_root}/proc"
++        mount --bind /dev "${tmp_root}/dev"
++        mount --bind /dev/pts "${tmp_root}/dev/pts"
++        mount -t sysfs none "${tmp_root}/sys"
++}
++
+ function GetDisk() {
+     disks=(`hwinfo --disk --short 2>&1 | grep -vi "^disk" | awk '{print $1}'`)
+     if [ ${#disks[*]} -gt 0 ]; then
+@@ -162,14 +170,13 @@ function MountRoot() {
+ 
+ function MountPersist() {
+     echo "Mounting persist"
+-    mkdir /persist
+-    mount ${disk}4 /persist >> ${log} 2>&1
++    mount ${disk}4 /sysroot/persist >> ${log} 2>&1
+     if [ $? -ne 0 ]; then
+         echo "mount persist failed" | tee -a ${log}
+         return 1
+     fi
+-    mkdir /persist/{var,etc,etcwork}
+-    mkdir -p /persist/etc/KubeOS/certs
++    mkdir /sysroot/persist/{var,etc,etcwork}
++    mkdir -p /sysroot/persist/etc/KubeOS/certs
+     return 0
+ }
+ 
+@@ -187,20 +194,20 @@ function MountBoot() {
+ function GetRootfs() {
+     echo "Downloading rootfs..."
+ 
+-    curl -o /persist/${rootfs_name} http://${server_ip}/${rootfs_name}
+-    if [ ! -e "/persist/${rootfs_name}" ]; then
++    curl -o /${rootfs_name} http://${server_ip}/${rootfs_name}
++    if [ ! -e "/${rootfs_name}" ]; then
+         echo "download rootfs failed" | tee -a ${log}
+         return 1
+     fi
+ 
+-    tar -xvf /persist/${rootfs_name} -C /sysroot
++    tar -xf /${rootfs_name} -C /sysroot
+     if [ $? -ne 0 ]; then
+         echo "decompose rootfs failed" | tee -a ${log}
+         return 1
+     fi
+ 
+-    rm -rf /persist/${rootfs_name}
+-
++    rm -rf /${rootfs_name}
++    mount -o remount,ro ${disk}2 /sysroot  >> ${log} 2>&1
+     return 0
+ }
+ 
+@@ -283,6 +290,8 @@ function Bootup_Main() {
+     fi
+ 
+     # mount partitions
++    
++    # mount boot
+     echo "Mounting root..." | tee -a ${log}
+     MountRoot
+     if [ $? -ne 0 ]; then
+@@ -290,15 +299,6 @@ function Bootup_Main() {
+         return 1
+     fi
+ 
+-    # mount persist
+-    echo "Mounting persisst..." | tee -a ${log}
+-    MountPersist
+-    if [ $? -ne 0 ]; then
+-        echo "Mounting persist failed" | tee -a ${log}
+-        return 1
+-    fi
+-
+-    # mount boot
+     echo "Mounting boot..." | tee -a ${log}
+     MountBoot
+     if [ $? -ne 0 ]; then
+@@ -313,7 +313,7 @@ function Bootup_Main() {
+         echo "Downloading rootfs failed" | tee -a ${log}
+         return 1
+     fi
+-
++    mount_proc_dev_sys /sysroot
+     # set boot
+     echo "Setting boot..." | tee -a ${log}
+     SetBoot
+@@ -321,7 +321,13 @@ function Bootup_Main() {
+         echo "Setting boot failed" | tee -a ${log}
+         return 1
+     fi
+-
++    # mount persist
++    echo "Mounting persist..." | tee -a ${log}
++    MountPersist
++    if [ $? -ne 0 ]; then
++        echo "Mounting persist failed" | tee -a ${log}
++        return 1
++    fi
+     return 0
+ }
+ 
+@@ -329,7 +335,7 @@ Bootup_Main
+ ret=$?
+ if [ ${ret} -eq 0 ]; then
+     echo "kubeOS install success! switch to root" | tee -a ${log}
+-    cp ${log} /persist
++    cp ${log} /sysroot/persist
+ else
+     echo "kubeOS install failed, see install.log" | tee -a ${log}
+-fi
+\ No newline at end of file
++fi
+diff --git a/scripts/bootloader.sh b/scripts/bootloader.sh
+index 0f906d4..5760f3d 100644
+--- a/scripts/bootloader.sh
++++ b/scripts/bootloader.sh
+@@ -16,7 +16,7 @@ function install_grub2_x86 ()
+ 
+     # make efi file, and save in FAT16 partition, to support UEFI boot mode
+     cp -r /usr/lib/grub/x86_64-efi boot/efi/EFI/openEuler
+-    eval "grub2-mkimage -d /usr/lib/grub/x86_64-efi -O x86_64-efi --output=/boot/efi/EFI/openEuler/grubx64.efi '--prefix=(,msdos1)/EFI/openEuler' fat part_gpt part_msdos linux"
++    eval "grub2-mkimage -d /usr/lib/grub/x86_64-efi -O x86_64-efi --output=/boot/efi/EFI/openEuler/grubx64.efi '--prefix=(,gpt1)/EFI/openEuler' fat part_gpt part_msdos linux"
+ 
+     mkdir -p /boot/EFI/BOOT/
+     cp -f /boot/efi/EFI/openEuler/grubx64.efi /boot/efi/EFI/BOOT/BOOTX64.EFI
+@@ -25,7 +25,7 @@ function install_grub2_x86 ()
+ function install_grub2_efi ()
+ {
+     cp -r /usr/lib/grub/arm64-efi /boot/efi/EFI/openEuler/
+-    eval "grub2-mkimage -d /usr/lib/grub/arm64-efi -O arm64-efi --output=/boot/efi/EFI/openEuler/grubaa64.efi '--prefix=(,msdos1)/EFI/openEuler' fat part_gpt part_msdos linux"
++    eval "grub2-mkimage -d /usr/lib/grub/arm64-efi -O arm64-efi --output=/boot/efi/EFI/openEuler/grubaa64.efi '--prefix=(,gpt1)/EFI/openEuler' fat part_gpt part_msdos linux"
+ 
+     mkdir -p /boot/EFI/BOOT/
+     cp -f /boot/efi/EFI/openEuler/grubaa64.efi /boot/efi/EFI/BOOT/BOOTAA64.EFI
+diff --git a/scripts/create/imageCreate.sh b/scripts/create/imageCreate.sh
+index 9689f62..e615d5f 100644
+--- a/scripts/create/imageCreate.sh
++++ b/scripts/create/imageCreate.sh
+@@ -16,12 +16,12 @@ PWD="$(pwd)"
+ function create_img() {
+   rm -f system.img update.img
+   qemu-img create system.img ${IMG_SIZE}G
+-  parted system.img -- mklabel msdos
+-  parted system.img -- mkpart primary fat16 1MiB 60MiB
+-  parted system.img -- mkpart primary ext4 60MiB 2160MiB
+-  parted system.img -- mkpart primary ext4 2160MiB 4260MiB
+-  parted system.img -- mkpart primary ext4 4260MiB 100%
+-
++  parted system.img -s mklabel gpt
++  parted system.img -s mkpart primary fat32 1MiB 60MiB
++  parted system.img -s mkpart primary ext4 60MiB 2160MiB
++  parted system.img -s mkpart primary ext4 2160MiB 4260MiB
++  parted system.img -s mkpart primary ext4 4260MiB 100%
++  parted system.img -s set 1 boot on
+   local device=$(losetup -f)
+   losetup "${device}" system.img
+ 
+diff --git a/scripts/create/rootfsCreate.sh b/scripts/create/rootfsCreate.sh
+index 4c02c35..29f2762 100644
+--- a/scripts/create/rootfsCreate.sh
++++ b/scripts/create/rootfsCreate.sh
+@@ -46,6 +46,7 @@ function install_misc() {
+         local VERSION=$1
+         local AGENT_PATH=$2
+         local PASSWD=$3
++        local DNS_CONF="${PWD}/resolv.conf"
+         cp ../files/*mount ../files/os-agent.service "${RPM_ROOT}/usr/lib/systemd/system/"
+         cp ../files/os-release "${RPM_ROOT}/usr/lib/"
+         cp "${AGENT_PATH}" "${RPM_ROOT}/usr/bin"
+@@ -65,6 +66,9 @@ EOF
+         cp set_in_chroot.sh "${RPM_ROOT}"
+         ROOT_PWD="${PASSWD}" chroot "${RPM_ROOT}" bash /set_in_chroot.sh
+         rm "${RPM_ROOT}/set_in_chroot.sh"
++        if [  -e "${DNS_CONF}" ]; then
++                cp "${DNS_CONF}" "${RPM_ROOT}/etc/resolv.conf"
++        fi
+ }
+ 
+ function create_os_tar_from_repo() {
+diff --git a/scripts/grub.cfg b/scripts/grub.cfg
+index c1a2641..984b161 100644
+--- a/scripts/grub.cfg
++++ b/scripts/grub.cfg
+@@ -88,9 +88,9 @@ menuentry 'A' --class KubeOS --class gnu-linux --class gnu --class os --unrestri
+         load_video
+         set gfxpayload=keep
+         insmod gzio
+-        insmod part_msdos
++        insmod part_gpt
+         insmod ext2
+-        set root='hd0,msdos2'
++        set root='hd0,gpt2'
+         linux   /boot/vmlinuz root=/dev/sda2 ro rootfstype=ext4 nomodeset quiet oops=panic softlockup_panic=1 nmi_watchdog=1 rd.shell=0 selinux=0 crashkernel=256M panic=3
+         initrd  /boot/initramfs.img
+ }
+@@ -99,9 +99,9 @@ menuentry 'B' --class KubeOS --class gnu-linux --class gnu --class os --unrestri
+         load_video
+         set gfxpayload=keep
+         insmod gzio
+-        insmod part_msdos
++        insmod part_gpt
+         insmod ext2
+-        set root='hd0,msdos3'
++        set root='hd0,gpt3'
+         linux   /boot/vmlinuz root=/dev/sda3 ro rootfstype=ext4 nomodeset quiet oops=panic softlockup_panic=1 nmi_watchdog=1 rd.shell=0 selinux=0 crashkernel=256M panic=3
+         initrd  /boot/initramfs.img
+ }
+-- 
+2.33.0.windows.2
+
