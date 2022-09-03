@@ -46,6 +46,7 @@ function install_misc() {
         local VERSION=$1
         local AGENT_PATH=$2
         local PASSWD=$3
+        local DNS_CONF="${PWD}/resolv.conf"
         cp ../files/*mount ../files/os-agent.service "${RPM_ROOT}/usr/lib/systemd/system/"
         cp ../files/os-release "${RPM_ROOT}/usr/lib/"
         cp "${AGENT_PATH}" "${RPM_ROOT}/usr/bin"
@@ -65,6 +66,9 @@ EOF
         cp set_in_chroot.sh "${RPM_ROOT}"
         ROOT_PWD="${PASSWD}" chroot "${RPM_ROOT}" bash /set_in_chroot.sh
         rm "${RPM_ROOT}/set_in_chroot.sh"
+        if [  -e "${DNS_CONF}" ]; then
+                cp "${DNS_CONF}" "${RPM_ROOT}/etc/resolv.conf"
+        fi
 }
 
 function create_os_tar_from_repo() {
