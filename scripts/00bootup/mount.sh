@@ -23,6 +23,14 @@ function CheckSpace() {
     return 0
 }
 
+function mount_proc_dev_sys() {
+        local tmp_root=$1
+        mount -t proc none "${tmp_root}/proc"
+        mount --bind /dev "${tmp_root}/dev"
+        mount --bind /dev/pts "${tmp_root}/dev/pts"
+        mount -t sysfs none "${tmp_root}/sys"
+}
+
 function GetDisk() {
     disks=(`hwinfo --disk --short 2>&1 | grep -vi "^disk" | awk '{print $1}'`)
     if [ ${#disks[*]} -gt 0 ]; then
@@ -162,14 +170,13 @@ function MountRoot() {
 
 function MountPersist() {
     echo "Mounting persist"
-    mkdir /persist
-    mount ${disk}4 /persist >> ${log} 2>&1
+    mount ${disk}4 /sysroot/persist >> ${log} 2>&1
     if [ $? -ne 0 ]; then
         echo "mount persist failed" | tee -a ${log}
         return 1
     fi
-    mkdir /persist/{var,etc,etcwork}
-    mkdir -p /persist/etc/KubeOS/certs
+    mkdir /sysroot/persist/{var,etc,etcwork}
+    mkdir -p /sysroot/persist/etc/KubeOS/certs
     return 0
 }
 
@@ -187,20 +194,20 @@ function MountBoot() {
 function GetRootfs() {
     echo "Downloading rootfs..."
 
-    curl -o /persist/${rootfs_name} http://${server_ip}/${rootfs_name}
-    if [ ! -e "/persist/${rootfs_name}" ]; then
+    curl -o /${rootfs_name} http://${server_ip}/${rootfs_name}
+    if [ ! -e "/${rootfs_name}" ]; then
         echo "download rootfs failed" | tee -a ${log}
         return 1
     fi
 
-    tar -xvf /persist/${rootfs_name} -C /sysroot
+    tar -xf /${rootfs_name} -C /sysroot
     if [ $? -ne 0 ]; then
         echo "decompose rootfs failed" | tee -a ${log}
         return 1
     fi
 
-    rm -rf /persist/${rootfs_name}
-
+    rm -rf /${rootfs_name}
+    mount -o remount,ro ${disk}2 /sysroot  >> ${log} 2>&1
     return 0
 }
 
@@ -283,6 +290,8 @@ function Bootup_Main() {
     fi
 
     # mount partitions
+    
+    # mount boot
     echo "Mounting root..." | tee -a ${log}
     MountRoot
     if [ $? -ne 0 ]; then
@@ -290,15 +299,6 @@ function Bootup_Main() {
         return 1
     fi
 
-    # mount persist
-    echo "Mounting persisst..." | tee -a ${log}
-    MountPersist
-    if [ $? -ne 0 ]; then
-        echo "Mounting persist failed" | tee -a ${log}
-        return 1
-    fi
-
-    # mount boot
     echo "Mounting boot..." | tee -a ${log}
     MountBoot
     if [ $? -ne 0 ]; then
@@ -313,7 +313,7 @@ function Bootup_Main() {
         echo "Downloading rootfs failed" | tee -a ${log}
         return 1
     fi
-
+    mount_proc_dev_sys /sysroot
     # set boot
     echo "Setting boot..." | tee -a ${log}
     SetBoot
@@ -321,7 +321,13 @@ function Bootup_Main() {
         echo "Setting boot failed" | tee -a ${log}
         return 1
     fi
-
+    # mount persist
+    echo "Mounting persist..." | tee -a ${log}
+    MountPersist
+    if [ $? -ne 0 ]; then
+        echo "Mounting persist failed" | tee -a ${log}
+        return 1
+    fi
     return 0
 }
 
@@ -329,7 +335,7 @@ Bootup_Main
 ret=$?
 if [ ${ret} -eq 0 ]; then
     echo "kubeOS install success! switch to root" | tee -a ${log}
-    cp ${log} /persist
+    cp ${log} /sysroot/persist
 else
     echo "kubeOS install failed, see install.log" | tee -a ${log}
 fi

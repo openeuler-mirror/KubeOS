@@ -16,12 +16,12 @@ PWD="$(pwd)"
 function create_img() {
   rm -f system.img update.img
   qemu-img create system.img ${IMG_SIZE}G
-  parted system.img -- mklabel msdos
-  parted system.img -- mkpart primary fat16 1MiB 60MiB
-  parted system.img -- mkpart primary ext4 60MiB 2160MiB
-  parted system.img -- mkpart primary ext4 2160MiB 4260MiB
-  parted system.img -- mkpart primary ext4 4260MiB 100%
-
+  parted system.img -s mklabel gpt
+  parted system.img -s mkpart primary fat32 1MiB 60MiB
+  parted system.img -s mkpart primary ext4 60MiB 2160MiB
+  parted system.img -s mkpart primary ext4 2160MiB 4260MiB
+  parted system.img -s mkpart primary ext4 4260MiB 100%
+  parted system.img -s set 1 boot on
   local device=$(losetup -f)
   losetup "${device}" system.img
 

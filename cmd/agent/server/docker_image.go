@@ -108,8 +108,7 @@ func pullOSImage(req *pb.UpdateRequest) (string, error) {
 	if err = os.Chmod(imagePath, imgPermission); err != nil {
 		return "", err
 	}
-	_, next, err := getNextPart(partA, partB)
-	if err = runCommand("mkfs.ext4", "-L", "ROOT-"+next, imagePath); err != nil {
+	if err = runCommand("mkfs.ext4", "-L", "ROOT-A", imagePath); err != nil {
 		return "", err
 	}
 	if err = runCommand("mount", "-o", "loop", imagePath, tmpMountPath); err != nil {
