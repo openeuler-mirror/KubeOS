@@ -1,0 +1,2629 @@
+diff --git a/vendor/github.com/prometheus/procfs/Makefile.common b/vendor/github.com/prometheus/procfs/Makefile.common
+index 9320176..3ac29c6 100644
+--- a/vendor/github.com/prometheus/procfs/Makefile.common
++++ b/vendor/github.com/prometheus/procfs/Makefile.common
+@@ -78,7 +78,7 @@ ifneq ($(shell which gotestsum),)
+ endif
+ endif
+ 
+-PROMU_VERSION ?= 0.5.0
++PROMU_VERSION ?= 0.7.0
+ PROMU_URL     := https://github.com/prometheus/promu/releases/download/v$(PROMU_VERSION)/promu-$(PROMU_VERSION).$(GO_BUILD_PLATFORM).tar.gz
+ 
+ GOLANGCI_LINT :=
+@@ -245,10 +245,12 @@ common-docker-publish: $(PUBLISH_DOCKER_ARCHS)
+ $(PUBLISH_DOCKER_ARCHS): common-docker-publish-%:
+ 	docker push "$(DOCKER_REPO)/$(DOCKER_IMAGE_NAME)-linux-$*:$(DOCKER_IMAGE_TAG)"
+ 
++DOCKER_MAJOR_VERSION_TAG = $(firstword $(subst ., ,$(shell cat VERSION)))
+ .PHONY: common-docker-tag-latest $(TAG_DOCKER_ARCHS)
+ common-docker-tag-latest: $(TAG_DOCKER_ARCHS)
+ $(TAG_DOCKER_ARCHS): common-docker-tag-latest-%:
+ 	docker tag "$(DOCKER_REPO)/$(DOCKER_IMAGE_NAME)-linux-$*:$(DOCKER_IMAGE_TAG)" "$(DOCKER_REPO)/$(DOCKER_IMAGE_NAME)-linux-$*:latest"
++	docker tag "$(DOCKER_REPO)/$(DOCKER_IMAGE_NAME)-linux-$*:$(DOCKER_IMAGE_TAG)" "$(DOCKER_REPO)/$(DOCKER_IMAGE_NAME)-linux-$*:v$(DOCKER_MAJOR_VERSION_TAG)"
+ 
+ .PHONY: common-docker-manifest
+ common-docker-manifest:
+diff --git a/vendor/github.com/prometheus/procfs/SECURITY.md b/vendor/github.com/prometheus/procfs/SECURITY.md
+new file mode 100644
+index 0000000..67741f0
+--- /dev/null
++++ b/vendor/github.com/prometheus/procfs/SECURITY.md
+@@ -0,0 +1,6 @@
++# Reporting a security issue
++
++The Prometheus security policy, including how to report vulnerabilities, can be
++found here:
++
++https://prometheus.io/docs/operating/security/
+diff --git a/vendor/github.com/prometheus/procfs/arp.go b/vendor/github.com/prometheus/procfs/arp.go
+index 916c918..4e47e61 100644
+--- a/vendor/github.com/prometheus/procfs/arp.go
++++ b/vendor/github.com/prometheus/procfs/arp.go
+@@ -36,7 +36,7 @@ type ARPEntry struct {
+ func (fs FS) GatherARPEntries() ([]ARPEntry, error) {
+ 	data, err := ioutil.ReadFile(fs.proc.Path("net/arp"))
+ 	if err != nil {
+-		return nil, fmt.Errorf("error reading arp %s: %s", fs.proc.Path("net/arp"), err)
++		return nil, fmt.Errorf("error reading arp %q: %w", fs.proc.Path("net/arp"), err)
+ 	}
+ 
+ 	return parseARPEntries(data)
+@@ -59,7 +59,7 @@ func parseARPEntries(data []byte) ([]ARPEntry, error) {
+ 		} else if width == expectedDataWidth {
+ 			entry, err := parseARPEntry(columns)
+ 			if err != nil {
+-				return []ARPEntry{}, fmt.Errorf("failed to parse ARP entry: %s", err)
++				return []ARPEntry{}, fmt.Errorf("failed to parse ARP entry: %w", err)
+ 			}
+ 			entries = append(entries, entry)
+ 		} else {
+diff --git a/vendor/github.com/prometheus/procfs/buddyinfo.go b/vendor/github.com/prometheus/procfs/buddyinfo.go
+index 10bd067..f5b7939 100644
+--- a/vendor/github.com/prometheus/procfs/buddyinfo.go
++++ b/vendor/github.com/prometheus/procfs/buddyinfo.go
+@@ -74,7 +74,7 @@ func parseBuddyInfo(r io.Reader) ([]BuddyInfo, error) {
+ 		for i := 0; i < arraySize; i++ {
+ 			sizes[i], err = strconv.ParseFloat(parts[i+4], 64)
+ 			if err != nil {
+-				return nil, fmt.Errorf("invalid value in buddyinfo: %s", err)
++				return nil, fmt.Errorf("invalid value in buddyinfo: %w", err)
+ 			}
+ 		}
+ 
+diff --git a/vendor/github.com/prometheus/procfs/cpuinfo.go b/vendor/github.com/prometheus/procfs/cpuinfo.go
+index b9fb589..5623b24 100644
+--- a/vendor/github.com/prometheus/procfs/cpuinfo.go
++++ b/vendor/github.com/prometheus/procfs/cpuinfo.go
+@@ -19,6 +19,7 @@ import (
+ 	"bufio"
+ 	"bytes"
+ 	"errors"
++	"fmt"
+ 	"regexp"
+ 	"strconv"
+ 	"strings"
+@@ -77,7 +78,7 @@ func parseCPUInfoX86(info []byte) ([]CPUInfo, error) {
+ 	// find the first "processor" line
+ 	firstLine := firstNonEmptyLine(scanner)
+ 	if !strings.HasPrefix(firstLine, "processor") || !strings.Contains(firstLine, ":") {
+-		return nil, errors.New("invalid cpuinfo file: " + firstLine)
++		return nil, fmt.Errorf("invalid cpuinfo file: %q", firstLine)
+ 	}
+ 	field := strings.SplitN(firstLine, ": ", 2)
+ 	v, err := strconv.ParseUint(field[1], 0, 32)
+@@ -192,7 +193,7 @@ func parseCPUInfoARM(info []byte) ([]CPUInfo, error) {
+ 	firstLine := firstNonEmptyLine(scanner)
+ 	match, _ := regexp.MatchString("^[Pp]rocessor", firstLine)
+ 	if !match || !strings.Contains(firstLine, ":") {
+-		return nil, errors.New("invalid cpuinfo file: " + firstLine)
++		return nil, fmt.Errorf("invalid cpuinfo file: %q", firstLine)
+ 	}
+ 	field := strings.SplitN(firstLine, ": ", 2)
+ 	cpuinfo := []CPUInfo{}
+@@ -256,7 +257,7 @@ func parseCPUInfoS390X(info []byte) ([]CPUInfo, error) {
+ 
+ 	firstLine := firstNonEmptyLine(scanner)
+ 	if !strings.HasPrefix(firstLine, "vendor_id") || !strings.Contains(firstLine, ":") {
+-		return nil, errors.New("invalid cpuinfo file: " + firstLine)
++		return nil, fmt.Errorf("invalid cpuinfo file: %q", firstLine)
+ 	}
+ 	field := strings.SplitN(firstLine, ": ", 2)
+ 	cpuinfo := []CPUInfo{}
+@@ -281,7 +282,7 @@ func parseCPUInfoS390X(info []byte) ([]CPUInfo, error) {
+ 		if strings.HasPrefix(line, "processor") {
+ 			match := cpuinfoS390XProcessorRegexp.FindStringSubmatch(line)
+ 			if len(match) < 2 {
+-				return nil, errors.New("Invalid line found in cpuinfo: " + line)
++				return nil, fmt.Errorf("invalid cpuinfo file: %q", firstLine)
+ 			}
+ 			cpu := commonCPUInfo
+ 			v, err := strconv.ParseUint(match[1], 0, 32)
+@@ -313,6 +314,22 @@ func parseCPUInfoS390X(info []byte) ([]CPUInfo, error) {
+ 				return nil, err
+ 			}
+ 			cpuinfo[i].CPUMHz = v
++		case "physical id":
++			cpuinfo[i].PhysicalID = field[1]
++		case "core id":
++			cpuinfo[i].CoreID = field[1]
++		case "cpu cores":
++			v, err := strconv.ParseUint(field[1], 0, 32)
++			if err != nil {
++				return nil, err
++			}
++			cpuinfo[i].CPUCores = uint(v)
++		case "siblings":
++			v, err := strconv.ParseUint(field[1], 0, 32)
++			if err != nil {
++				return nil, err
++			}
++			cpuinfo[i].Siblings = uint(v)
+ 		}
+ 	}
+ 
+@@ -325,7 +342,7 @@ func parseCPUInfoMips(info []byte) ([]CPUInfo, error) {
+ 	// find the first "processor" line
+ 	firstLine := firstNonEmptyLine(scanner)
+ 	if !strings.HasPrefix(firstLine, "system type") || !strings.Contains(firstLine, ":") {
+-		return nil, errors.New("invalid cpuinfo file: " + firstLine)
++		return nil, fmt.Errorf("invalid cpuinfo file: %q", firstLine)
+ 	}
+ 	field := strings.SplitN(firstLine, ": ", 2)
+ 	cpuinfo := []CPUInfo{}
+@@ -367,7 +384,7 @@ func parseCPUInfoPPC(info []byte) ([]CPUInfo, error) {
+ 
+ 	firstLine := firstNonEmptyLine(scanner)
+ 	if !strings.HasPrefix(firstLine, "processor") || !strings.Contains(firstLine, ":") {
+-		return nil, errors.New("invalid cpuinfo file: " + firstLine)
++		return nil, fmt.Errorf("invalid cpuinfo file: %q", firstLine)
+ 	}
+ 	field := strings.SplitN(firstLine, ": ", 2)
+ 	v, err := strconv.ParseUint(field[1], 0, 32)
+@@ -412,7 +429,7 @@ func parseCPUInfoRISCV(info []byte) ([]CPUInfo, error) {
+ 
+ 	firstLine := firstNonEmptyLine(scanner)
+ 	if !strings.HasPrefix(firstLine, "processor") || !strings.Contains(firstLine, ":") {
+-		return nil, errors.New("invalid cpuinfo file: " + firstLine)
++		return nil, fmt.Errorf("invalid cpuinfo file: %q", firstLine)
+ 	}
+ 	field := strings.SplitN(firstLine, ": ", 2)
+ 	v, err := strconv.ParseUint(field[1], 0, 32)
+diff --git a/vendor/github.com/prometheus/procfs/cpuinfo_riscvx.go b/vendor/github.com/prometheus/procfs/cpuinfo_riscvx.go
+new file mode 100644
+index 0000000..e83c2e2
+--- /dev/null
++++ b/vendor/github.com/prometheus/procfs/cpuinfo_riscvx.go
+@@ -0,0 +1,19 @@
++// Copyright 2020 The Prometheus Authors
++// Licensed under the Apache License, Version 2.0 (the "License");
++// you may not use this file except in compliance with the License.
++// You may obtain a copy of the License at
++//
++// http://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing, software
++// distributed under the License is distributed on an "AS IS" BASIS,
++// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++// See the License for the specific language governing permissions and
++// limitations under the License.
++
++// +build linux
++// +build riscv riscv64
++
++package procfs
++
++var parseCPUInfo = parseCPUInfoRISCV
+diff --git a/vendor/github.com/prometheus/procfs/crypto.go b/vendor/github.com/prometheus/procfs/crypto.go
+index a958933..5048ad1 100644
+--- a/vendor/github.com/prometheus/procfs/crypto.go
++++ b/vendor/github.com/prometheus/procfs/crypto.go
+@@ -55,12 +55,12 @@ func (fs FS) Crypto() ([]Crypto, error) {
+ 	path := fs.proc.Path("crypto")
+ 	b, err := util.ReadFileNoStat(path)
+ 	if err != nil {
+-		return nil, fmt.Errorf("error reading crypto %s: %s", path, err)
++		return nil, fmt.Errorf("error reading crypto %q: %w", path, err)
+ 	}
+ 
+ 	crypto, err := parseCrypto(bytes.NewReader(b))
+ 	if err != nil {
+-		return nil, fmt.Errorf("error parsing crypto %s: %s", path, err)
++		return nil, fmt.Errorf("error parsing crypto %q: %w", path, err)
+ 	}
+ 
+ 	return crypto, nil
+diff --git a/vendor/github.com/prometheus/procfs/fixtures.ttar b/vendor/github.com/prometheus/procfs/fixtures.ttar
+index 12494d7..1e76173 100644
+--- a/vendor/github.com/prometheus/procfs/fixtures.ttar
++++ b/vendor/github.com/prometheus/procfs/fixtures.ttar
+@@ -111,7 +111,7 @@ Max core file size        0                    unlimited            bytes
+ Max resident set          unlimited            unlimited            bytes
+ Max processes             62898                62898                processes
+ Max open files            2048                 4096                 files
+-Max locked memory         65536                65536                bytes
++Max locked memory         18446744073708503040 18446744073708503040 bytes
+ Max address space         8589934592           unlimited            bytes
+ Max file locks            unlimited            unlimited            locks
+ Max pending signals       62898                62898                signals
+@@ -1080,7 +1080,6 @@ internal     : yes
+ type         : skcipher
+ async        : yes
+ blocksize    : 1
+-min keysize  : 16
+ max keysize  : 32
+ ivsize       : 16
+ chunksize    : 16
+@@ -1839,6 +1838,7 @@ min keysize  : 16
+ max keysize  : 32
+ 
+ Mode: 444
++Mode: 644
+ # ttar - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ Path: fixtures/proc/diskstats
+ Lines: 52
+@@ -2129,6 +2129,24 @@ Lines: 6
+        4    1FB3C        0          1282A8F                0
+ Mode: 644
+ # ttar - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
++Path: fixtures/proc/net/protocols
++Lines: 14
++protocol  size sockets  memory press maxhdr  slab module     cl co di ac io in de sh ss gs se re sp bi br ha uh gp em
++PACKET    1344      2      -1   NI       0   no   kernel      n  n  n  n  n  n  n  n  n  n  n  n  n  n  n  n  n  n  n
++PINGv6    1112      0      -1   NI       0   yes  kernel      y  y  y  n  n  y  n  n  y  y  y  y  n  y  y  y  y  y  n
++RAWv6     1112      1      -1   NI       0   yes  kernel      y  y  y  n  y  y  y  n  y  y  y  y  n  y  y  y  y  n  n
++UDPLITEv6 1216      0      57   NI       0   yes  kernel      y  y  y  n  y  y  y  n  y  y  y  y  n  n  n  y  y  y  n
++UDPv6     1216     10      57   NI       0   yes  kernel      y  y  y  n  y  y  y  n  y  y  y  y  n  n  n  y  y  y  n
++TCPv6     2144   1937  1225378   no     320   yes  kernel      y  y  y  y  y  y  y  y  y  y  y  y  y  n  y  y  y  y  y
++UNIX      1024    120      -1   NI       0   yes  kernel      n  n  n  n  n  n  n  n  n  n  n  n  n  n  n  n  n  n  n
++UDP-Lite  1024      0      57   NI       0   yes  kernel      y  y  y  n  y  y  y  n  y  y  y  y  y  n  n  y  y  y  n
++PING       904      0      -1   NI       0   yes  kernel      y  y  y  n  n  y  n  n  y  y  y  y  n  y  y  y  y  y  n
++RAW        912      0      -1   NI       0   yes  kernel      y  y  y  n  y  y  y  n  y  y  y  y  n  y  y  y  y  n  n
++UDP       1024     73      57   NI       0   yes  kernel      y  y  y  n  y  y  y  n  y  y  y  y  y  n  n  y  y  y  n
++TCP       1984  93064  1225378   yes     320   yes  kernel      y  y  y  y  y  y  y  y  y  y  y  y  y  n  y  y  y  y  y
++NETLINK   1040     16      -1   NI       0   no   kernel      n  n  n  n  n  n  n  n  n  n  n  n  n  n  n  n  n  n  n
++Mode: 444
++# ttar - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ Directory: fixtures/proc/net/rpc
+ Mode: 755
+ # ttar - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+@@ -2186,10 +2204,25 @@ Lines: 1
+ 00015c73 00020e76 F0000769 00000000
+ Mode: 644
+ # ttar - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
++Path: fixtures/proc/net/tcp
++Lines: 4
++  sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode
++   0: 0500000A:0016 00000000:0000 0A 00000000:00000001 00:00000000 00000000     0        0 2740 1 ffff88003d3af3c0 100 0 0 10 0
++   1: 00000000:0016 00000000:0000 0A 00000001:00000000 00:00000000 00000000     0        0 2740 1 ffff88003d3af3c0 100 0 0 10 0
++   2: 00000000:0016 00000000:0000 0A 00000001:00000001 00:00000000 00000000     0        0 2740 1 ffff88003d3af3c0 100 0 0 10 0
++Mode: 644
++# ttar - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
++Path: fixtures/proc/net/tcp6
++Lines: 3
++  sl  local_address                         remote_address                        st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode ref pointer drops
++ 1315: 00000000000000000000000000000000:14EB 00000000000000000000000000000000:0000 07 00000000:00000000 00:00000000 00000000   981        0 21040 2 0000000013726323 0
++ 6073: 000080FE00000000FFADE15609667CFE:C781 00000000000000000000000000000000:0000 07 00000000:00000000 00:00000000 00000000  1000        0 11337031 2 00000000b9256fdd 0
++Mode: 644
++# ttar - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ Path: fixtures/proc/net/udp
+ Lines: 4
+   sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode
+-   0: 0A000005:0016 00000000:0000 0A 00000000:00000001 00:00000000 00000000     0        0 2740 1 ffff88003d3af3c0 100 0 0 10 0
++   0: 0500000A:0016 00000000:0000 0A 00000000:00000001 00:00000000 00000000     0        0 2740 1 ffff88003d3af3c0 100 0 0 10 0
+    1: 00000000:0016 00000000:0000 0A 00000001:00000000 00:00000000 00000000     0        0 2740 1 ffff88003d3af3c0 100 0 0 10 0
+    2: 00000000:0016 00000000:0000 0A 00000001:00000001 00:00000000 00000000     0        0 2740 1 ffff88003d3af3c0 100 0 0 10 0
+ Mode: 644
+@@ -2292,6 +2325,312 @@ Mode: 644
+ Path: fixtures/proc/self
+ SymlinkTo: 26231
+ # ttar - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
++Path: fixtures/proc/slabinfo
++Lines: 302
++slabinfo - version: 2.1
++# name            <active_objs> <num_objs> <objsize> <objperslab> <pagesperslab> : tunables <limit> <batchcount> <sharedfactor> : slabdata <active_slabs> <num_slabs> <sharedavail>
++pid_3                375    532    576   28    4 : tunables    0    0    0 : slabdata     19     19      0
++pid_2                  3     28    576   28    4 : tunables    0    0    0 : slabdata      1      1      0
++nvidia_p2p_page_cache      0      0    368   22    2 : tunables    0    0    0 : slabdata      0      0      0
++nvidia_pte_cache    9022   9152    368   22    2 : tunables    0    0    0 : slabdata    416    416      0
++nvidia_stack_cache    321    326  12624    2    8 : tunables    0    0    0 : slabdata    163    163      0
++kvm_async_pf           0      0    472   34    4 : tunables    0    0    0 : slabdata      0      0      0
++kvm_vcpu               0      0  15552    2    8 : tunables    0    0    0 : slabdata      0      0      0
++kvm_mmu_page_header      0      0    504   32    4 : tunables    0    0    0 : slabdata      0      0      0
++pte_list_desc          0      0    368   22    2 : tunables    0    0    0 : slabdata      0      0      0
++x86_emulator           0      0   3024   10    8 : tunables    0    0    0 : slabdata      0      0      0
++x86_fpu                0      0   4608    7    8 : tunables    0    0    0 : slabdata      0      0      0
++iwl_cmd_pool:0000:04:00.0      0    128    512   32    4 : tunables    0    0    0 : slabdata      4      4      0
++ext4_groupinfo_4k   3719   3740    480   34    4 : tunables    0    0    0 : slabdata    110    110      0
++bio-6                 32     75    640   25    4 : tunables    0    0    0 : slabdata      3      3      0
++bio-5                 16     48   1344   24    8 : tunables    0    0    0 : slabdata      2      2      0
++bio-4                 17     92   1408   23    8 : tunables    0    0    0 : slabdata      4      4      0
++fat_inode_cache        0      0   1056   31    8 : tunables    0    0    0 : slabdata      0      0      0
++fat_cache              0      0    368   22    2 : tunables    0    0    0 : slabdata      0      0      0
++ovl_aio_req            0      0    512   32    4 : tunables    0    0    0 : slabdata      0      0      0
++ovl_inode              0      0   1000   32    8 : tunables    0    0    0 : slabdata      0      0      0
++squashfs_inode_cache      0      0   1088   30    8 : tunables    0    0    0 : slabdata      0      0      0
++fuse_request           0      0    472   34    4 : tunables    0    0    0 : slabdata      0      0      0
++fuse_inode             0      0   1152   28    8 : tunables    0    0    0 : slabdata      0      0      0
++xfs_dqtrx              0      0    864   37    8 : tunables    0    0    0 : slabdata      0      0      0
++xfs_dquot              0      0    832   39    8 : tunables    0    0    0 : slabdata      0      0      0
++xfs_buf                0      0    768   21    4 : tunables    0    0    0 : slabdata      0      0      0
++xfs_bui_item           0      0    544   30    4 : tunables    0    0    0 : slabdata      0      0      0
++xfs_bud_item           0      0    512   32    4 : tunables    0    0    0 : slabdata      0      0      0
++xfs_cui_item           0      0    768   21    4 : tunables    0    0    0 : slabdata      0      0      0
++xfs_cud_item           0      0    512   32    4 : tunables    0    0    0 : slabdata      0      0      0
++xfs_rui_item           0      0   1024   32    8 : tunables    0    0    0 : slabdata      0      0      0
++xfs_rud_item           0      0    512   32    4 : tunables    0    0    0 : slabdata      0      0      0
++xfs_icr                0      0    520   31    4 : tunables    0    0    0 : slabdata      0      0      0
++xfs_ili                0      0    528   31    4 : tunables    0    0    0 : slabdata      0      0      0
++xfs_inode              0      0   1344   24    8 : tunables    0    0    0 : slabdata      0      0      0
++xfs_efi_item           0      0    768   21    4 : tunables    0    0    0 : slabdata      0      0      0
++xfs_efd_item           0      0    776   21    4 : tunables    0    0    0 : slabdata      0      0      0
++xfs_buf_item           0      0    608   26    4 : tunables    0    0    0 : slabdata      0      0      0
++xf_trans               0      0    568   28    4 : tunables    0    0    0 : slabdata      0      0      0
++xfs_ifork              0      0    376   21    2 : tunables    0    0    0 : slabdata      0      0      0
++xfs_da_state           0      0    816   20    4 : tunables    0    0    0 : slabdata      0      0      0
++xfs_btree_cur          0      0    560   29    4 : tunables    0    0    0 : slabdata      0      0      0
++xfs_bmap_free_item      0      0    400   20    2 : tunables    0    0    0 : slabdata      0      0      0
++xfs_log_ticket         0      0    520   31    4 : tunables    0    0    0 : slabdata      0      0      0
++nfs_direct_cache       0      0    560   29    4 : tunables    0    0    0 : slabdata      0      0      0
++nfs_commit_data        4     28   1152   28    8 : tunables    0    0    0 : slabdata      1      1      0
++nfs_write_data        32     50   1280   25    8 : tunables    0    0    0 : slabdata      2      2      0
++nfs_read_data          0      0   1280   25    8 : tunables    0    0    0 : slabdata      0      0      0
++nfs_inode_cache        0      0   1408   23    8 : tunables    0    0    0 : slabdata      0      0      0
++nfs_page               0      0    512   32    4 : tunables    0    0    0 : slabdata      0      0      0
++rpc_inode_cache        0      0   1024   32    8 : tunables    0    0    0 : slabdata      0      0      0
++rpc_buffers            8     13   2496   13    8 : tunables    0    0    0 : slabdata      1      1      0
++rpc_tasks              8     25    640   25    4 : tunables    0    0    0 : slabdata      1      1      0
++fscache_cookie_jar      1     35    464   35    4 : tunables    0    0    0 : slabdata      1      1      0
++jfs_mp                32     35    464   35    4 : tunables    0    0    0 : slabdata      1      1      0
++jfs_ip                 0      0   1592   20    8 : tunables    0    0    0 : slabdata      0      0      0
++reiser_inode_cache      0      0   1096   29    8 : tunables    0    0    0 : slabdata      0      0      0
++btrfs_end_io_wq        0      0    464   35    4 : tunables    0    0    0 : slabdata      0      0      0
++btrfs_prelim_ref       0      0    424   38    4 : tunables    0    0    0 : slabdata      0      0      0
++btrfs_delayed_extent_op      0      0    368   22    2 : tunables    0    0    0 : slabdata      0      0      0
++btrfs_delayed_data_ref      0      0    448   36    4 : tunables    0    0    0 : slabdata      0      0      0
++btrfs_delayed_tree_ref      0      0    440   37    4 : tunables    0    0    0 : slabdata      0      0      0
++btrfs_delayed_ref_head      0      0    480   34    4 : tunables    0    0    0 : slabdata      0      0      0
++btrfs_inode_defrag      0      0    400   20    2 : tunables    0    0    0 : slabdata      0      0      0
++btrfs_delayed_node      0      0    648   25    4 : tunables    0    0    0 : slabdata      0      0      0
++btrfs_ordered_extent      0      0    752   21    4 : tunables    0    0    0 : slabdata      0      0      0
++btrfs_extent_map       0      0    480   34    4 : tunables    0    0    0 : slabdata      0      0      0
++btrfs_extent_state      0      0    416   39    4 : tunables    0    0    0 : slabdata      0      0      0
++bio-3                 35     92    704   23    4 : tunables    0    0    0 : slabdata      4      4      0
++btrfs_extent_buffer      0      0    600   27    4 : tunables    0    0    0 : slabdata      0      0      0
++btrfs_free_space_bitmap      0      0  12288    2    8 : tunables    0    0    0 : slabdata      0      0      0
++btrfs_free_space       0      0    416   39    4 : tunables    0    0    0 : slabdata      0      0      0
++btrfs_path             0      0    448   36    4 : tunables    0    0    0 : slabdata      0      0      0
++btrfs_trans_handle      0      0    440   37    4 : tunables    0    0    0 : slabdata      0      0      0
++btrfs_inode            0      0   1496   21    8 : tunables    0    0    0 : slabdata      0      0      0
++ext4_inode_cache   84136  84755   1400   23    8 : tunables    0    0    0 : slabdata   3685   3685      0
++ext4_free_data        22     80    392   20    2 : tunables    0    0    0 : slabdata      4      4      0
++ext4_allocation_context      0     70    464   35    4 : tunables    0    0    0 : slabdata      2      2      0
++ext4_prealloc_space     24     74    440   37    4 : tunables    0    0    0 : slabdata      2      2      0
++ext4_system_zone     267    273    376   21    2 : tunables    0    0    0 : slabdata     13     13      0
++ext4_io_end_vec        0     88    368   22    2 : tunables    0    0    0 : slabdata      4      4      0
++ext4_io_end            0     80    400   20    2 : tunables    0    0    0 : slabdata      4      4      0
++ext4_bio_post_read_ctx    128    147    384   21    2 : tunables    0    0    0 : slabdata      7      7      0
++ext4_pending_reservation      0      0    368   22    2 : tunables    0    0    0 : slabdata      0      0      0
++ext4_extent_status  79351  79422    376   21    2 : tunables    0    0    0 : slabdata   3782   3782      0
++jbd2_transaction_s     44    100    640   25    4 : tunables    0    0    0 : slabdata      4      4      0
++jbd2_inode          6785   6840    400   20    2 : tunables    0    0    0 : slabdata    342    342      0
++jbd2_journal_handle      0     80    392   20    2 : tunables    0    0    0 : slabdata      4      4      0
++jbd2_journal_head    824   1944    448   36    4 : tunables    0    0    0 : slabdata     54     54      0
++jbd2_revoke_table_s      4     23    352   23    2 : tunables    0    0    0 : slabdata      1      1      0
++jbd2_revoke_record_s      0    156    416   39    4 : tunables    0    0    0 : slabdata      4      4      0
++ext2_inode_cache       0      0   1144   28    8 : tunables    0    0    0 : slabdata      0      0      0
++mbcache                0      0    392   20    2 : tunables    0    0    0 : slabdata      0      0      0
++dm_thin_new_mapping      0    152    424   38    4 : tunables    0    0    0 : slabdata      4      4      0
++dm_snap_pending_exception      0      0    464   35    4 : tunables    0    0    0 : slabdata      0      0      0
++dm_exception           0      0    368   22    2 : tunables    0    0    0 : slabdata      0      0      0
++dm_dirty_log_flush_entry      0      0    368   22    2 : tunables    0    0    0 : slabdata      0      0      0
++dm_bio_prison_cell_v2      0      0    432   37    4 : tunables    0    0    0 : slabdata      0      0      0
++dm_bio_prison_cell      0    148    432   37    4 : tunables    0    0    0 : slabdata      4      4      0
++kcopyd_job             0      8   3648    8    8 : tunables    0    0    0 : slabdata      1      1      0
++io                     0     32    512   32    4 : tunables    0    0    0 : slabdata      1      1      0
++dm_uevent              0      0   3224   10    8 : tunables    0    0    0 : slabdata      0      0      0
++dax_cache              1     28   1152   28    8 : tunables    0    0    0 : slabdata      1      1      0
++aic94xx_ascb           0      0    576   28    4 : tunables    0    0    0 : slabdata      0      0      0
++aic94xx_dma_token      0      0    384   21    2 : tunables    0    0    0 : slabdata      0      0      0
++asd_sas_event          0      0    512   32    4 : tunables    0    0    0 : slabdata      0      0      0
++sas_task               0      0    704   23    4 : tunables    0    0    0 : slabdata      0      0      0
++qla2xxx_srbs           0      0    832   39    8 : tunables    0    0    0 : slabdata      0      0      0
++sd_ext_cdb             2     22    368   22    2 : tunables    0    0    0 : slabdata      1      1      0
++scsi_sense_cache     258    288    512   32    4 : tunables    0    0    0 : slabdata      9      9      0
++virtio_scsi_cmd       64     75    640   25    4 : tunables    0    0    0 : slabdata      3      3      0
++L2TP/IPv6              0      0   1536   21    8 : tunables    0    0    0 : slabdata      0      0      0
++L2TP/IP                0      0   1408   23    8 : tunables    0    0    0 : slabdata      0      0      0
++ip6-frags              0      0    520   31    4 : tunables    0    0    0 : slabdata      0      0      0
++fib6_nodes             5     32    512   32    4 : tunables    0    0    0 : slabdata      1      1      0
++ip6_dst_cache          4     25    640   25    4 : tunables    0    0    0 : slabdata      1      1      0
++ip6_mrt_cache          0      0    576   28    4 : tunables    0    0    0 : slabdata      0      0      0
++PINGv6                 0      0   1600   20    8 : tunables    0    0    0 : slabdata      0      0      0
++RAWv6                 25     40   1600   20    8 : tunables    0    0    0 : slabdata      2      2      0
++UDPLITEv6              0      0   1728   18    8 : tunables    0    0    0 : slabdata      0      0      0
++UDPv6                  3     54   1728   18    8 : tunables    0    0    0 : slabdata      3      3      0
++tw_sock_TCPv6          0      0    576   28    4 : tunables    0    0    0 : slabdata      0      0      0
++request_sock_TCPv6      0      0    632   25    4 : tunables    0    0    0 : slabdata      0      0      0
++TCPv6                  0     33   2752   11    8 : tunables    0    0    0 : slabdata      3      3      0
++uhci_urb_priv          0      0    392   20    2 : tunables    0    0    0 : slabdata      0      0      0
++sgpool-128             2     14   4544    7    8 : tunables    0    0    0 : slabdata      2      2      0
++sgpool-64              2     13   2496   13    8 : tunables    0    0    0 : slabdata      1      1      0
++sgpool-32              2     44   1472   22    8 : tunables    0    0    0 : slabdata      2      2      0
++sgpool-16              2     68    960   34    8 : tunables    0    0    0 : slabdata      2      2      0
++sgpool-8               2     46    704   23    4 : tunables    0    0    0 : slabdata      2      2      0
++btree_node             0      0    576   28    4 : tunables    0    0    0 : slabdata      0      0      0
++bfq_io_cq              0      0    488   33    4 : tunables    0    0    0 : slabdata      0      0      0
++bfq_queue              0      0    848   38    8 : tunables    0    0    0 : slabdata      0      0      0
++mqueue_inode_cache      1     24   1344   24    8 : tunables    0    0    0 : slabdata      1      1      0
++isofs_inode_cache      0      0    968   33    8 : tunables    0    0    0 : slabdata      0      0      0
++io_kiocb               0      0    640   25    4 : tunables    0    0    0 : slabdata      0      0      0
++kioctx                 0     30   1088   30    8 : tunables    0    0    0 : slabdata      1      1      0
++aio_kiocb              0     28    576   28    4 : tunables    0    0    0 : slabdata      1      1      0
++userfaultfd_ctx_cache      0      0    576   28    4 : tunables    0    0    0 : slabdata      0      0      0
++fanotify_path_event      0      0    392   20    2 : tunables    0    0    0 : slabdata      0      0      0
++fanotify_fid_event      0      0    400   20    2 : tunables    0    0    0 : slabdata      0      0      0
++fsnotify_mark          0      0    408   20    2 : tunables    0    0    0 : slabdata      0      0      0
++dnotify_mark           0      0    416   39    4 : tunables    0    0    0 : slabdata      0      0      0
++dnotify_struct         0      0    368   22    2 : tunables    0    0    0 : slabdata      0      0      0
++dio                    0      0   1088   30    8 : tunables    0    0    0 : slabdata      0      0      0
++bio-2                  4     25    640   25    4 : tunables    0    0    0 : slabdata      1      1      0
++fasync_cache           0      0    384   21    2 : tunables    0    0    0 : slabdata      0      0      0
++audit_tree_mark        0      0    416   39    4 : tunables    0    0    0 : slabdata      0      0      0
++pid_namespace         30     34    480   34    4 : tunables    0    0    0 : slabdata      1      1      0
++posix_timers_cache      0     27    592   27    4 : tunables    0    0    0 : slabdata      1      1      0
++iommu_devinfo         24     32    512   32    4 : tunables    0    0    0 : slabdata      1      1      0
++iommu_domain          10     10   3264   10    8 : tunables    0    0    0 : slabdata      1      1      0
++iommu_iova          8682   8748    448   36    4 : tunables    0    0    0 : slabdata    243    243      0
++UNIX                 529    814   1472   22    8 : tunables    0    0    0 : slabdata     37     37      0
++ip4-frags              0      0    536   30    4 : tunables    0    0    0 : slabdata      0      0      0
++ip_mrt_cache           0      0    576   28    4 : tunables    0    0    0 : slabdata      0      0      0
++UDP-Lite               0      0   1536   21    8 : tunables    0    0    0 : slabdata      0      0      0
++tcp_bind_bucket        7    128    512   32    4 : tunables    0    0    0 : slabdata      4      4      0
++inet_peer_cache        0      0    576   28    4 : tunables    0    0    0 : slabdata      0      0      0
++xfrm_dst_cache         0      0    704   23    4 : tunables    0    0    0 : slabdata      0      0      0
++xfrm_state             0      0   1152   28    8 : tunables    0    0    0 : slabdata      0      0      0
++ip_fib_trie            7     21    384   21    2 : tunables    0    0    0 : slabdata      1      1      0
++ip_fib_alias           9     20    392   20    2 : tunables    0    0    0 : slabdata      1      1      0
++ip_dst_cache          27     84    576   28    4 : tunables    0    0    0 : slabdata      3      3      0
++PING                   0      0   1408   23    8 : tunables    0    0    0 : slabdata      0      0      0
++RAW                   32     46   1408   23    8 : tunables    0    0    0 : slabdata      2      2      0
++UDP                   11    168   1536   21    8 : tunables    0    0    0 : slabdata      8      8      0
++tw_sock_TCP            1     56    576   28    4 : tunables    0    0    0 : slabdata      2      2      0
++request_sock_TCP       0     25    632   25    4 : tunables    0    0    0 : slabdata      1      1      0
++TCP                   10     60   2624   12    8 : tunables    0    0    0 : slabdata      5      5      0
++hugetlbfs_inode_cache      2     35    928   35    8 : tunables    0    0    0 : slabdata      1      1      0
++dquot                  0      0    640   25    4 : tunables    0    0    0 : slabdata      0      0      0
++bio-1                 32     46    704   23    4 : tunables    0    0    0 : slabdata      2      2      0
++eventpoll_pwq        409    600    408   20    2 : tunables    0    0    0 : slabdata     30     30      0
++eventpoll_epi        408    672    576   28    4 : tunables    0    0    0 : slabdata     24     24      0
++inotify_inode_mark     58    195    416   39    4 : tunables    0    0    0 : slabdata      5      5      0
++scsi_data_buffer       0      0    360   22    2 : tunables    0    0    0 : slabdata      0      0      0
++bio_crypt_ctx        128    147    376   21    2 : tunables    0    0    0 : slabdata      7      7      0
++request_queue         29     39   2408   13    8 : tunables    0    0    0 : slabdata      3      3      0
++blkdev_ioc            81    148    440   37    4 : tunables    0    0    0 : slabdata      4      4      0
++bio-0                125    200    640   25    4 : tunables    0    0    0 : slabdata      8      8      0
++biovec-max           166    196   4544    7    8 : tunables    0    0    0 : slabdata     28     28      0
++biovec-128             0     52   2496   13    8 : tunables    0    0    0 : slabdata      4      4      0
++biovec-64              0     88   1472   22    8 : tunables    0    0    0 : slabdata      4      4      0
++biovec-16              0     92    704   23    4 : tunables    0    0    0 : slabdata      4      4      0
++bio_integrity_payload      4     28    576   28    4 : tunables    0    0    0 : slabdata      1      1      0
++khugepaged_mm_slot     59    180    448   36    4 : tunables    0    0    0 : slabdata      5      5      0
++ksm_mm_slot            0      0    384   21    2 : tunables    0    0    0 : slabdata      0      0      0
++ksm_stable_node        0      0    400   20    2 : tunables    0    0    0 : slabdata      0      0      0
++ksm_rmap_item          0      0    400   20    2 : tunables    0    0    0 : slabdata      0      0      0
++user_namespace         2     37    864   37    8 : tunables    0    0    0 : slabdata      1      1      0
++uid_cache              5     28    576   28    4 : tunables    0    0    0 : slabdata      1      1      0
++dmaengine-unmap-256      1     13   2496   13    8 : tunables    0    0    0 : slabdata      1      1      0
++dmaengine-unmap-128      1     22   1472   22    8 : tunables    0    0    0 : slabdata      1      1      0
++dmaengine-unmap-16      1     28    576   28    4 : tunables    0    0    0 : slabdata      1      1      0
++dmaengine-unmap-2      1     36    448   36    4 : tunables    0    0    0 : slabdata      1      1      0
++audit_buffer           0     22    360   22    2 : tunables    0    0    0 : slabdata      1      1      0
++sock_inode_cache     663   1170   1216   26    8 : tunables    0    0    0 : slabdata     45     45      0
++skbuff_ext_cache       0      0    576   28    4 : tunables    0    0    0 : slabdata      0      0      0
++skbuff_fclone_cache      1     72    896   36    8 : tunables    0    0    0 : slabdata      2      2      0
++skbuff_head_cache      3    650    640   25    4 : tunables    0    0    0 : slabdata     26     26      0
++configfs_dir_cache      7     38    424   38    4 : tunables    0    0    0 : slabdata      1      1      0
++file_lock_cache       27    116    552   29    4 : tunables    0    0    0 : slabdata      4      4      0
++file_lock_ctx        106    120    392   20    2 : tunables    0    0    0 : slabdata      6      6      0
++fsnotify_mark_connector     52     66    368   22    2 : tunables    0    0    0 : slabdata      3      3      0
++net_namespace          1      6   5312    6    8 : tunables    0    0    0 : slabdata      1      1      0
++task_delay_info      784   1560    416   39    4 : tunables    0    0    0 : slabdata     40     40      0
++taskstats             45     92    688   23    4 : tunables    0    0    0 : slabdata      4      4      0
++proc_dir_entry       678    682    528   31    4 : tunables    0    0    0 : slabdata     22     22      0
++pde_opener             0    189    376   21    2 : tunables    0    0    0 : slabdata      9      9      0
++proc_inode_cache    7150   8250    992   33    8 : tunables    0    0    0 : slabdata    250    250      0
++seq_file              60    735    456   35    4 : tunables    0    0    0 : slabdata     21     21      0
++sigqueue               0    156    416   39    4 : tunables    0    0    0 : slabdata      4      4      0
++bdev_cache            36     78   1216   26    8 : tunables    0    0    0 : slabdata      3      3      0
++shmem_inode_cache   1599   2208   1016   32    8 : tunables    0    0    0 : slabdata     69     69      0
++kernfs_iattrs_cache   1251   1254    424   38    4 : tunables    0    0    0 : slabdata     33     33      0
++kernfs_node_cache  52898  52920    464   35    4 : tunables    0    0    0 : slabdata   1512   1512      0
++mnt_cache             42     46    704   23    4 : tunables    0    0    0 : slabdata      2      2      0
++filp                4314   6371    704   23    4 : tunables    0    0    0 : slabdata    277    277      0
++inode_cache        28695  29505    920   35    8 : tunables    0    0    0 : slabdata    843    843      0
++dentry            166069 169074    528   31    4 : tunables    0    0    0 : slabdata   5454   5454      0
++names_cache            0     35   4544    7    8 : tunables    0    0    0 : slabdata      5      5      0
++hashtab_node           0      0    360   22    2 : tunables    0    0    0 : slabdata      0      0      0
++ebitmap_node           0      0    400   20    2 : tunables    0    0    0 : slabdata      0      0      0
++avtab_extended_perms      0      0    368   22    2 : tunables    0    0    0 : slabdata      0      0      0
++avtab_node             0      0    360   22    2 : tunables    0    0    0 : slabdata      0      0      0
++avc_xperms_data        0      0    368   22    2 : tunables    0    0    0 : slabdata      0      0      0
++avc_xperms_decision_node      0      0    384   21    2 : tunables    0    0    0 : slabdata      0      0      0
++avc_xperms_node        0      0    392   20    2 : tunables    0    0    0 : slabdata      0      0      0
++avc_node              37     40    408   20    2 : tunables    0    0    0 : slabdata      2      2      0
++iint_cache             0      0    448   36    4 : tunables    0    0    0 : slabdata      0      0      0
++lsm_inode_cache   122284 122340    392   20    2 : tunables    0    0    0 : slabdata   6117   6117      0
++lsm_file_cache      4266   4485    352   23    2 : tunables    0    0    0 : slabdata    195    195      0
++key_jar                8     25    640   25    4 : tunables    0    0    0 : slabdata      1      1      0
++buffer_head       255622 257076    440   37    4 : tunables    0    0    0 : slabdata   6948   6948      0
++uts_namespace          0      0    776   21    4 : tunables    0    0    0 : slabdata      0      0      0
++nsproxy               31     40    408   20    2 : tunables    0    0    0 : slabdata      2      2      0
++vm_area_struct     39115  43214    528   31    4 : tunables    0    0    0 : slabdata   1394   1394      0
++mm_struct             96    529   1408   23    8 : tunables    0    0    0 : slabdata     23     23      0
++fs_cache             102    756    448   36    4 : tunables    0    0    0 : slabdata     21     21      0
++files_cache          102    588   1152   28    8 : tunables    0    0    0 : slabdata     21     21      0
++signal_cache         266    672   1536   21    8 : tunables    0    0    0 : slabdata     32     32      0
++sighand_cache        266    507   2496   13    8 : tunables    0    0    0 : slabdata     39     39      0
++task_struct          783    963  10240    3    8 : tunables    0    0    0 : slabdata    321    321      0
++cred_jar             364    952    576   28    4 : tunables    0    0    0 : slabdata     34     34      0
++anon_vma_chain     63907  67821    416   39    4 : tunables    0    0    0 : slabdata   1739   1739      0
++anon_vma           25891  28899    416   39    4 : tunables    0    0    0 : slabdata    741    741      0
++pid                  408    992    512   32    4 : tunables    0    0    0 : slabdata     31     31      0
++Acpi-Operand        6682   6740    408   20    2 : tunables    0    0    0 : slabdata    337    337      0
++Acpi-ParseExt          0     39    416   39    4 : tunables    0    0    0 : slabdata      1      1      0
++Acpi-Parse             0     80    392   20    2 : tunables    0    0    0 : slabdata      4      4      0
++Acpi-State             0     78    416   39    4 : tunables    0    0    0 : slabdata      2      2      0
++Acpi-Namespace      3911   3948    384   21    2 : tunables    0    0    0 : slabdata    188    188      0
++trace_event_file    2638   2660    424   38    4 : tunables    0    0    0 : slabdata     70     70      0
++ftrace_event_field   6592   6594    384   21    2 : tunables    0    0    0 : slabdata    314    314      0
++pool_workqueue        41     64   1024   32    8 : tunables    0    0    0 : slabdata      2      2      0
++radix_tree_node    21638  24045    912   35    8 : tunables    0    0    0 : slabdata    687    687      0
++task_group            48     78   1216   26    8 : tunables    0    0    0 : slabdata      3      3      0
++vmap_area           4411   4680    400   20    2 : tunables    0    0    0 : slabdata    234    234      0
++dma-kmalloc-8k         0      0  24576    1    8 : tunables    0    0    0 : slabdata      0      0      0
++dma-kmalloc-4k         0      0  12288    2    8 : tunables    0    0    0 : slabdata      0      0      0
++dma-kmalloc-2k         0      0   6144    5    8 : tunables    0    0    0 : slabdata      0      0      0
++dma-kmalloc-1k         0      0   3072   10    8 : tunables    0    0    0 : slabdata      0      0      0
++dma-kmalloc-512        0      0   1536   21    8 : tunables    0    0    0 : slabdata      0      0      0
++dma-kmalloc-256        0      0   1024   32    8 : tunables    0    0    0 : slabdata      0      0      0
++dma-kmalloc-128        0      0    640   25    4 : tunables    0    0    0 : slabdata      0      0      0
++dma-kmalloc-64         0      0    512   32    4 : tunables    0    0    0 : slabdata      0      0      0
++dma-kmalloc-32         0      0    416   39    4 : tunables    0    0    0 : slabdata      0      0      0
++dma-kmalloc-16         0      0    368   22    2 : tunables    0    0    0 : slabdata      0      0      0
++dma-kmalloc-8          0      0    344   23    2 : tunables    0    0    0 : slabdata      0      0      0
++dma-kmalloc-192        0      0    528   31    4 : tunables    0    0    0 : slabdata      0      0      0
++dma-kmalloc-96         0      0    432   37    4 : tunables    0    0    0 : slabdata      0      0      0
++kmalloc-rcl-8k         0      0  24576    1    8 : tunables    0    0    0 : slabdata      0      0      0
++kmalloc-rcl-4k         0      0  12288    2    8 : tunables    0    0    0 : slabdata      0      0      0
++kmalloc-rcl-2k         0      0   6144    5    8 : tunables    0    0    0 : slabdata      0      0      0
++kmalloc-rcl-1k         0      0   3072   10    8 : tunables    0    0    0 : slabdata      0      0      0
++kmalloc-rcl-512        0      0   1536   21    8 : tunables    0    0    0 : slabdata      0      0      0
++kmalloc-rcl-256        0      0   1024   32    8 : tunables    0    0    0 : slabdata      0      0      0
++kmalloc-rcl-192        0      0    528   31    4 : tunables    0    0    0 : slabdata      0      0      0
++kmalloc-rcl-128       31     75    640   25    4 : tunables    0    0    0 : slabdata      3      3      0
++kmalloc-rcl-96      3371   3626    432   37    4 : tunables    0    0    0 : slabdata     98     98      0
++kmalloc-rcl-64      2080   2272    512   32    4 : tunables    0    0    0 : slabdata     71     71      0
++kmalloc-rcl-32         0      0    416   39    4 : tunables    0    0    0 : slabdata      0      0      0
++kmalloc-rcl-16         0      0    368   22    2 : tunables    0    0    0 : slabdata      0      0      0
++kmalloc-rcl-8          0      0    344   23    2 : tunables    0    0    0 : slabdata      0      0      0
++kmalloc-8k           133    140  24576    1    8 : tunables    0    0    0 : slabdata    140    140      0
++kmalloc-4k           403    444  12288    2    8 : tunables    0    0    0 : slabdata    222    222      0
++kmalloc-2k          2391   2585   6144    5    8 : tunables    0    0    0 : slabdata    517    517      0
++kmalloc-1k          2163   2420   3072   10    8 : tunables    0    0    0 : slabdata    242    242      0
++kmalloc-512         2972   3633   1536   21    8 : tunables    0    0    0 : slabdata    173    173      0
++kmalloc-256         1841   1856   1024   32    8 : tunables    0    0    0 : slabdata     58     58      0
++kmalloc-192         2165   2914    528   31    4 : tunables    0    0    0 : slabdata     94     94      0
++kmalloc-128         1137   1175    640   25    4 : tunables    0    0    0 : slabdata     47     47      0
++kmalloc-96          1925   2590    432   37    4 : tunables    0    0    0 : slabdata     70     70      0
++kmalloc-64          9433  10688    512   32    4 : tunables    0    0    0 : slabdata    334    334      0
++kmalloc-32          9098  10062    416   39    4 : tunables    0    0    0 : slabdata    258    258      0
++kmalloc-16         10914  10956    368   22    2 : tunables    0    0    0 : slabdata    498    498      0
++kmalloc-8           7576   7705    344   23    2 : tunables    0    0    0 : slabdata    335    335      0
++kmem_cache_node      904    928    512   32    4 : tunables    0    0    0 : slabdata     29     29      0
++kmem_cache           904    936    832   39    8 : tunables    0    0    0 : slabdata     24     24      0
++Mode: 644
++# ttar - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ Path: fixtures/proc/stat
+ Lines: 16
+ cpu  301854 612 111922 8979004 3552 2 3944 0 0 0
+@@ -4639,6 +4978,35 @@ Mode: 644
+ Directory: fixtures/sys/devices/system
+ Mode: 775
+ # ttar - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
++Directory: fixtures/sys/devices/system/node
++Mode: 775
++# ttar - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
++Directory: fixtures/sys/devices/system/node/node1
++Mode: 755
++# ttar - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
++Path: fixtures/sys/devices/system/node/node1/vmstat
++Lines: 6
++nr_free_pages 1
++nr_zone_inactive_anon 2
++nr_zone_active_anon 3
++nr_zone_inactive_file 4
++nr_zone_active_file 5
++nr_zone_unevictable 6
++Mode: 644
++# ttar - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
++Directory: fixtures/sys/devices/system/node/node2
++Mode: 755
++# ttar - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
++Path: fixtures/sys/devices/system/node/node2/vmstat
++Lines: 6
++nr_free_pages 7
++nr_zone_inactive_anon 8
++nr_zone_active_anon 9
++nr_zone_inactive_file 10
++nr_zone_active_file 11
++nr_zone_unevictable 12
++Mode: 644
++# ttar - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ Directory: fixtures/sys/devices/system/clocksource
+ Mode: 775
+ # ttar - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+diff --git a/vendor/github.com/prometheus/procfs/fscache.go b/vendor/github.com/prometheus/procfs/fscache.go
+index 8783cf3..f8070e6 100644
+--- a/vendor/github.com/prometheus/procfs/fscache.go
++++ b/vendor/github.com/prometheus/procfs/fscache.go
+@@ -236,7 +236,7 @@ func (fs FS) Fscacheinfo() (Fscacheinfo, error) {
+ 
+ 	m, err := parseFscacheinfo(bytes.NewReader(b))
+ 	if err != nil {
+-		return Fscacheinfo{}, fmt.Errorf("failed to parse Fscacheinfo: %v", err)
++		return Fscacheinfo{}, fmt.Errorf("failed to parse Fscacheinfo: %w", err)
+ 	}
+ 
+ 	return *m, nil
+diff --git a/vendor/github.com/prometheus/procfs/go.mod b/vendor/github.com/prometheus/procfs/go.mod
+index ded4825..ba6681f 100644
+--- a/vendor/github.com/prometheus/procfs/go.mod
++++ b/vendor/github.com/prometheus/procfs/go.mod
+@@ -1,9 +1,9 @@
+ module github.com/prometheus/procfs
+ 
+-go 1.12
++go 1.13
+ 
+ require (
+-	github.com/google/go-cmp v0.3.1
+-	golang.org/x/sync v0.0.0-20190911185100-cd5d95a43a6e
+-	golang.org/x/sys v0.0.0-20200106162015-b016eb3dc98e
++	github.com/google/go-cmp v0.5.4
++	golang.org/x/sync v0.0.0-20201207232520-09787c993a3a
++	golang.org/x/sys v0.0.0-20210124154548-22da62e12c0c
+ )
+diff --git a/vendor/github.com/prometheus/procfs/go.sum b/vendor/github.com/prometheus/procfs/go.sum
+index 54b5f33..7ceaf56 100644
+--- a/vendor/github.com/prometheus/procfs/go.sum
++++ b/vendor/github.com/prometheus/procfs/go.sum
+@@ -1,6 +1,8 @@
+-github.com/google/go-cmp v0.3.1 h1:Xye71clBPdm5HgqGwUkwhbynsUJZhDbS20FvLhQ2izg=
+-github.com/google/go-cmp v0.3.1/go.mod h1:8QqcDgzrUqlUb/G2PQTWiueGozuR1884gddMywk6iLU=
+-golang.org/x/sync v0.0.0-20190911185100-cd5d95a43a6e h1:vcxGaoTs7kV8m5Np9uUNQin4BrLOthgV7252N8V+FwY=
+-golang.org/x/sync v0.0.0-20190911185100-cd5d95a43a6e/go.mod h1:RxMgew5VJxzue5/jJTE5uejpjVlOe/izrB70Jof72aM=
+-golang.org/x/sys v0.0.0-20200106162015-b016eb3dc98e h1:LwyF2AFISC9nVbS6MgzsaQNSUsRXI49GS+YQ5KX/QH0=
+-golang.org/x/sys v0.0.0-20200106162015-b016eb3dc98e/go.mod h1:h1NjWce9XRLGQEsW7wpKNCjG9DtNlClVuFLEZdDNbEs=
++github.com/google/go-cmp v0.5.4 h1:L8R9j+yAqZuZjsqh/z+F1NCffTKKLShY6zXTItVIZ8M=
++github.com/google/go-cmp v0.5.4/go.mod h1:v8dTdLbMG2kIc/vJvl+f65V22dbkXbowE6jgT/gNBxE=
++golang.org/x/sync v0.0.0-20201207232520-09787c993a3a h1:DcqTD9SDLc+1P/r1EmRBwnVsrOwW+kk2vWf9n+1sGhs=
++golang.org/x/sync v0.0.0-20201207232520-09787c993a3a/go.mod h1:RxMgew5VJxzue5/jJTE5uejpjVlOe/izrB70Jof72aM=
++golang.org/x/sys v0.0.0-20210124154548-22da62e12c0c h1:VwygUrnw9jn88c4u8GD3rZQbqrP/tgas88tPUbBxQrk=
++golang.org/x/sys v0.0.0-20210124154548-22da62e12c0c/go.mod h1:h1NjWce9XRLGQEsW7wpKNCjG9DtNlClVuFLEZdDNbEs=
++golang.org/x/xerrors v0.0.0-20191204190536-9bdfabe68543 h1:E7g+9GITq07hpfrRu66IVDexMakfv52eLZ2CXBWiKr4=
++golang.org/x/xerrors v0.0.0-20191204190536-9bdfabe68543/go.mod h1:I/5z698sn9Ka8TeJc9MKroUUfqBBauWjQqLJ2OPfmY0=
+diff --git a/vendor/github.com/prometheus/procfs/internal/fs/fs.go b/vendor/github.com/prometheus/procfs/internal/fs/fs.go
+index 565e89e..0040753 100644
+--- a/vendor/github.com/prometheus/procfs/internal/fs/fs.go
++++ b/vendor/github.com/prometheus/procfs/internal/fs/fs.go
+@@ -39,10 +39,10 @@ type FS string
+ func NewFS(mountPoint string) (FS, error) {
+ 	info, err := os.Stat(mountPoint)
+ 	if err != nil {
+-		return "", fmt.Errorf("could not read %s: %s", mountPoint, err)
++		return "", fmt.Errorf("could not read %q: %w", mountPoint, err)
+ 	}
+ 	if !info.IsDir() {
+-		return "", fmt.Errorf("mount point %s is not a directory", mountPoint)
++		return "", fmt.Errorf("mount point %q is not a directory", mountPoint)
+ 	}
+ 
+ 	return FS(mountPoint), nil
+diff --git a/vendor/github.com/prometheus/procfs/loadavg.go b/vendor/github.com/prometheus/procfs/loadavg.go
+index 00bbe14..0cce190 100644
+--- a/vendor/github.com/prometheus/procfs/loadavg.go
++++ b/vendor/github.com/prometheus/procfs/loadavg.go
+@@ -44,14 +44,14 @@ func parseLoad(loadavgBytes []byte) (*LoadAvg, error) {
+ 	loads := make([]float64, 3)
+ 	parts := strings.Fields(string(loadavgBytes))
+ 	if len(parts) < 3 {
+-		return nil, fmt.Errorf("malformed loadavg line: too few fields in loadavg string: %s", string(loadavgBytes))
++		return nil, fmt.Errorf("malformed loadavg line: too few fields in loadavg string: %q", string(loadavgBytes))
+ 	}
+ 
+ 	var err error
+ 	for i, load := range parts[0:3] {
+ 		loads[i], err = strconv.ParseFloat(load, 64)
+ 		if err != nil {
+-			return nil, fmt.Errorf("could not parse load '%s': %s", load, err)
++			return nil, fmt.Errorf("could not parse load %q: %w", load, err)
+ 		}
+ 	}
+ 	return &LoadAvg{
+diff --git a/vendor/github.com/prometheus/procfs/mdstat.go b/vendor/github.com/prometheus/procfs/mdstat.go
+index 98e37aa..4c4493b 100644
+--- a/vendor/github.com/prometheus/procfs/mdstat.go
++++ b/vendor/github.com/prometheus/procfs/mdstat.go
+@@ -22,8 +22,9 @@ import (
+ )
+ 
+ var (
+-	statusLineRE   = regexp.MustCompile(`(\d+) blocks .*\[(\d+)/(\d+)\] \[[U_]+\]`)
+-	recoveryLineRE = regexp.MustCompile(`\((\d+)/\d+\)`)
++	statusLineRE      = regexp.MustCompile(`(\d+) blocks .*\[(\d+)/(\d+)\] \[[U_]+\]`)
++	recoveryLineRE    = regexp.MustCompile(`\((\d+)/\d+\)`)
++	componentDeviceRE = regexp.MustCompile(`(.*)\[\d+\]`)
+ )
+ 
+ // MDStat holds info parsed from /proc/mdstat.
+@@ -44,6 +45,8 @@ type MDStat struct {
+ 	BlocksTotal int64
+ 	// Number of blocks on the device that are in sync.
+ 	BlocksSynced int64
++	// Name of md component devices
++	Devices []string
+ }
+ 
+ // MDStat parses an mdstat-file (/proc/mdstat) and returns a slice of
+@@ -56,7 +59,7 @@ func (fs FS) MDStat() ([]MDStat, error) {
+ 	}
+ 	mdstat, err := parseMDStat(data)
+ 	if err != nil {
+-		return nil, fmt.Errorf("error parsing mdstat %s: %s", fs.proc.Path("mdstat"), err)
++		return nil, fmt.Errorf("error parsing mdstat %q: %w", fs.proc.Path("mdstat"), err)
+ 	}
+ 	return mdstat, nil
+ }
+@@ -82,10 +85,7 @@ func parseMDStat(mdStatData []byte) ([]MDStat, error) {
+ 		state := deviceFields[2]  // active or inactive
+ 
+ 		if len(lines) <= i+3 {
+-			return nil, fmt.Errorf(
+-				"error parsing %s: too few lines for md device",
+-				mdName,
+-			)
++			return nil, fmt.Errorf("error parsing %q: too few lines for md device", mdName)
+ 		}
+ 
+ 		// Failed disks have the suffix (F) & Spare disks have the suffix (S).
+@@ -94,7 +94,7 @@ func parseMDStat(mdStatData []byte) ([]MDStat, error) {
+ 		active, total, size, err := evalStatusLine(lines[i], lines[i+1])
+ 
+ 		if err != nil {
+-			return nil, fmt.Errorf("error parsing md device lines: %s", err)
++			return nil, fmt.Errorf("error parsing md device lines: %w", err)
+ 		}
+ 
+ 		syncLineIdx := i + 2
+@@ -126,7 +126,7 @@ func parseMDStat(mdStatData []byte) ([]MDStat, error) {
+ 			} else {
+ 				syncedBlocks, err = evalRecoveryLine(lines[syncLineIdx])
+ 				if err != nil {
+-					return nil, fmt.Errorf("error parsing sync line in md device %s: %s", mdName, err)
++					return nil, fmt.Errorf("error parsing sync line in md device %q: %w", mdName, err)
+ 				}
+ 			}
+ 		}
+@@ -140,6 +140,7 @@ func parseMDStat(mdStatData []byte) ([]MDStat, error) {
+ 			DisksTotal:    total,
+ 			BlocksTotal:   size,
+ 			BlocksSynced:  syncedBlocks,
++			Devices:       evalComponentDevices(deviceFields),
+ 		})
+ 	}
+ 
+@@ -151,7 +152,7 @@ func evalStatusLine(deviceLine, statusLine string) (active, total, size int64, e
+ 	sizeStr := strings.Fields(statusLine)[0]
+ 	size, err = strconv.ParseInt(sizeStr, 10, 64)
+ 	if err != nil {
+-		return 0, 0, 0, fmt.Errorf("unexpected statusLine %s: %s", statusLine, err)
++		return 0, 0, 0, fmt.Errorf("unexpected statusLine %q: %w", statusLine, err)
+ 	}
+ 
+ 	if strings.Contains(deviceLine, "raid0") || strings.Contains(deviceLine, "linear") {
+@@ -171,12 +172,12 @@ func evalStatusLine(deviceLine, statusLine string) (active, total, size int64, e
+ 
+ 	total, err = strconv.ParseInt(matches[2], 10, 64)
+ 	if err != nil {
+-		return 0, 0, 0, fmt.Errorf("unexpected statusLine %s: %s", statusLine, err)
++		return 0, 0, 0, fmt.Errorf("unexpected statusLine %q: %w", statusLine, err)
+ 	}
+ 
+ 	active, err = strconv.ParseInt(matches[3], 10, 64)
+ 	if err != nil {
+-		return 0, 0, 0, fmt.Errorf("unexpected statusLine %s: %s", statusLine, err)
++		return 0, 0, 0, fmt.Errorf("unexpected statusLine %q: %w", statusLine, err)
+ 	}
+ 
+ 	return active, total, size, nil
+@@ -190,8 +191,23 @@ func evalRecoveryLine(recoveryLine string) (syncedBlocks int64, err error) {
+ 
+ 	syncedBlocks, err = strconv.ParseInt(matches[1], 10, 64)
+ 	if err != nil {
+-		return 0, fmt.Errorf("%s in recoveryLine: %s", err, recoveryLine)
++		return 0, fmt.Errorf("error parsing int from recoveryLine %q: %w", recoveryLine, err)
+ 	}
+ 
+ 	return syncedBlocks, nil
+ }
++
++func evalComponentDevices(deviceFields []string) []string {
++	mdComponentDevices := make([]string, 0)
++	if len(deviceFields) > 3 {
++		for _, field := range deviceFields[4:] {
++			match := componentDeviceRE.FindStringSubmatch(field)
++			if match == nil {
++				continue
++			}
++			mdComponentDevices = append(mdComponentDevices, match[1])
++		}
++	}
++
++	return mdComponentDevices
++}
+diff --git a/vendor/github.com/prometheus/procfs/meminfo.go b/vendor/github.com/prometheus/procfs/meminfo.go
+index 50dab4b..f65e174 100644
+--- a/vendor/github.com/prometheus/procfs/meminfo.go
++++ b/vendor/github.com/prometheus/procfs/meminfo.go
+@@ -28,9 +28,9 @@ import (
+ type Meminfo struct {
+ 	// Total usable ram (i.e. physical ram minus a few reserved
+ 	// bits and the kernel binary code)
+-	MemTotal uint64
++	MemTotal *uint64
+ 	// The sum of LowFree+HighFree
+-	MemFree uint64
++	MemFree *uint64
+ 	// An estimate of how much memory is available for starting
+ 	// new applications, without swapping. Calculated from
+ 	// MemFree, SReclaimable, the size of the file LRU lists, and
+@@ -39,59 +39,59 @@ type Meminfo struct {
+ 	// well, and that not all reclaimable slab will be
+ 	// reclaimable, due to items being in use. The impact of those
+ 	// factors will vary from system to system.
+-	MemAvailable uint64
++	MemAvailable *uint64
+ 	// Relatively temporary storage for raw disk blocks shouldn't
+ 	// get tremendously large (20MB or so)
+-	Buffers uint64
+-	Cached  uint64
++	Buffers *uint64
++	Cached  *uint64
+ 	// Memory that once was swapped out, is swapped back in but
+ 	// still also is in the swapfile (if memory is needed it
+ 	// doesn't need to be swapped out AGAIN because it is already
+ 	// in the swapfile. This saves I/O)
+-	SwapCached uint64
++	SwapCached *uint64
+ 	// Memory that has been used more recently and usually not
+ 	// reclaimed unless absolutely necessary.
+-	Active uint64
++	Active *uint64
+ 	// Memory which has been less recently used.  It is more
+ 	// eligible to be reclaimed for other purposes
+-	Inactive     uint64
+-	ActiveAnon   uint64
+-	InactiveAnon uint64
+-	ActiveFile   uint64
+-	InactiveFile uint64
+-	Unevictable  uint64
+-	Mlocked      uint64
++	Inactive     *uint64
++	ActiveAnon   *uint64
++	InactiveAnon *uint64
++	ActiveFile   *uint64
++	InactiveFile *uint64
++	Unevictable  *uint64
++	Mlocked      *uint64
+ 	// total amount of swap space available
+-	SwapTotal uint64
++	SwapTotal *uint64
+ 	// Memory which has been evicted from RAM, and is temporarily
+ 	// on the disk
+-	SwapFree uint64
++	SwapFree *uint64
+ 	// Memory which is waiting to get written back to the disk
+-	Dirty uint64
++	Dirty *uint64
+ 	// Memory which is actively being written back to the disk
+-	Writeback uint64
++	Writeback *uint64
+ 	// Non-file backed pages mapped into userspace page tables
+-	AnonPages uint64
++	AnonPages *uint64
+ 	// files which have been mapped, such as libraries
+-	Mapped uint64
+-	Shmem  uint64
++	Mapped *uint64
++	Shmem  *uint64
+ 	// in-kernel data structures cache
+-	Slab uint64
++	Slab *uint64
+ 	// Part of Slab, that might be reclaimed, such as caches
+-	SReclaimable uint64
++	SReclaimable *uint64
+ 	// Part of Slab, that cannot be reclaimed on memory pressure
+-	SUnreclaim  uint64
+-	KernelStack uint64
++	SUnreclaim  *uint64
++	KernelStack *uint64
+ 	// amount of memory dedicated to the lowest level of page
+ 	// tables.
+-	PageTables uint64
++	PageTables *uint64
+ 	// NFS pages sent to the server, but not yet committed to
+ 	// stable storage
+-	NFSUnstable uint64
++	NFSUnstable *uint64
+ 	// Memory used for block device "bounce buffers"
+-	Bounce uint64
++	Bounce *uint64
+ 	// Memory used by FUSE for temporary writeback buffers
+-	WritebackTmp uint64
++	WritebackTmp *uint64
+ 	// Based on the overcommit ratio ('vm.overcommit_ratio'),
+ 	// this is the total amount of  memory currently available to
+ 	// be allocated on the system. This limit is only adhered to
+@@ -105,7 +105,7 @@ type Meminfo struct {
+ 	// yield a CommitLimit of 7.3G.
+ 	// For more details, see the memory overcommit documentation
+ 	// in vm/overcommit-accounting.
+-	CommitLimit uint64
++	CommitLimit *uint64
+ 	// The amount of memory presently allocated on the system.
+ 	// The committed memory is a sum of all of the memory which
+ 	// has been allocated by processes, even if it has not been
+@@ -119,27 +119,27 @@ type Meminfo struct {
+ 	// This is useful if one needs to guarantee that processes will
+ 	// not fail due to lack of memory once that memory has been
+ 	// successfully allocated.
+-	CommittedAS uint64
++	CommittedAS *uint64
+ 	// total size of vmalloc memory area
+-	VmallocTotal uint64
++	VmallocTotal *uint64
+ 	// amount of vmalloc area which is used
+-	VmallocUsed uint64
++	VmallocUsed *uint64
+ 	// largest contiguous block of vmalloc area which is free
+-	VmallocChunk      uint64
+-	HardwareCorrupted uint64
+-	AnonHugePages     uint64
+-	ShmemHugePages    uint64
+-	ShmemPmdMapped    uint64
+-	CmaTotal          uint64
+-	CmaFree           uint64
+-	HugePagesTotal    uint64
+-	HugePagesFree     uint64
+-	HugePagesRsvd     uint64
+-	HugePagesSurp     uint64
+-	Hugepagesize      uint64
+-	DirectMap4k       uint64
+-	DirectMap2M       uint64
+-	DirectMap1G       uint64
++	VmallocChunk      *uint64
++	HardwareCorrupted *uint64
++	AnonHugePages     *uint64
++	ShmemHugePages    *uint64
++	ShmemPmdMapped    *uint64
++	CmaTotal          *uint64
++	CmaFree           *uint64
++	HugePagesTotal    *uint64
++	HugePagesFree     *uint64
++	HugePagesRsvd     *uint64
++	HugePagesSurp     *uint64
++	Hugepagesize      *uint64
++	DirectMap4k       *uint64
++	DirectMap2M       *uint64
++	DirectMap1G       *uint64
+ }
+ 
+ // Meminfo returns an information about current kernel/system memory statistics.
+@@ -152,7 +152,7 @@ func (fs FS) Meminfo() (Meminfo, error) {
+ 
+ 	m, err := parseMemInfo(bytes.NewReader(b))
+ 	if err != nil {
+-		return Meminfo{}, fmt.Errorf("failed to parse meminfo: %v", err)
++		return Meminfo{}, fmt.Errorf("failed to parse meminfo: %w", err)
+ 	}
+ 
+ 	return *m, nil
+@@ -175,101 +175,101 @@ func parseMemInfo(r io.Reader) (*Meminfo, error) {
+ 
+ 		switch fields[0] {
+ 		case "MemTotal:":
+-			m.MemTotal = v
++			m.MemTotal = &v
+ 		case "MemFree:":
+-			m.MemFree = v
++			m.MemFree = &v
+ 		case "MemAvailable:":
+-			m.MemAvailable = v
++			m.MemAvailable = &v
+ 		case "Buffers:":
+-			m.Buffers = v
++			m.Buffers = &v
+ 		case "Cached:":
+-			m.Cached = v
++			m.Cached = &v
+ 		case "SwapCached:":
+-			m.SwapCached = v
++			m.SwapCached = &v
+ 		case "Active:":
+-			m.Active = v
++			m.Active = &v
+ 		case "Inactive:":
+-			m.Inactive = v
++			m.Inactive = &v
+ 		case "Active(anon):":
+-			m.ActiveAnon = v
++			m.ActiveAnon = &v
+ 		case "Inactive(anon):":
+-			m.InactiveAnon = v
++			m.InactiveAnon = &v
+ 		case "Active(file):":
+-			m.ActiveFile = v
++			m.ActiveFile = &v
+ 		case "Inactive(file):":
+-			m.InactiveFile = v
++			m.InactiveFile = &v
+ 		case "Unevictable:":
+-			m.Unevictable = v
++			m.Unevictable = &v
+ 		case "Mlocked:":
+-			m.Mlocked = v
++			m.Mlocked = &v
+ 		case "SwapTotal:":
+-			m.SwapTotal = v
++			m.SwapTotal = &v
+ 		case "SwapFree:":
+-			m.SwapFree = v
++			m.SwapFree = &v
+ 		case "Dirty:":
+-			m.Dirty = v
++			m.Dirty = &v
+ 		case "Writeback:":
+-			m.Writeback = v
++			m.Writeback = &v
+ 		case "AnonPages:":
+-			m.AnonPages = v
++			m.AnonPages = &v
+ 		case "Mapped:":
+-			m.Mapped = v
++			m.Mapped = &v
+ 		case "Shmem:":
+-			m.Shmem = v
++			m.Shmem = &v
+ 		case "Slab:":
+-			m.Slab = v
++			m.Slab = &v
+ 		case "SReclaimable:":
+-			m.SReclaimable = v
++			m.SReclaimable = &v
+ 		case "SUnreclaim:":
+-			m.SUnreclaim = v
++			m.SUnreclaim = &v
+ 		case "KernelStack:":
+-			m.KernelStack = v
++			m.KernelStack = &v
+ 		case "PageTables:":
+-			m.PageTables = v
++			m.PageTables = &v
+ 		case "NFS_Unstable:":
+-			m.NFSUnstable = v
++			m.NFSUnstable = &v
+ 		case "Bounce:":
+-			m.Bounce = v
++			m.Bounce = &v
+ 		case "WritebackTmp:":
+-			m.WritebackTmp = v
++			m.WritebackTmp = &v
+ 		case "CommitLimit:":
+-			m.CommitLimit = v
++			m.CommitLimit = &v
+ 		case "Committed_AS:":
+-			m.CommittedAS = v
++			m.CommittedAS = &v
+ 		case "VmallocTotal:":
+-			m.VmallocTotal = v
++			m.VmallocTotal = &v
+ 		case "VmallocUsed:":
+-			m.VmallocUsed = v
++			m.VmallocUsed = &v
+ 		case "VmallocChunk:":
+-			m.VmallocChunk = v
++			m.VmallocChunk = &v
+ 		case "HardwareCorrupted:":
+-			m.HardwareCorrupted = v
++			m.HardwareCorrupted = &v
+ 		case "AnonHugePages:":
+-			m.AnonHugePages = v
++			m.AnonHugePages = &v
+ 		case "ShmemHugePages:":
+-			m.ShmemHugePages = v
++			m.ShmemHugePages = &v
+ 		case "ShmemPmdMapped:":
+-			m.ShmemPmdMapped = v
++			m.ShmemPmdMapped = &v
+ 		case "CmaTotal:":
+-			m.CmaTotal = v
++			m.CmaTotal = &v
+ 		case "CmaFree:":
+-			m.CmaFree = v
++			m.CmaFree = &v
+ 		case "HugePages_Total:":
+-			m.HugePagesTotal = v
++			m.HugePagesTotal = &v
+ 		case "HugePages_Free:":
+-			m.HugePagesFree = v
++			m.HugePagesFree = &v
+ 		case "HugePages_Rsvd:":
+-			m.HugePagesRsvd = v
++			m.HugePagesRsvd = &v
+ 		case "HugePages_Surp:":
+-			m.HugePagesSurp = v
++			m.HugePagesSurp = &v
+ 		case "Hugepagesize:":
+-			m.Hugepagesize = v
++			m.Hugepagesize = &v
+ 		case "DirectMap4k:":
+-			m.DirectMap4k = v
++			m.DirectMap4k = &v
+ 		case "DirectMap2M:":
+-			m.DirectMap2M = v
++			m.DirectMap2M = &v
+ 		case "DirectMap1G:":
+-			m.DirectMap1G = v
++			m.DirectMap1G = &v
+ 		}
+ 	}
+ 
+diff --git a/vendor/github.com/prometheus/procfs/mountstats.go b/vendor/github.com/prometheus/procfs/mountstats.go
+index 861ced9..f7a828b 100644
+--- a/vendor/github.com/prometheus/procfs/mountstats.go
++++ b/vendor/github.com/prometheus/procfs/mountstats.go
+@@ -338,12 +338,12 @@ func parseMountStatsNFS(s *bufio.Scanner, statVersion string) (*MountStatsNFS, e
+ 		if len(ss) == 0 {
+ 			break
+ 		}
+-		if len(ss) < 2 {
+-			return nil, fmt.Errorf("not enough information for NFS stats: %v", ss)
+-		}
+ 
+ 		switch ss[0] {
+ 		case fieldOpts:
++			if len(ss) < 2 {
++				return nil, fmt.Errorf("not enough information for NFS stats: %v", ss)
++			}
+ 			if stats.Opts == nil {
+ 				stats.Opts = map[string]string{}
+ 			}
+@@ -356,6 +356,9 @@ func parseMountStatsNFS(s *bufio.Scanner, statVersion string) (*MountStatsNFS, e
+ 				}
+ 			}
+ 		case fieldAge:
++			if len(ss) < 2 {
++				return nil, fmt.Errorf("not enough information for NFS stats: %v", ss)
++			}
+ 			// Age integer is in seconds
+ 			d, err := time.ParseDuration(ss[1] + "s")
+ 			if err != nil {
+@@ -364,6 +367,9 @@ func parseMountStatsNFS(s *bufio.Scanner, statVersion string) (*MountStatsNFS, e
+ 
+ 			stats.Age = d
+ 		case fieldBytes:
++			if len(ss) < 2 {
++				return nil, fmt.Errorf("not enough information for NFS stats: %v", ss)
++			}
+ 			bstats, err := parseNFSBytesStats(ss[1:])
+ 			if err != nil {
+ 				return nil, err
+@@ -371,6 +377,9 @@ func parseMountStatsNFS(s *bufio.Scanner, statVersion string) (*MountStatsNFS, e
+ 
+ 			stats.Bytes = *bstats
+ 		case fieldEvents:
++			if len(ss) < 2 {
++				return nil, fmt.Errorf("not enough information for NFS stats: %v", ss)
++			}
+ 			estats, err := parseNFSEventsStats(ss[1:])
+ 			if err != nil {
+ 				return nil, err
+diff --git a/vendor/github.com/prometheus/procfs/net_conntrackstat.go b/vendor/github.com/prometheus/procfs/net_conntrackstat.go
+index b637be9..9964a36 100644
+--- a/vendor/github.com/prometheus/procfs/net_conntrackstat.go
++++ b/vendor/github.com/prometheus/procfs/net_conntrackstat.go
+@@ -55,7 +55,7 @@ func readConntrackStat(path string) ([]ConntrackStatEntry, error) {
+ 
+ 	stat, err := parseConntrackStat(bytes.NewReader(b))
+ 	if err != nil {
+-		return nil, fmt.Errorf("failed to read conntrack stats from %q: %v", path, err)
++		return nil, fmt.Errorf("failed to read conntrack stats from %q: %w", path, err)
+ 	}
+ 
+ 	return stat, nil
+@@ -147,7 +147,7 @@ func parseConntrackStatEntry(fields []string) (*ConntrackStatEntry, error) {
+ func parseConntrackStatField(field string) (uint64, error) {
+ 	val, err := strconv.ParseUint(field, 16, 64)
+ 	if err != nil {
+-		return 0, fmt.Errorf("couldn't parse \"%s\" field: %s", field, err)
++		return 0, fmt.Errorf("couldn't parse %q field: %w", field, err)
+ 	}
+ 	return val, err
+ }
+diff --git a/vendor/github.com/prometheus/procfs/net_ip_socket.go b/vendor/github.com/prometheus/procfs/net_ip_socket.go
+new file mode 100644
+index 0000000..ac01dd8
+--- /dev/null
++++ b/vendor/github.com/prometheus/procfs/net_ip_socket.go
+@@ -0,0 +1,220 @@
++// Copyright 2020 The Prometheus Authors
++// Licensed under the Apache License, Version 2.0 (the "License");
++// you may not use this file except in compliance with the License.
++// You may obtain a copy of the License at
++//
++// http://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing, software
++// distributed under the License is distributed on an "AS IS" BASIS,
++// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++// See the License for the specific language governing permissions and
++// limitations under the License.
++
++package procfs
++
++import (
++	"bufio"
++	"encoding/hex"
++	"fmt"
++	"io"
++	"net"
++	"os"
++	"strconv"
++	"strings"
++)
++
++const (
++	// readLimit is used by io.LimitReader while reading the content of the
++	// /proc/net/udp{,6} files. The number of lines inside such a file is dynamic
++	// as each line represents a single used socket.
++	// In theory, the number of available sockets is 65535 (2^16 - 1) per IP.
++	// With e.g. 150 Byte per line and the maximum number of 65535,
++	// the reader needs to handle 150 Byte * 65535 =~ 10 MB for a single IP.
++	readLimit = 4294967296 // Byte -> 4 GiB
++)
++
++// this contains generic data structures for both udp and tcp sockets
++type (
++	// NetIPSocket represents the contents of /proc/net/{t,u}dp{,6} file without the header.
++	NetIPSocket []*netIPSocketLine
++
++	// NetIPSocketSummary provides already computed values like the total queue lengths or
++	// the total number of used sockets. In contrast to NetIPSocket it does not collect
++	// the parsed lines into a slice.
++	NetIPSocketSummary struct {
++		// TxQueueLength shows the total queue length of all parsed tx_queue lengths.
++		TxQueueLength uint64
++		// RxQueueLength shows the total queue length of all parsed rx_queue lengths.
++		RxQueueLength uint64
++		// UsedSockets shows the total number of parsed lines representing the
++		// number of used sockets.
++		UsedSockets uint64
++	}
++
++	// netIPSocketLine represents the fields parsed from a single line
++	// in /proc/net/{t,u}dp{,6}. Fields which are not used by IPSocket are skipped.
++	// For the proc file format details, see https://linux.die.net/man/5/proc.
++	netIPSocketLine struct {
++		Sl        uint64
++		LocalAddr net.IP
++		LocalPort uint64
++		RemAddr   net.IP
++		RemPort   uint64
++		St        uint64
++		TxQueue   uint64
++		RxQueue   uint64
++		UID       uint64
++	}
++)
++
++func newNetIPSocket(file string) (NetIPSocket, error) {
++	f, err := os.Open(file)
++	if err != nil {
++		return nil, err
++	}
++	defer f.Close()
++
++	var netIPSocket NetIPSocket
++
++	lr := io.LimitReader(f, readLimit)
++	s := bufio.NewScanner(lr)
++	s.Scan() // skip first line with headers
++	for s.Scan() {
++		fields := strings.Fields(s.Text())
++		line, err := parseNetIPSocketLine(fields)
++		if err != nil {
++			return nil, err
++		}
++		netIPSocket = append(netIPSocket, line)
++	}
++	if err := s.Err(); err != nil {
++		return nil, err
++	}
++	return netIPSocket, nil
++}
++
++// newNetIPSocketSummary creates a new NetIPSocket{,6} from the contents of the given file.
++func newNetIPSocketSummary(file string) (*NetIPSocketSummary, error) {
++	f, err := os.Open(file)
++	if err != nil {
++		return nil, err
++	}
++	defer f.Close()
++
++	var netIPSocketSummary NetIPSocketSummary
++
++	lr := io.LimitReader(f, readLimit)
++	s := bufio.NewScanner(lr)
++	s.Scan() // skip first line with headers
++	for s.Scan() {
++		fields := strings.Fields(s.Text())
++		line, err := parseNetIPSocketLine(fields)
++		if err != nil {
++			return nil, err
++		}
++		netIPSocketSummary.TxQueueLength += line.TxQueue
++		netIPSocketSummary.RxQueueLength += line.RxQueue
++		netIPSocketSummary.UsedSockets++
++	}
++	if err := s.Err(); err != nil {
++		return nil, err
++	}
++	return &netIPSocketSummary, nil
++}
++
++// the /proc/net/{t,u}dp{,6} files are network byte order for ipv4 and for ipv6 the address is four words consisting of four bytes each. In each of those four words the four bytes are written in reverse order.
++
++func parseIP(hexIP string) (net.IP, error) {
++	var byteIP []byte
++	byteIP, err := hex.DecodeString(hexIP)
++	if err != nil {
++		return nil, fmt.Errorf("cannot parse address field in socket line %q", hexIP)
++	}
++	switch len(byteIP) {
++	case 4:
++		return net.IP{byteIP[3], byteIP[2], byteIP[1], byteIP[0]}, nil
++	case 16:
++		i := net.IP{
++			byteIP[3], byteIP[2], byteIP[1], byteIP[0],
++			byteIP[7], byteIP[6], byteIP[5], byteIP[4],
++			byteIP[11], byteIP[10], byteIP[9], byteIP[8],
++			byteIP[15], byteIP[14], byteIP[13], byteIP[12],
++		}
++		return i, nil
++	default:
++		return nil, fmt.Errorf("Unable to parse IP %s", hexIP)
++	}
++}
++
++// parseNetIPSocketLine parses a single line, represented by a list of fields.
++func parseNetIPSocketLine(fields []string) (*netIPSocketLine, error) {
++	line := &netIPSocketLine{}
++	if len(fields) < 8 {
++		return nil, fmt.Errorf(
++			"cannot parse net socket line as it has less then 8 columns %q",
++			strings.Join(fields, " "),
++		)
++	}
++	var err error // parse error
++
++	// sl
++	s := strings.Split(fields[0], ":")
++	if len(s) != 2 {
++		return nil, fmt.Errorf("cannot parse sl field in socket line %q", fields[0])
++	}
++
++	if line.Sl, err = strconv.ParseUint(s[0], 0, 64); err != nil {
++		return nil, fmt.Errorf("cannot parse sl value in socket line: %w", err)
++	}
++	// local_address
++	l := strings.Split(fields[1], ":")
++	if len(l) != 2 {
++		return nil, fmt.Errorf("cannot parse local_address field in socket line %q", fields[1])
++	}
++	if line.LocalAddr, err = parseIP(l[0]); err != nil {
++		return nil, err
++	}
++	if line.LocalPort, err = strconv.ParseUint(l[1], 16, 64); err != nil {
++		return nil, fmt.Errorf("cannot parse local_address port value in socket line: %w", err)
++	}
++
++	// remote_address
++	r := strings.Split(fields[2], ":")
++	if len(r) != 2 {
++		return nil, fmt.Errorf("cannot parse rem_address field in socket line %q", fields[1])
++	}
++	if line.RemAddr, err = parseIP(r[0]); err != nil {
++		return nil, err
++	}
++	if line.RemPort, err = strconv.ParseUint(r[1], 16, 64); err != nil {
++		return nil, fmt.Errorf("cannot parse rem_address port value in socket line: %w", err)
++	}
++
++	// st
++	if line.St, err = strconv.ParseUint(fields[3], 16, 64); err != nil {
++		return nil, fmt.Errorf("cannot parse st value in socket line: %w", err)
++	}
++
++	// tx_queue and rx_queue
++	q := strings.Split(fields[4], ":")
++	if len(q) != 2 {
++		return nil, fmt.Errorf(
++			"cannot parse tx/rx queues in socket line as it has a missing colon %q",
++			fields[4],
++		)
++	}
++	if line.TxQueue, err = strconv.ParseUint(q[0], 16, 64); err != nil {
++		return nil, fmt.Errorf("cannot parse tx_queue value in socket line: %w", err)
++	}
++	if line.RxQueue, err = strconv.ParseUint(q[1], 16, 64); err != nil {
++		return nil, fmt.Errorf("cannot parse rx_queue value in socket line: %w", err)
++	}
++
++	// uid
++	if line.UID, err = strconv.ParseUint(fields[7], 0, 64); err != nil {
++		return nil, fmt.Errorf("cannot parse uid value in socket line: %w", err)
++	}
++
++	return line, nil
++}
+diff --git a/vendor/github.com/prometheus/procfs/net_protocols.go b/vendor/github.com/prometheus/procfs/net_protocols.go
+new file mode 100644
+index 0000000..8c6de37
+--- /dev/null
++++ b/vendor/github.com/prometheus/procfs/net_protocols.go
+@@ -0,0 +1,180 @@
++// Copyright 2020 The Prometheus Authors
++// Licensed under the Apache License, Version 2.0 (the "License");
++// you may not use this file except in compliance with the License.
++// You may obtain a copy of the License at
++//
++// http://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing, software
++// distributed under the License is distributed on an "AS IS" BASIS,
++// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++// See the License for the specific language governing permissions and
++// limitations under the License.
++
++package procfs
++
++import (
++	"bufio"
++	"bytes"
++	"fmt"
++	"strconv"
++	"strings"
++
++	"github.com/prometheus/procfs/internal/util"
++)
++
++// NetProtocolStats stores the contents from /proc/net/protocols
++type NetProtocolStats map[string]NetProtocolStatLine
++
++// NetProtocolStatLine contains a single line parsed from /proc/net/protocols. We
++// only care about the first six columns as the rest are not likely to change
++// and only serve to provide a set of capabilities for each protocol.
++type NetProtocolStatLine struct {
++	Name         string // 0 The name of the protocol
++	Size         uint64 // 1 The size, in bytes, of a given protocol structure. e.g. sizeof(struct tcp_sock) or sizeof(struct unix_sock)
++	Sockets      int64  // 2 Number of sockets in use by this protocol
++	Memory       int64  // 3 Number of 4KB pages allocated by all sockets of this protocol
++	Pressure     int    // 4 This is either yes, no, or NI (not implemented). For the sake of simplicity we treat NI as not experiencing memory pressure.
++	MaxHeader    uint64 // 5 Protocol specific max header size
++	Slab         bool   // 6 Indicates whether or not memory is allocated from the SLAB
++	ModuleName   string // 7 The name of the module that implemented this protocol or "kernel" if not from a module
++	Capabilities NetProtocolCapabilities
++}
++
++// NetProtocolCapabilities contains a list of capabilities for each protocol
++type NetProtocolCapabilities struct {
++	Close               bool // 8
++	Connect             bool // 9
++	Disconnect          bool // 10
++	Accept              bool // 11
++	IoCtl               bool // 12
++	Init                bool // 13
++	Destroy             bool // 14
++	Shutdown            bool // 15
++	SetSockOpt          bool // 16
++	GetSockOpt          bool // 17
++	SendMsg             bool // 18
++	RecvMsg             bool // 19
++	SendPage            bool // 20
++	Bind                bool // 21
++	BacklogRcv          bool // 22
++	Hash                bool // 23
++	UnHash              bool // 24
++	GetPort             bool // 25
++	EnterMemoryPressure bool // 26
++}
++
++// NetProtocols reads stats from /proc/net/protocols and returns a map of
++// PortocolStatLine entries. As of this writing no official Linux Documentation
++// exists, however the source is fairly self-explanatory and the format seems
++// stable since its introduction in 2.6.12-rc2
++// Linux 2.6.12-rc2 - https://elixir.bootlin.com/linux/v2.6.12-rc2/source/net/core/sock.c#L1452
++// Linux 5.10 - https://elixir.bootlin.com/linux/v5.10.4/source/net/core/sock.c#L3586
++func (fs FS) NetProtocols() (NetProtocolStats, error) {
++	data, err := util.ReadFileNoStat(fs.proc.Path("net/protocols"))
++	if err != nil {
++		return NetProtocolStats{}, err
++	}
++	return parseNetProtocols(bufio.NewScanner(bytes.NewReader(data)))
++}
++
++func parseNetProtocols(s *bufio.Scanner) (NetProtocolStats, error) {
++	nps := NetProtocolStats{}
++
++	// Skip the header line
++	s.Scan()
++
++	for s.Scan() {
++		line, err := nps.parseLine(s.Text())
++		if err != nil {
++			return NetProtocolStats{}, err
++		}
++
++		nps[line.Name] = *line
++	}
++	return nps, nil
++}
++
++func (ps NetProtocolStats) parseLine(rawLine string) (*NetProtocolStatLine, error) {
++	line := &NetProtocolStatLine{Capabilities: NetProtocolCapabilities{}}
++	var err error
++	const enabled = "yes"
++	const disabled = "no"
++
++	fields := strings.Fields(rawLine)
++	line.Name = fields[0]
++	line.Size, err = strconv.ParseUint(fields[1], 10, 64)
++	if err != nil {
++		return nil, err
++	}
++	line.Sockets, err = strconv.ParseInt(fields[2], 10, 64)
++	if err != nil {
++		return nil, err
++	}
++	line.Memory, err = strconv.ParseInt(fields[3], 10, 64)
++	if err != nil {
++		return nil, err
++	}
++	if fields[4] == enabled {
++		line.Pressure = 1
++	} else if fields[4] == disabled {
++		line.Pressure = 0
++	} else {
++		line.Pressure = -1
++	}
++	line.MaxHeader, err = strconv.ParseUint(fields[5], 10, 64)
++	if err != nil {
++		return nil, err
++	}
++	if fields[6] == enabled {
++		line.Slab = true
++	} else if fields[6] == disabled {
++		line.Slab = false
++	} else {
++		return nil, fmt.Errorf("unable to parse capability for protocol: %s", line.Name)
++	}
++	line.ModuleName = fields[7]
++
++	err = line.Capabilities.parseCapabilities(fields[8:])
++	if err != nil {
++		return nil, err
++	}
++
++	return line, nil
++}
++
++func (pc *NetProtocolCapabilities) parseCapabilities(capabilities []string) error {
++	// The capabilities are all bools so we can loop over to map them
++	capabilityFields := [...]*bool{
++		&pc.Close,
++		&pc.Connect,
++		&pc.Disconnect,
++		&pc.Accept,
++		&pc.IoCtl,
++		&pc.Init,
++		&pc.Destroy,
++		&pc.Shutdown,
++		&pc.SetSockOpt,
++		&pc.GetSockOpt,
++		&pc.SendMsg,
++		&pc.RecvMsg,
++		&pc.SendPage,
++		&pc.Bind,
++		&pc.BacklogRcv,
++		&pc.Hash,
++		&pc.UnHash,
++		&pc.GetPort,
++		&pc.EnterMemoryPressure,
++	}
++
++	for i := 0; i < len(capabilities); i++ {
++		if capabilities[i] == "y" {
++			*capabilityFields[i] = true
++		} else if capabilities[i] == "n" {
++			*capabilityFields[i] = false
++		} else {
++			return fmt.Errorf("unable to parse capability block for protocol: position %d", i)
++		}
++	}
++	return nil
++}
+diff --git a/vendor/github.com/prometheus/procfs/net_sockstat.go b/vendor/github.com/prometheus/procfs/net_sockstat.go
+index f91ef55..e36f487 100644
+--- a/vendor/github.com/prometheus/procfs/net_sockstat.go
++++ b/vendor/github.com/prometheus/procfs/net_sockstat.go
+@@ -70,7 +70,7 @@ func readSockstat(name string) (*NetSockstat, error) {
+ 
+ 	stat, err := parseSockstat(bytes.NewReader(b))
+ 	if err != nil {
+-		return nil, fmt.Errorf("failed to read sockstats from %q: %v", name, err)
++		return nil, fmt.Errorf("failed to read sockstats from %q: %w", name, err)
+ 	}
+ 
+ 	return stat, nil
+@@ -90,7 +90,7 @@ func parseSockstat(r io.Reader) (*NetSockstat, error) {
+ 		// The remaining fields are key/value pairs.
+ 		kvs, err := parseSockstatKVs(fields[1:])
+ 		if err != nil {
+-			return nil, fmt.Errorf("error parsing sockstat key/value pairs from %q: %v", s.Text(), err)
++			return nil, fmt.Errorf("error parsing sockstat key/value pairs from %q: %w", s.Text(), err)
+ 		}
+ 
+ 		// The first field is the protocol. We must trim its colon suffix.
+diff --git a/vendor/github.com/prometheus/procfs/net_softnet.go b/vendor/github.com/prometheus/procfs/net_softnet.go
+index db5debd..46f12c6 100644
+--- a/vendor/github.com/prometheus/procfs/net_softnet.go
++++ b/vendor/github.com/prometheus/procfs/net_softnet.go
+@@ -51,7 +51,7 @@ func (fs FS) NetSoftnetStat() ([]SoftnetStat, error) {
+ 
+ 	entries, err := parseSoftnet(bytes.NewReader(b))
+ 	if err != nil {
+-		return nil, fmt.Errorf("failed to parse /proc/net/softnet_stat: %v", err)
++		return nil, fmt.Errorf("failed to parse /proc/net/softnet_stat: %w", err)
+ 	}
+ 
+ 	return entries, nil
+diff --git a/vendor/github.com/prometheus/procfs/net_tcp.go b/vendor/github.com/prometheus/procfs/net_tcp.go
+new file mode 100644
+index 0000000..5277629
+--- /dev/null
++++ b/vendor/github.com/prometheus/procfs/net_tcp.go
+@@ -0,0 +1,64 @@
++// Copyright 2020 The Prometheus Authors
++// Licensed under the Apache License, Version 2.0 (the "License");
++// you may not use this file except in compliance with the License.
++// You may obtain a copy of the License at
++//
++// http://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing, software
++// distributed under the License is distributed on an "AS IS" BASIS,
++// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++// See the License for the specific language governing permissions and
++// limitations under the License.
++
++package procfs
++
++type (
++	// NetTCP represents the contents of /proc/net/tcp{,6} file without the header.
++	NetTCP []*netIPSocketLine
++
++	// NetTCPSummary provides already computed values like the total queue lengths or
++	// the total number of used sockets. In contrast to NetTCP it does not collect
++	// the parsed lines into a slice.
++	NetTCPSummary NetIPSocketSummary
++)
++
++// NetTCP returns the IPv4 kernel/networking statistics for TCP datagrams
++// read from /proc/net/tcp.
++func (fs FS) NetTCP() (NetTCP, error) {
++	return newNetTCP(fs.proc.Path("net/tcp"))
++}
++
++// NetTCP6 returns the IPv6 kernel/networking statistics for TCP datagrams
++// read from /proc/net/tcp6.
++func (fs FS) NetTCP6() (NetTCP, error) {
++	return newNetTCP(fs.proc.Path("net/tcp6"))
++}
++
++// NetTCPSummary returns already computed statistics like the total queue lengths
++// for TCP datagrams read from /proc/net/tcp.
++func (fs FS) NetTCPSummary() (*NetTCPSummary, error) {
++	return newNetTCPSummary(fs.proc.Path("net/tcp"))
++}
++
++// NetTCP6Summary returns already computed statistics like the total queue lengths
++// for TCP datagrams read from /proc/net/tcp6.
++func (fs FS) NetTCP6Summary() (*NetTCPSummary, error) {
++	return newNetTCPSummary(fs.proc.Path("net/tcp6"))
++}
++
++// newNetTCP creates a new NetTCP{,6} from the contents of the given file.
++func newNetTCP(file string) (NetTCP, error) {
++	n, err := newNetIPSocket(file)
++	n1 := NetTCP(n)
++	return n1, err
++}
++
++func newNetTCPSummary(file string) (*NetTCPSummary, error) {
++	n, err := newNetIPSocketSummary(file)
++	if n == nil {
++		return nil, err
++	}
++	n1 := NetTCPSummary(*n)
++	return &n1, err
++}
+diff --git a/vendor/github.com/prometheus/procfs/net_udp.go b/vendor/github.com/prometheus/procfs/net_udp.go
+index d017e3f..9ac3daf 100644
+--- a/vendor/github.com/prometheus/procfs/net_udp.go
++++ b/vendor/github.com/prometheus/procfs/net_udp.go
+@@ -13,58 +13,14 @@
+ 
+ package procfs
+ 
+-import (
+-	"bufio"
+-	"encoding/hex"
+-	"fmt"
+-	"io"
+-	"net"
+-	"os"
+-	"strconv"
+-	"strings"
+-)
+-
+-const (
+-	// readLimit is used by io.LimitReader while reading the content of the
+-	// /proc/net/udp{,6} files. The number of lines inside such a file is dynamic
+-	// as each line represents a single used socket.
+-	// In theory, the number of available sockets is 65535 (2^16 - 1) per IP.
+-	// With e.g. 150 Byte per line and the maximum number of 65535,
+-	// the reader needs to handle 150 Byte * 65535 =~ 10 MB for a single IP.
+-	readLimit = 4294967296 // Byte -> 4 GiB
+-)
+-
+ type (
+ 	// NetUDP represents the contents of /proc/net/udp{,6} file without the header.
+-	NetUDP []*netUDPLine
++	NetUDP []*netIPSocketLine
+ 
+ 	// NetUDPSummary provides already computed values like the total queue lengths or
+ 	// the total number of used sockets. In contrast to NetUDP it does not collect
+ 	// the parsed lines into a slice.
+-	NetUDPSummary struct {
+-		// TxQueueLength shows the total queue length of all parsed tx_queue lengths.
+-		TxQueueLength uint64
+-		// RxQueueLength shows the total queue length of all parsed rx_queue lengths.
+-		RxQueueLength uint64
+-		// UsedSockets shows the total number of parsed lines representing the
+-		// number of used sockets.
+-		UsedSockets uint64
+-	}
+-
+-	// netUDPLine represents the fields parsed from a single line
+-	// in /proc/net/udp{,6}. Fields which are not used by UDP are skipped.
+-	// For the proc file format details, see https://linux.die.net/man/5/proc.
+-	netUDPLine struct {
+-		Sl        uint64
+-		LocalAddr net.IP
+-		LocalPort uint64
+-		RemAddr   net.IP
+-		RemPort   uint64
+-		St        uint64
+-		TxQueue   uint64
+-		RxQueue   uint64
+-		UID       uint64
+-	}
++	NetUDPSummary NetIPSocketSummary
+ )
+ 
+ // NetUDP returns the IPv4 kernel/networking statistics for UDP datagrams
+@@ -93,137 +49,16 @@ func (fs FS) NetUDP6Summary() (*NetUDPSummary, error) {
+ 
+ // newNetUDP creates a new NetUDP{,6} from the contents of the given file.
+ func newNetUDP(file string) (NetUDP, error) {
+-	f, err := os.Open(file)
+-	if err != nil {
+-		return nil, err
+-	}
+-	defer f.Close()
+-
+-	netUDP := NetUDP{}
+-
+-	lr := io.LimitReader(f, readLimit)
+-	s := bufio.NewScanner(lr)
+-	s.Scan() // skip first line with headers
+-	for s.Scan() {
+-		fields := strings.Fields(s.Text())
+-		line, err := parseNetUDPLine(fields)
+-		if err != nil {
+-			return nil, err
+-		}
+-		netUDP = append(netUDP, line)
+-	}
+-	if err := s.Err(); err != nil {
+-		return nil, err
+-	}
+-	return netUDP, nil
++	n, err := newNetIPSocket(file)
++	n1 := NetUDP(n)
++	return n1, err
+ }
+ 
+-// newNetUDPSummary creates a new NetUDP{,6} from the contents of the given file.
+ func newNetUDPSummary(file string) (*NetUDPSummary, error) {
+-	f, err := os.Open(file)
+-	if err != nil {
+-		return nil, err
+-	}
+-	defer f.Close()
+-
+-	netUDPSummary := &NetUDPSummary{}
+-
+-	lr := io.LimitReader(f, readLimit)
+-	s := bufio.NewScanner(lr)
+-	s.Scan() // skip first line with headers
+-	for s.Scan() {
+-		fields := strings.Fields(s.Text())
+-		line, err := parseNetUDPLine(fields)
+-		if err != nil {
+-			return nil, err
+-		}
+-		netUDPSummary.TxQueueLength += line.TxQueue
+-		netUDPSummary.RxQueueLength += line.RxQueue
+-		netUDPSummary.UsedSockets++
+-	}
+-	if err := s.Err(); err != nil {
++	n, err := newNetIPSocketSummary(file)
++	if n == nil {
+ 		return nil, err
+ 	}
+-	return netUDPSummary, nil
+-}
+-
+-// parseNetUDPLine parses a single line, represented by a list of fields.
+-func parseNetUDPLine(fields []string) (*netUDPLine, error) {
+-	line := &netUDPLine{}
+-	if len(fields) < 8 {
+-		return nil, fmt.Errorf(
+-			"cannot parse net udp socket line as it has less then 8 columns: %s",
+-			strings.Join(fields, " "),
+-		)
+-	}
+-	var err error // parse error
+-
+-	// sl
+-	s := strings.Split(fields[0], ":")
+-	if len(s) != 2 {
+-		return nil, fmt.Errorf(
+-			"cannot parse sl field in udp socket line: %s", fields[0])
+-	}
+-
+-	if line.Sl, err = strconv.ParseUint(s[0], 0, 64); err != nil {
+-		return nil, fmt.Errorf("cannot parse sl value in udp socket line: %s", err)
+-	}
+-	// local_address
+-	l := strings.Split(fields[1], ":")
+-	if len(l) != 2 {
+-		return nil, fmt.Errorf(
+-			"cannot parse local_address field in udp socket line: %s", fields[1])
+-	}
+-	if line.LocalAddr, err = hex.DecodeString(l[0]); err != nil {
+-		return nil, fmt.Errorf(
+-			"cannot parse local_address value in udp socket line: %s", err)
+-	}
+-	if line.LocalPort, err = strconv.ParseUint(l[1], 16, 64); err != nil {
+-		return nil, fmt.Errorf(
+-			"cannot parse local_address port value in udp socket line: %s", err)
+-	}
+-
+-	// remote_address
+-	r := strings.Split(fields[2], ":")
+-	if len(r) != 2 {
+-		return nil, fmt.Errorf(
+-			"cannot parse rem_address field in udp socket line: %s", fields[1])
+-	}
+-	if line.RemAddr, err = hex.DecodeString(r[0]); err != nil {
+-		return nil, fmt.Errorf(
+-			"cannot parse rem_address value in udp socket line: %s", err)
+-	}
+-	if line.RemPort, err = strconv.ParseUint(r[1], 16, 64); err != nil {
+-		return nil, fmt.Errorf(
+-			"cannot parse rem_address port value in udp socket line: %s", err)
+-	}
+-
+-	// st
+-	if line.St, err = strconv.ParseUint(fields[3], 16, 64); err != nil {
+-		return nil, fmt.Errorf(
+-			"cannot parse st value in udp socket line: %s", err)
+-	}
+-
+-	// tx_queue and rx_queue
+-	q := strings.Split(fields[4], ":")
+-	if len(q) != 2 {
+-		return nil, fmt.Errorf(
+-			"cannot parse tx/rx queues in udp socket line as it has a missing colon: %s",
+-			fields[4],
+-		)
+-	}
+-	if line.TxQueue, err = strconv.ParseUint(q[0], 16, 64); err != nil {
+-		return nil, fmt.Errorf("cannot parse tx_queue value in udp socket line: %s", err)
+-	}
+-	if line.RxQueue, err = strconv.ParseUint(q[1], 16, 64); err != nil {
+-		return nil, fmt.Errorf("cannot parse rx_queue value in udp socket line: %s", err)
+-	}
+-
+-	// uid
+-	if line.UID, err = strconv.ParseUint(fields[7], 0, 64); err != nil {
+-		return nil, fmt.Errorf(
+-			"cannot parse uid value in udp socket line: %s", err)
+-	}
+-
+-	return line, nil
++	n1 := NetUDPSummary(*n)
++	return &n1, err
+ }
+diff --git a/vendor/github.com/prometheus/procfs/net_unix.go b/vendor/github.com/prometheus/procfs/net_unix.go
+index c55b4b1..98aa8e1 100644
+--- a/vendor/github.com/prometheus/procfs/net_unix.go
++++ b/vendor/github.com/prometheus/procfs/net_unix.go
+@@ -108,14 +108,14 @@ func parseNetUNIX(r io.Reader) (*NetUNIX, error) {
+ 		line := s.Text()
+ 		item, err := nu.parseLine(line, hasInode, minFields)
+ 		if err != nil {
+-			return nil, fmt.Errorf("failed to parse /proc/net/unix data %q: %v", line, err)
++			return nil, fmt.Errorf("failed to parse /proc/net/unix data %q: %w", line, err)
+ 		}
+ 
+ 		nu.Rows = append(nu.Rows, item)
+ 	}
+ 
+ 	if err := s.Err(); err != nil {
+-		return nil, fmt.Errorf("failed to scan /proc/net/unix data: %v", err)
++		return nil, fmt.Errorf("failed to scan /proc/net/unix data: %w", err)
+ 	}
+ 
+ 	return &nu, nil
+@@ -136,29 +136,29 @@ func (u *NetUNIX) parseLine(line string, hasInode bool, min int) (*NetUNIXLine,
+ 
+ 	users, err := u.parseUsers(fields[1])
+ 	if err != nil {
+-		return nil, fmt.Errorf("failed to parse ref count(%s): %v", fields[1], err)
++		return nil, fmt.Errorf("failed to parse ref count %q: %w", fields[1], err)
+ 	}
+ 
+ 	flags, err := u.parseFlags(fields[3])
+ 	if err != nil {
+-		return nil, fmt.Errorf("failed to parse flags(%s): %v", fields[3], err)
++		return nil, fmt.Errorf("failed to parse flags %q: %w", fields[3], err)
+ 	}
+ 
+ 	typ, err := u.parseType(fields[4])
+ 	if err != nil {
+-		return nil, fmt.Errorf("failed to parse type(%s): %v", fields[4], err)
++		return nil, fmt.Errorf("failed to parse type %q: %w", fields[4], err)
+ 	}
+ 
+ 	state, err := u.parseState(fields[5])
+ 	if err != nil {
+-		return nil, fmt.Errorf("failed to parse state(%s): %v", fields[5], err)
++		return nil, fmt.Errorf("failed to parse state %q: %w", fields[5], err)
+ 	}
+ 
+ 	var inode uint64
+ 	if hasInode {
+ 		inode, err = u.parseInode(fields[6])
+ 		if err != nil {
+-			return nil, fmt.Errorf("failed to parse inode(%s): %v", fields[6], err)
++			return nil, fmt.Errorf("failed to parse inode %q: %w", fields[6], err)
+ 		}
+ 	}
+ 
+diff --git a/vendor/github.com/prometheus/procfs/proc.go b/vendor/github.com/prometheus/procfs/proc.go
+index 9f97b6e..28f6968 100644
+--- a/vendor/github.com/prometheus/procfs/proc.go
++++ b/vendor/github.com/prometheus/procfs/proc.go
+@@ -105,7 +105,7 @@ func (fs FS) AllProcs() (Procs, error) {
+ 
+ 	names, err := d.Readdirnames(-1)
+ 	if err != nil {
+-		return Procs{}, fmt.Errorf("could not read %s: %s", d.Name(), err)
++		return Procs{}, fmt.Errorf("could not read %q: %w", d.Name(), err)
+ 	}
+ 
+ 	p := Procs{}
+@@ -206,7 +206,7 @@ func (p Proc) FileDescriptors() ([]uintptr, error) {
+ 	for i, n := range names {
+ 		fd, err := strconv.ParseInt(n, 10, 32)
+ 		if err != nil {
+-			return nil, fmt.Errorf("could not parse fd %s: %s", n, err)
++			return nil, fmt.Errorf("could not parse fd %q: %w", n, err)
+ 		}
+ 		fds[i] = uintptr(fd)
+ 	}
+@@ -278,7 +278,7 @@ func (p Proc) fileDescriptors() ([]string, error) {
+ 
+ 	names, err := d.Readdirnames(-1)
+ 	if err != nil {
+-		return nil, fmt.Errorf("could not read %s: %s", d.Name(), err)
++		return nil, fmt.Errorf("could not read %q: %w", d.Name(), err)
+ 	}
+ 
+ 	return names, nil
+diff --git a/vendor/github.com/prometheus/procfs/proc_cgroup.go b/vendor/github.com/prometheus/procfs/proc_cgroup.go
+index 4abd464..0094a13 100644
+--- a/vendor/github.com/prometheus/procfs/proc_cgroup.go
++++ b/vendor/github.com/prometheus/procfs/proc_cgroup.go
+@@ -49,7 +49,7 @@ type Cgroup struct {
+ func parseCgroupString(cgroupStr string) (*Cgroup, error) {
+ 	var err error
+ 
+-	fields := strings.Split(cgroupStr, ":")
++	fields := strings.SplitN(cgroupStr, ":", 3)
+ 	if len(fields) < 3 {
+ 		return nil, fmt.Errorf("at least 3 fields required, found %d fields in cgroup string: %s", len(fields), cgroupStr)
+ 	}
+diff --git a/vendor/github.com/prometheus/procfs/proc_fdinfo.go b/vendor/github.com/prometheus/procfs/proc_fdinfo.go
+index a76ca70..cf63227 100644
+--- a/vendor/github.com/prometheus/procfs/proc_fdinfo.go
++++ b/vendor/github.com/prometheus/procfs/proc_fdinfo.go
+@@ -16,7 +16,7 @@ package procfs
+ import (
+ 	"bufio"
+ 	"bytes"
+-	"errors"
++	"fmt"
+ 	"regexp"
+ 
+ 	"github.com/prometheus/procfs/internal/util"
+@@ -112,7 +112,7 @@ func parseInotifyInfo(line string) (*InotifyInfo, error) {
+ 		}
+ 		return i, nil
+ 	}
+-	return nil, errors.New("invalid inode entry: " + line)
++	return nil, fmt.Errorf("invalid inode entry: %q", line)
+ }
+ 
+ // ProcFDInfos represents a list of ProcFDInfo structs.
+diff --git a/vendor/github.com/prometheus/procfs/proc_limits.go b/vendor/github.com/prometheus/procfs/proc_limits.go
+index 91ee24d..dd20f19 100644
+--- a/vendor/github.com/prometheus/procfs/proc_limits.go
++++ b/vendor/github.com/prometheus/procfs/proc_limits.go
+@@ -26,55 +26,55 @@ import (
+ // http://man7.org/linux/man-pages/man2/getrlimit.2.html.
+ type ProcLimits struct {
+ 	// CPU time limit in seconds.
+-	CPUTime int64
++	CPUTime uint64
+ 	// Maximum size of files that the process may create.
+-	FileSize int64
++	FileSize uint64
+ 	// Maximum size of the process's data segment (initialized data,
+ 	// uninitialized data, and heap).
+-	DataSize int64
++	DataSize uint64
+ 	// Maximum size of the process stack in bytes.
+-	StackSize int64
++	StackSize uint64
+ 	// Maximum size of a core file.
+-	CoreFileSize int64
++	CoreFileSize uint64
+ 	// Limit of the process's resident set in pages.
+-	ResidentSet int64
++	ResidentSet uint64
+ 	// Maximum number of processes that can be created for the real user ID of
+ 	// the calling process.
+-	Processes int64
++	Processes uint64
+ 	// Value one greater than the maximum file descriptor number that can be
+ 	// opened by this process.
+-	OpenFiles int64
++	OpenFiles uint64
+ 	// Maximum number of bytes of memory that may be locked into RAM.
+-	LockedMemory int64
++	LockedMemory uint64
+ 	// Maximum size of the process's virtual memory address space in bytes.
+-	AddressSpace int64
++	AddressSpace uint64
+ 	// Limit on the combined number of flock(2) locks and fcntl(2) leases that
+ 	// this process may establish.
+-	FileLocks int64
++	FileLocks uint64
+ 	// Limit of signals that may be queued for the real user ID of the calling
+ 	// process.
+-	PendingSignals int64
++	PendingSignals uint64
+ 	// Limit on the number of bytes that can be allocated for POSIX message
+ 	// queues for the real user ID of the calling process.
+-	MsqqueueSize int64
++	MsqqueueSize uint64
+ 	// Limit of the nice priority set using setpriority(2) or nice(2).
+-	NicePriority int64
++	NicePriority uint64
+ 	// Limit of the real-time priority set using sched_setscheduler(2) or
+ 	// sched_setparam(2).
+-	RealtimePriority int64
++	RealtimePriority uint64
+ 	// Limit (in microseconds) on the amount of CPU time that a process
+ 	// scheduled under a real-time scheduling policy may consume without making
+ 	// a blocking system call.
+-	RealtimeTimeout int64
++	RealtimeTimeout uint64
+ }
+ 
+ const (
+-	limitsFields    = 3
++	limitsFields    = 4
+ 	limitsUnlimited = "unlimited"
+ )
+ 
+ var (
+-	limitsDelimiter = regexp.MustCompile("  +")
++	limitsMatch = regexp.MustCompile(`(Max \w+\s{0,1}?\w*\s{0,1}\w*)\s{2,}(\w+)\s+(\w+)`)
+ )
+ 
+ // NewLimits returns the current soft limits of the process.
+@@ -96,46 +96,49 @@ func (p Proc) Limits() (ProcLimits, error) {
+ 		l = ProcLimits{}
+ 		s = bufio.NewScanner(f)
+ 	)
++
++	s.Scan() // Skip limits header
++
+ 	for s.Scan() {
+-		fields := limitsDelimiter.Split(s.Text(), limitsFields)
++		//fields := limitsMatch.Split(s.Text(), limitsFields)
++		fields := limitsMatch.FindStringSubmatch(s.Text())
+ 		if len(fields) != limitsFields {
+-			return ProcLimits{}, fmt.Errorf(
+-				"couldn't parse %s line %s", f.Name(), s.Text())
++			return ProcLimits{}, fmt.Errorf("couldn't parse %q line %q", f.Name(), s.Text())
+ 		}
+ 
+-		switch fields[0] {
++		switch fields[1] {
+ 		case "Max cpu time":
+-			l.CPUTime, err = parseInt(fields[1])
++			l.CPUTime, err = parseUint(fields[2])
+ 		case "Max file size":
+-			l.FileSize, err = parseInt(fields[1])
++			l.FileSize, err = parseUint(fields[2])
+ 		case "Max data size":
+-			l.DataSize, err = parseInt(fields[1])
++			l.DataSize, err = parseUint(fields[2])
+ 		case "Max stack size":
+-			l.StackSize, err = parseInt(fields[1])
++			l.StackSize, err = parseUint(fields[2])
+ 		case "Max core file size":
+-			l.CoreFileSize, err = parseInt(fields[1])
++			l.CoreFileSize, err = parseUint(fields[2])
+ 		case "Max resident set":
+-			l.ResidentSet, err = parseInt(fields[1])
++			l.ResidentSet, err = parseUint(fields[2])
+ 		case "Max processes":
+-			l.Processes, err = parseInt(fields[1])
++			l.Processes, err = parseUint(fields[2])
+ 		case "Max open files":
+-			l.OpenFiles, err = parseInt(fields[1])
++			l.OpenFiles, err = parseUint(fields[2])
+ 		case "Max locked memory":
+-			l.LockedMemory, err = parseInt(fields[1])
++			l.LockedMemory, err = parseUint(fields[2])
+ 		case "Max address space":
+-			l.AddressSpace, err = parseInt(fields[1])
++			l.AddressSpace, err = parseUint(fields[2])
+ 		case "Max file locks":
+-			l.FileLocks, err = parseInt(fields[1])
++			l.FileLocks, err = parseUint(fields[2])
+ 		case "Max pending signals":
+-			l.PendingSignals, err = parseInt(fields[1])
++			l.PendingSignals, err = parseUint(fields[2])
+ 		case "Max msgqueue size":
+-			l.MsqqueueSize, err = parseInt(fields[1])
++			l.MsqqueueSize, err = parseUint(fields[2])
+ 		case "Max nice priority":
+-			l.NicePriority, err = parseInt(fields[1])
++			l.NicePriority, err = parseUint(fields[2])
+ 		case "Max realtime priority":
+-			l.RealtimePriority, err = parseInt(fields[1])
++			l.RealtimePriority, err = parseUint(fields[2])
+ 		case "Max realtime timeout":
+-			l.RealtimeTimeout, err = parseInt(fields[1])
++			l.RealtimeTimeout, err = parseUint(fields[2])
+ 		}
+ 		if err != nil {
+ 			return ProcLimits{}, err
+@@ -145,13 +148,13 @@ func (p Proc) Limits() (ProcLimits, error) {
+ 	return l, s.Err()
+ }
+ 
+-func parseInt(s string) (int64, error) {
++func parseUint(s string) (uint64, error) {
+ 	if s == limitsUnlimited {
+-		return -1, nil
++		return 18446744073709551615, nil
+ 	}
+-	i, err := strconv.ParseInt(s, 10, 64)
++	i, err := strconv.ParseUint(s, 10, 64)
+ 	if err != nil {
+-		return 0, fmt.Errorf("couldn't parse value %s: %s", s, err)
++		return 0, fmt.Errorf("couldn't parse value %q: %w", s, err)
+ 	}
+ 	return i, nil
+ }
+diff --git a/vendor/github.com/prometheus/procfs/proc_ns.go b/vendor/github.com/prometheus/procfs/proc_ns.go
+index c66740f..391b4cb 100644
+--- a/vendor/github.com/prometheus/procfs/proc_ns.go
++++ b/vendor/github.com/prometheus/procfs/proc_ns.go
+@@ -40,7 +40,7 @@ func (p Proc) Namespaces() (Namespaces, error) {
+ 
+ 	names, err := d.Readdirnames(-1)
+ 	if err != nil {
+-		return nil, fmt.Errorf("failed to read contents of ns dir: %v", err)
++		return nil, fmt.Errorf("failed to read contents of ns dir: %w", err)
+ 	}
+ 
+ 	ns := make(Namespaces, len(names))
+@@ -52,13 +52,13 @@ func (p Proc) Namespaces() (Namespaces, error) {
+ 
+ 		fields := strings.SplitN(target, ":", 2)
+ 		if len(fields) != 2 {
+-			return nil, fmt.Errorf("failed to parse namespace type and inode from '%v'", target)
++			return nil, fmt.Errorf("failed to parse namespace type and inode from %q", target)
+ 		}
+ 
+ 		typ := fields[0]
+ 		inode, err := strconv.ParseUint(strings.Trim(fields[1], "[]"), 10, 32)
+ 		if err != nil {
+-			return nil, fmt.Errorf("failed to parse inode from '%v': %v", fields[1], err)
++			return nil, fmt.Errorf("failed to parse inode from %q: %w", fields[1], err)
+ 		}
+ 
+ 		ns[name] = Namespace{typ, uint32(inode)}
+diff --git a/vendor/github.com/prometheus/procfs/proc_psi.go b/vendor/github.com/prometheus/procfs/proc_psi.go
+index 0d7bee5..dc6c14f 100644
+--- a/vendor/github.com/prometheus/procfs/proc_psi.go
++++ b/vendor/github.com/prometheus/procfs/proc_psi.go
+@@ -59,7 +59,7 @@ type PSIStats struct {
+ func (fs FS) PSIStatsForResource(resource string) (PSIStats, error) {
+ 	data, err := util.ReadFileNoStat(fs.proc.Path(fmt.Sprintf("%s/%s", "pressure", resource)))
+ 	if err != nil {
+-		return PSIStats{}, fmt.Errorf("psi_stats: unavailable for %s", resource)
++		return PSIStats{}, fmt.Errorf("psi_stats: unavailable for %q: %w", resource, err)
+ 	}
+ 
+ 	return parsePSIStats(resource, bytes.NewReader(data))
+diff --git a/vendor/github.com/prometheus/procfs/proc_stat.go b/vendor/github.com/prometheus/procfs/proc_stat.go
+index 4517d2e..67ca0e9 100644
+--- a/vendor/github.com/prometheus/procfs/proc_stat.go
++++ b/vendor/github.com/prometheus/procfs/proc_stat.go
+@@ -127,10 +127,7 @@ func (p Proc) Stat() (ProcStat, error) {
+ 	)
+ 
+ 	if l < 0 || r < 0 {
+-		return ProcStat{}, fmt.Errorf(
+-			"unexpected format, couldn't extract comm: %s",
+-			data,
+-		)
++		return ProcStat{}, fmt.Errorf("unexpected format, couldn't extract comm %q", data)
+ 	}
+ 
+ 	s.Comm = string(data[l+1 : r])
+diff --git a/vendor/github.com/prometheus/procfs/schedstat.go b/vendor/github.com/prometheus/procfs/schedstat.go
+index a4c4089..2822816 100644
+--- a/vendor/github.com/prometheus/procfs/schedstat.go
++++ b/vendor/github.com/prometheus/procfs/schedstat.go
+@@ -95,24 +95,27 @@ func (fs FS) Schedstat() (*Schedstat, error) {
+ 	return stats, nil
+ }
+ 
+-func parseProcSchedstat(contents string) (stats ProcSchedstat, err error) {
++func parseProcSchedstat(contents string) (ProcSchedstat, error) {
++	var (
++		stats ProcSchedstat
++		err   error
++	)
+ 	match := procLineRE.FindStringSubmatch(contents)
+ 
+ 	if match != nil {
+ 		stats.RunningNanoseconds, err = strconv.ParseUint(match[1], 10, 64)
+ 		if err != nil {
+-			return
++			return stats, err
+ 		}
+ 
+ 		stats.WaitingNanoseconds, err = strconv.ParseUint(match[2], 10, 64)
+ 		if err != nil {
+-			return
++			return stats, err
+ 		}
+ 
+ 		stats.RunTimeslices, err = strconv.ParseUint(match[3], 10, 64)
+-		return
++		return stats, err
+ 	}
+ 
+-	err = errors.New("could not parse schedstat")
+-	return
++	return stats, errors.New("could not parse schedstat")
+ }
+diff --git a/vendor/github.com/prometheus/procfs/slab.go b/vendor/github.com/prometheus/procfs/slab.go
+new file mode 100644
+index 0000000..7896fd7
+--- /dev/null
++++ b/vendor/github.com/prometheus/procfs/slab.go
+@@ -0,0 +1,151 @@
++// Copyright 2020 The Prometheus Authors
++// Licensed under the Apache License, Version 2.0 (the "License");
++// you may not use this file except in compliance with the License.
++// You may obtain a copy of the License at
++//
++// http://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing, software
++// distributed under the License is distributed on an "AS IS" BASIS,
++// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++// See the License for the specific language governing permissions and
++// limitations under the License.
++
++package procfs
++
++import (
++	"bufio"
++	"bytes"
++	"fmt"
++	"regexp"
++	"strconv"
++	"strings"
++
++	"github.com/prometheus/procfs/internal/util"
++)
++
++var (
++	slabSpace  = regexp.MustCompile(`\s+`)
++	slabVer    = regexp.MustCompile(`slabinfo -`)
++	slabHeader = regexp.MustCompile(`# name`)
++)
++
++// Slab represents a slab pool in the kernel.
++type Slab struct {
++	Name         string
++	ObjActive    int64
++	ObjNum       int64
++	ObjSize      int64
++	ObjPerSlab   int64
++	PagesPerSlab int64
++	// tunables
++	Limit        int64
++	Batch        int64
++	SharedFactor int64
++	SlabActive   int64
++	SlabNum      int64
++	SharedAvail  int64
++}
++
++// SlabInfo represents info for all slabs.
++type SlabInfo struct {
++	Slabs []*Slab
++}
++
++func shouldParseSlab(line string) bool {
++	if slabVer.MatchString(line) {
++		return false
++	}
++	if slabHeader.MatchString(line) {
++		return false
++	}
++	return true
++}
++
++// parseV21SlabEntry is used to parse a line from /proc/slabinfo version 2.1.
++func parseV21SlabEntry(line string) (*Slab, error) {
++	// First cleanup whitespace.
++	l := slabSpace.ReplaceAllString(line, " ")
++	s := strings.Split(l, " ")
++	if len(s) != 16 {
++		return nil, fmt.Errorf("unable to parse: %q", line)
++	}
++	var err error
++	i := &Slab{Name: s[0]}
++	i.ObjActive, err = strconv.ParseInt(s[1], 10, 64)
++	if err != nil {
++		return nil, err
++	}
++	i.ObjNum, err = strconv.ParseInt(s[2], 10, 64)
++	if err != nil {
++		return nil, err
++	}
++	i.ObjSize, err = strconv.ParseInt(s[3], 10, 64)
++	if err != nil {
++		return nil, err
++	}
++	i.ObjPerSlab, err = strconv.ParseInt(s[4], 10, 64)
++	if err != nil {
++		return nil, err
++	}
++	i.PagesPerSlab, err = strconv.ParseInt(s[5], 10, 64)
++	if err != nil {
++		return nil, err
++	}
++	i.Limit, err = strconv.ParseInt(s[8], 10, 64)
++	if err != nil {
++		return nil, err
++	}
++	i.Batch, err = strconv.ParseInt(s[9], 10, 64)
++	if err != nil {
++		return nil, err
++	}
++	i.SharedFactor, err = strconv.ParseInt(s[10], 10, 64)
++	if err != nil {
++		return nil, err
++	}
++	i.SlabActive, err = strconv.ParseInt(s[13], 10, 64)
++	if err != nil {
++		return nil, err
++	}
++	i.SlabNum, err = strconv.ParseInt(s[14], 10, 64)
++	if err != nil {
++		return nil, err
++	}
++	i.SharedAvail, err = strconv.ParseInt(s[15], 10, 64)
++	if err != nil {
++		return nil, err
++	}
++	return i, nil
++}
++
++// parseSlabInfo21 is used to parse a slabinfo 2.1 file.
++func parseSlabInfo21(r *bytes.Reader) (SlabInfo, error) {
++	scanner := bufio.NewScanner(r)
++	s := SlabInfo{Slabs: []*Slab{}}
++	for scanner.Scan() {
++		line := scanner.Text()
++		if !shouldParseSlab(line) {
++			continue
++		}
++		slab, err := parseV21SlabEntry(line)
++		if err != nil {
++			return s, err
++		}
++		s.Slabs = append(s.Slabs, slab)
++	}
++	return s, nil
++}
++
++// SlabInfo reads data from /proc/slabinfo
++func (fs FS) SlabInfo() (SlabInfo, error) {
++	// TODO: Consider passing options to allow for parsing different
++	// slabinfo versions. However, slabinfo 2.1 has been stable since
++	// kernel 2.6.10 and later.
++	data, err := util.ReadFileNoStat(fs.proc.Path("slabinfo"))
++	if err != nil {
++		return SlabInfo{}, err
++	}
++
++	return parseSlabInfo21(bytes.NewReader(data))
++}
+diff --git a/vendor/github.com/prometheus/procfs/stat.go b/vendor/github.com/prometheus/procfs/stat.go
+index b2a6fc9..6d87275 100644
+--- a/vendor/github.com/prometheus/procfs/stat.go
++++ b/vendor/github.com/prometheus/procfs/stat.go
+@@ -93,10 +93,10 @@ func parseCPUStat(line string) (CPUStat, int64, error) {
+ 		&cpuStat.Guest, &cpuStat.GuestNice)
+ 
+ 	if err != nil && err != io.EOF {
+-		return CPUStat{}, -1, fmt.Errorf("couldn't parse %s (cpu): %s", line, err)
++		return CPUStat{}, -1, fmt.Errorf("couldn't parse %q (cpu): %w", line, err)
+ 	}
+ 	if count == 0 {
+-		return CPUStat{}, -1, fmt.Errorf("couldn't parse %s (cpu): 0 elements parsed", line)
++		return CPUStat{}, -1, fmt.Errorf("couldn't parse %q (cpu): 0 elements parsed", line)
+ 	}
+ 
+ 	cpuStat.User /= userHZ
+@@ -116,7 +116,7 @@ func parseCPUStat(line string) (CPUStat, int64, error) {
+ 
+ 	cpuID, err := strconv.ParseInt(cpu[3:], 10, 64)
+ 	if err != nil {
+-		return CPUStat{}, -1, fmt.Errorf("couldn't parse %s (cpu/cpuid): %s", line, err)
++		return CPUStat{}, -1, fmt.Errorf("couldn't parse %q (cpu/cpuid): %w", line, err)
+ 	}
+ 
+ 	return cpuStat, cpuID, nil
+@@ -136,7 +136,7 @@ func parseSoftIRQStat(line string) (SoftIRQStat, uint64, error) {
+ 		&softIRQStat.Hrtimer, &softIRQStat.Rcu)
+ 
+ 	if err != nil {
+-		return SoftIRQStat{}, 0, fmt.Errorf("couldn't parse %s (softirq): %s", line, err)
++		return SoftIRQStat{}, 0, fmt.Errorf("couldn't parse %q (softirq): %w", line, err)
+ 	}
+ 
+ 	return softIRQStat, total, nil
+@@ -184,34 +184,34 @@ func (fs FS) Stat() (Stat, error) {
+ 		switch {
+ 		case parts[0] == "btime":
+ 			if stat.BootTime, err = strconv.ParseUint(parts[1], 10, 64); err != nil {
+-				return Stat{}, fmt.Errorf("couldn't parse %s (btime): %s", parts[1], err)
++				return Stat{}, fmt.Errorf("couldn't parse %q (btime): %w", parts[1], err)
+ 			}
+ 		case parts[0] == "intr":
+ 			if stat.IRQTotal, err = strconv.ParseUint(parts[1], 10, 64); err != nil {
+-				return Stat{}, fmt.Errorf("couldn't parse %s (intr): %s", parts[1], err)
++				return Stat{}, fmt.Errorf("couldn't parse %q (intr): %w", parts[1], err)
+ 			}
+ 			numberedIRQs := parts[2:]
+ 			stat.IRQ = make([]uint64, len(numberedIRQs))
+ 			for i, count := range numberedIRQs {
+ 				if stat.IRQ[i], err = strconv.ParseUint(count, 10, 64); err != nil {
+-					return Stat{}, fmt.Errorf("couldn't parse %s (intr%d): %s", count, i, err)
++					return Stat{}, fmt.Errorf("couldn't parse %q (intr%d): %w", count, i, err)
+ 				}
+ 			}
+ 		case parts[0] == "ctxt":
+ 			if stat.ContextSwitches, err = strconv.ParseUint(parts[1], 10, 64); err != nil {
+-				return Stat{}, fmt.Errorf("couldn't parse %s (ctxt): %s", parts[1], err)
++				return Stat{}, fmt.Errorf("couldn't parse %q (ctxt): %w", parts[1], err)
+ 			}
+ 		case parts[0] == "processes":
+ 			if stat.ProcessCreated, err = strconv.ParseUint(parts[1], 10, 64); err != nil {
+-				return Stat{}, fmt.Errorf("couldn't parse %s (processes): %s", parts[1], err)
++				return Stat{}, fmt.Errorf("couldn't parse %q (processes): %w", parts[1], err)
+ 			}
+ 		case parts[0] == "procs_running":
+ 			if stat.ProcessesRunning, err = strconv.ParseUint(parts[1], 10, 64); err != nil {
+-				return Stat{}, fmt.Errorf("couldn't parse %s (procs_running): %s", parts[1], err)
++				return Stat{}, fmt.Errorf("couldn't parse %q (procs_running): %w", parts[1], err)
+ 			}
+ 		case parts[0] == "procs_blocked":
+ 			if stat.ProcessesBlocked, err = strconv.ParseUint(parts[1], 10, 64); err != nil {
+-				return Stat{}, fmt.Errorf("couldn't parse %s (procs_blocked): %s", parts[1], err)
++				return Stat{}, fmt.Errorf("couldn't parse %q (procs_blocked): %w", parts[1], err)
+ 			}
+ 		case parts[0] == "softirq":
+ 			softIRQStats, total, err := parseSoftIRQStat(line)
+@@ -237,7 +237,7 @@ func (fs FS) Stat() (Stat, error) {
+ 	}
+ 
+ 	if err := scanner.Err(); err != nil {
+-		return Stat{}, fmt.Errorf("couldn't parse %s: %s", fileName, err)
++		return Stat{}, fmt.Errorf("couldn't parse %q: %w", fileName, err)
+ 	}
+ 
+ 	return stat, nil
+diff --git a/vendor/github.com/prometheus/procfs/xfrm.go b/vendor/github.com/prometheus/procfs/xfrm.go
+index 30aa417..eed07c7 100644
+--- a/vendor/github.com/prometheus/procfs/xfrm.go
++++ b/vendor/github.com/prometheus/procfs/xfrm.go
+@@ -112,8 +112,7 @@ func (fs FS) NewXfrmStat() (XfrmStat, error) {
+ 		fields := strings.Fields(s.Text())
+ 
+ 		if len(fields) != 2 {
+-			return XfrmStat{}, fmt.Errorf(
+-				"couldn't parse %s line %s", file.Name(), s.Text())
++			return XfrmStat{}, fmt.Errorf("couldn't parse %q line %q", file.Name(), s.Text())
+ 		}
+ 
+ 		name := fields[0]
+diff --git a/vendor/github.com/prometheus/procfs/zoneinfo.go b/vendor/github.com/prometheus/procfs/zoneinfo.go
+index e941503..0b9bb67 100644
+--- a/vendor/github.com/prometheus/procfs/zoneinfo.go
++++ b/vendor/github.com/prometheus/procfs/zoneinfo.go
+@@ -74,11 +74,11 @@ var nodeZoneRE = regexp.MustCompile(`(\d+), zone\s+(\w+)`)
+ func (fs FS) Zoneinfo() ([]Zoneinfo, error) {
+ 	data, err := ioutil.ReadFile(fs.proc.Path("zoneinfo"))
+ 	if err != nil {
+-		return nil, fmt.Errorf("error reading zoneinfo %s: %s", fs.proc.Path("zoneinfo"), err)
++		return nil, fmt.Errorf("error reading zoneinfo %q: %w", fs.proc.Path("zoneinfo"), err)
+ 	}
+ 	zoneinfo, err := parseZoneinfo(data)
+ 	if err != nil {
+-		return nil, fmt.Errorf("error parsing zoneinfo %s: %s", fs.proc.Path("zoneinfo"), err)
++		return nil, fmt.Errorf("error parsing zoneinfo %q: %w", fs.proc.Path("zoneinfo"), err)
+ 	}
+ 	return zoneinfo, nil
+ }
