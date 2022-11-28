@@ -2,13 +2,16 @@
 
 Name:           KubeOS
 Version:        1.0.1
-Release:        5
+Release:        6
 Summary:        O&M platform used to update the whole OS as an entirety
 License:        Mulan PSL v2
 Source0:        https://gitee.com/openeuler/KubeOS/repository/archive/v%{version}.tar.gz
 Patch1:         0001-KubeOS-modify-checks-in-generate.sh-and-change-modul.patch
 Patch2:         0002-change-generate-argument-from-isopath-to-repopath.patch
 Patch3:         0003-KubeOS-add-arm-architecture-support-to-the-OS-image.patch
+%ifarch riscv64
+Patch4:         fix-undefined-parseCPUInfo.patch
+%endif
 BuildRoot:      %{_tmppath}/%{name}-%{version}-build
 BuildRequires:  make
 BuildRequires:  golang >= 1.13
@@ -81,6 +84,12 @@ install -p -m 0600 ./files/os-release %{buildroot}/opt/kubeOS/files
 rm -rfv %{buildroot}
 
 %changelog
+* Thu Nov 24 2022 misaka00251 <liuxin@iscas.ac.cn> - 1.0.1-6
+- Type:Feature
+- CVE:NA
+- SUG:NA
+- DESC:Fix riscv64 support
+
 * Fri Dec 17 2021 liyuanrong<liyuanrong1@huawei.com> - 1.0.1-5
 - Type:requirement
 - CVE:NA
