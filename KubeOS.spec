@@ -2,7 +2,7 @@
 
 Name:           KubeOS
 Version:        1.0.2
-Release:        6
+Release:        7
 Summary:        O&M platform used to update the whole OS as an entirety
 License:        Mulan PSL v2
 Source0:        https://gitee.com/openeuler/KubeOS/repository/archive/v%{version}.tar.gz
@@ -11,6 +11,7 @@ Patch2:         0002-KubeOS-fix-the-kbimg.sh-exception-and-pxe-installati.patch
 Patch3:         0003-KubeOS-fixed-the-issue-of-VMs-images-and-add-check-o.patch
 Patch4:         0004-KubeOS-add-the-clearing-of-space-before-the-upgrade-.patch
 Patch5:         0005-KubeOS-add-the-configuration-of-etc-resolv.conf-and-.patch
+Patch6:         0006-KubeOS-remove-grub2-legacy-install-add-error-handlin.patch
 BuildRoot:      %{_tmppath}/%{name}-%{version}-build
 BuildRequires:  make
 BuildRequires:  golang >= 1.13
@@ -111,6 +112,12 @@ install -p -m 0600 ./files/os-release %{buildroot}/opt/kubeOS/files
 rm -rfv %{buildroot}
 
 %changelog
+* Tue Nov 29 2022 liyuanrong<liyuanrong1@huawei.com> - 1.0.2-7
+- Type:requirement
+- CVE:NA
+- SUG:restart
+- DESC:remove grub2 legacy install, add error handling for opstype and add entry for unit test in Makefile
+
 * Sat Sep 03 2022 liyuanrong<liyuanrong1@huawei.com> - 1.0.2-6
 - Type:requirement
 - CVE:NA
