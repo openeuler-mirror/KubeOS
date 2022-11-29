@@ -6,14 +6,6 @@ ARCH=`arch`
 
 function install_grub2_x86 ()
 {
-    # make boot.img/core.img and setup, to support legacy boot mode
-    GRUBNAME=$(which grub2-install)
-    echo "Installing GRUB2..."
-    GRUB_OPTS=${GRUB_OPTS:-"--force"}
-    GRUB_OPTS="$GRUB_OPTS --target=i386-pc"
-
-    $GRUBNAME --modules="biosdisk part_msdos" $GRUB_OPTS $DEVICE
-
     # make efi file, and save in FAT16 partition, to support UEFI boot mode
     cp -r /usr/lib/grub/x86_64-efi boot/efi/EFI/openEuler
     eval "grub2-mkimage -d /usr/lib/grub/x86_64-efi -O x86_64-efi --output=/boot/efi/EFI/openEuler/grubx64.efi '--prefix=(,gpt1)/EFI/openEuler' fat part_gpt part_msdos linux"
