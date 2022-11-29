@@ -52,24 +52,3 @@ func TestpullOSImage(t *testing.T) {
 	}
 	defer os.RemoveAll("/persist")
 }
-
-func TestrandStringBytesRmndr(t *testing.T) {
-	type args struct {
-		n int
-	}
-	tests := []struct {
-		name string
-		args args
-		want string
-	}{
-		{name: "normal", args: args{n: 6}, want: ""},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := randStringBytesRmndr(tt.args.n); got == "" {
-				t.Errorf("randStringBytesRmndr() not generatre random string")
-			}
-
-		})
-	}
-}

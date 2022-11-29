@@ -15,6 +15,7 @@ package controllers
 
 import (
 	"context"
+	"fmt"
 	"os"
 
 	corev1 "k8s.io/api/core/v1"
@@ -123,6 +124,8 @@ func (r *OSReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Re
 			if err := r.Connection.RollbackSpec(); err != nil {
 				return values.RequeueNow, err
 			}
+		default:
+			return values.RequeueNow, fmt.Errorf("operation %s cannot be recognized", opsType)
 		}
 	}
 	return values.Requeue, nil
