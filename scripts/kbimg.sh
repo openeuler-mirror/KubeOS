@@ -125,6 +125,7 @@ function verify_upgrade_image_input() {
     echo "$@" | grep -q "\-$i "
     if [ "$?" -ne 0 ];then
           log_error_print "option -$i is mandatory, please check input"
+          show_upgrade_image_usage
           exit 3
     fi
   done
