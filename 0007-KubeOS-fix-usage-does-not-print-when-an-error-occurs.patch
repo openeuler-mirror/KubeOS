@@ -1,0 +1,29 @@
+From 20f66b28ea95e262f54cad1a9b65d564f91b8d12 Mon Sep 17 00:00:00 2001
+From: liyuanr <liyuanrong1@huawei.com>
+Date: Thu, 8 Dec 2022 15:08:52 +0800
+Subject: [PATCH] KubeOS:fix usage does not print when an error occurs in the
+ upgrade image creation
+
+Fix the bug that the usage does not print
+when the upgrade image has parameter errors
+
+Signed-off-by: liyuanr <liyuanrong1@huawei.com>
+---
+ scripts/kbimg.sh | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/scripts/kbimg.sh b/scripts/kbimg.sh
+index a623e3d..a860c06 100644
+--- a/scripts/kbimg.sh
++++ b/scripts/kbimg.sh
+@@ -125,6 +125,7 @@ function verify_upgrade_image_input() {
+     echo "$@" | grep -q "\-$i "
+     if [ "$?" -ne 0 ];then
+           log_error_print "option -$i is mandatory, please check input"
++          show_upgrade_image_usage
+           exit 3
+     fi
+   done
+-- 
+2.33.0.windows.2
+
