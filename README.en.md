@@ -1,36 +1,17 @@
 # KubeOS
+## Introduction
+KubeOS is a lightweight OS designed for scenarios where services run in containers. KubeOS connects OSs as components to Kubernetes by kubernetes crd and operator, so that the OSs are in the same position as services. With KubeOS, a Kubernetes cluster manages containers and OSs of woker nodes in a unified system.
+## Architecture
+You can see KubeOS architecture in  ： [architecture](docs/design/architecture_en.md)
+## Getting Started
+### Build from source and deploy
+You can get how to build from source in ： [quick-start.md](docs/quick-start.md).
 
-#### Description
-Kubernetes Operating System simplifies OS updating
+### User Guide
+You can see KubeOS User Guide in ：[user guide](https://docs.openeuler.org/en/docs/22.03_LTS_SP1/docs/KubeOS/about-kubeos.html)
 
-#### Software Architecture
-Software architecture description
+## How to Contribute
+We always welcome new contributors. We are happy to provide guidance for the new contributors. You can contribute via issues and merge requests.
 
-#### Installation
-
-1.  xxxx
-2.  xxxx
-3.  xxxx
-
-#### Instructions
-
-1.  xxxx
-2.  xxxx
-3.  xxxx
-
-#### Contribution
-
-1.  Fork the repository
-2.  Create Feat_xxx branch
-3.  Commit your code
-4.  Create Pull Request
-
-
-#### Gitee Feature
-
-1.  You can use Readme\_XXX.md to support different languages, such as Readme\_en.md, Readme\_zh.md
-2.  Gitee blog [blog.gitee.com](https://blog.gitee.com)
-3.  Explore open source project [https://gitee.com/explore](https://gitee.com/explore)
-4.  The most valuable open source project [GVP](https://gitee.com/gvp)
-5.  The manual of Gitee [https://gitee.com/help](https://gitee.com/help)
-6.  The most popular members  [https://gitee.com/gitee-stars/](https://gitee.com/gitee-stars/)
+## Licensing
+KubeOS is licensed under the Mulan PSL v2.
