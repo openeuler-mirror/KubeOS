@@ -1,0 +1,104 @@
+From d638f26cdf8f22b258e97baec83a261a2de315ee Mon Sep 17 00:00:00 2001
+From: liyuanr <liyuanrong1@huawei.com>
+Date: Tue, 29 Nov 2022 16:39:20 +0800
+Subject: [PATCH] KubeOS: remove grub2 legacy install, add error handling for
+ opstype and add entry for unit test in Makefile
+
+Remove grub2 install for legacy setup to fix failure of x86
+vm images building. Add the error handling of the abnormal value
+of the opstype. Add an entry for unit testing in Makefile.
+
+Signed-off-by: liyuanr <liyuanrong1@huawei.com>
+---
+ Makefile                               |  3 +++
+ cmd/agent/server/docker_image_test.go  | 21 ---------------------
+ cmd/proxy/controllers/os_controller.go |  3 +++
+ scripts/bootloader.sh                  |  8 --------
+ 4 files changed, 6 insertions(+), 29 deletions(-)
+
+diff --git a/Makefile b/Makefile
+index 38cc2ce..9d9fbea 100644
+--- a/Makefile
++++ b/Makefile
+@@ -50,6 +50,9 @@ agent:
+ 	${ENV} ${GO_BUILD} -tags "osusergo netgo static_build" -ldflags '$(LDFLAGS)' $(BUILDFLAGS) -o bin/os-agent cmd/agent/main.go
+ 	strip bin/os-agent
+ 
++test:
++	$(GO) test $(shell go list ./... ) -race -cover -count=1 -timeout=300s
++	
+ # Install CRDs into a cluster
+ install: manifests
+ 	kubectl apply -f confg/crd
+diff --git a/cmd/agent/server/docker_image_test.go b/cmd/agent/server/docker_image_test.go
+index cc77a2b..9987939 100644
+--- a/cmd/agent/server/docker_image_test.go
++++ b/cmd/agent/server/docker_image_test.go
+@@ -52,24 +52,3 @@ func TestpullOSImage(t *testing.T) {
+ 	}
+ 	defer os.RemoveAll("/persist")
+ }
+-
+-func TestrandStringBytesRmndr(t *testing.T) {
+-	type args struct {
+-		n int
+-	}
+-	tests := []struct {
+-		name string
+-		args args
+-		want string
+-	}{
+-		{name: "normal", args: args{n: 6}, want: ""},
+-	}
+-	for _, tt := range tests {
+-		t.Run(tt.name, func(t *testing.T) {
+-			if got := randStringBytesRmndr(tt.args.n); got == "" {
+-				t.Errorf("randStringBytesRmndr() not generatre random string")
+-			}
+-
+-		})
+-	}
+-}
+diff --git a/cmd/proxy/controllers/os_controller.go b/cmd/proxy/controllers/os_controller.go
+index 09e58f9..fdd31ea 100644
+--- a/cmd/proxy/controllers/os_controller.go
++++ b/cmd/proxy/controllers/os_controller.go
+@@ -15,6 +15,7 @@ package controllers
+ 
+ import (
+ 	"context"
++	"fmt"
+ 	"os"
+ 
+ 	corev1 "k8s.io/api/core/v1"
+@@ -123,6 +124,8 @@ func (r *OSReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Re
+ 			if err := r.Connection.RollbackSpec(); err != nil {
+ 				return values.RequeueNow, err
+ 			}
++		default:
++			return values.RequeueNow, fmt.Errorf("operation %s cannot be recognized", opsType)
+ 		}
+ 	}
+ 	return values.Requeue, nil
+diff --git a/scripts/bootloader.sh b/scripts/bootloader.sh
+index 5760f3d..16c5713 100644
+--- a/scripts/bootloader.sh
++++ b/scripts/bootloader.sh
+@@ -6,14 +6,6 @@ ARCH=`arch`
+ 
+ function install_grub2_x86 ()
+ {
+-    # make boot.img/core.img and setup, to support legacy boot mode
+-    GRUBNAME=$(which grub2-install)
+-    echo "Installing GRUB2..."
+-    GRUB_OPTS=${GRUB_OPTS:-"--force"}
+-    GRUB_OPTS="$GRUB_OPTS --target=i386-pc"
+-
+-    $GRUBNAME --modules="biosdisk part_msdos" $GRUB_OPTS $DEVICE
+-
+     # make efi file, and save in FAT16 partition, to support UEFI boot mode
+     cp -r /usr/lib/grub/x86_64-efi boot/efi/EFI/openEuler
+     eval "grub2-mkimage -d /usr/lib/grub/x86_64-efi -O x86_64-efi --output=/boot/efi/EFI/openEuler/grubx64.efi '--prefix=(,gpt1)/EFI/openEuler' fat part_gpt part_msdos linux"
+-- 
+2.37.1.windows.1
+
