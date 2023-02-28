@@ -1,0 +1,300 @@
+From fd5b3f24446c8c5dfc2fb271431ed296618eccc1 Mon Sep 17 00:00:00 2001
+From: liyuanr <liyuanrong1@huawei.com>
+Date: Sat, 27 Aug 2022 16:22:56 +0800
+Subject: [PATCH] KubeOS: fixed the issue of VMs images and add check of
+ Global.cfg.
+
+Modify the docker image creation method to fix the problem that /etc/hosts is
+empty in the VM created using the docker image and that the /sys directory is
+mounted abnormally.
+Add checks whether configuration in the Global.cfg file are empty and whether
+the IP address is valid.
+
+Signed-off-by: liyuanr <liyuanrong1@huawei.com>
+---
+ api/v1alpha1/os_types.go                      | 15 +++---
+ cmd/agent/server/docker_image.go              | 27 +++++++----
+ .../config/crd/upgrade.openeuler.org_os.yaml  |  1 -
+ scripts/Dockerfile                            |  2 +-
+ scripts/common/utils.sh                       | 48 ++++++++++++++++---
+ scripts/create/imageCreate.sh                 |  3 +-
+ scripts/create/rootfsCreate.sh                | 12 ++---
+ scripts/kbimg.sh                              | 19 +-------
+ 8 files changed, 74 insertions(+), 53 deletions(-)
+
+diff --git a/api/v1alpha1/os_types.go b/api/v1alpha1/os_types.go
+index 5acb97a..862d408 100644
+--- a/api/v1alpha1/os_types.go
++++ b/api/v1alpha1/os_types.go
+@@ -23,14 +23,13 @@ type OSSpec struct {
+ 	MaxUnavailable int    `json:"maxunavailable"`
+ 	CheckSum       string `json:"checksum"`
+ 	FlagSafe       bool   `json:"flagSafe"`
+-	// +kubebuilder:default=true
+-	MTLS        bool   `json:"mtls"`
+-	ImageType   string `json:"imagetype"`
+-	DockerImage string `json:"dockerimage"`
+-	OpsType     string `json:"opstype"`
+-	CaCert      string `json:"cacert"`
+-	ClientCert  string `json:"clientcert"`
+-	ClientKey   string `json:"clientkey"`
++	MTLS           bool   `json:"mtls"`
++	ImageType      string `json:"imagetype"`
++	DockerImage    string `json:"dockerimage"`
++	OpsType        string `json:"opstype"`
++	CaCert         string `json:"cacert"`
++	ClientCert     string `json:"clientcert"`
++	ClientKey      string `json:"clientkey"`
+ }
+ 
+ // +kubebuilder:subresource:status
+diff --git a/cmd/agent/server/docker_image.go b/cmd/agent/server/docker_image.go
+index c5ed640..11b21aa 100644
+--- a/cmd/agent/server/docker_image.go
++++ b/cmd/agent/server/docker_image.go
+@@ -54,7 +54,7 @@ func pullOSImage(req *pb.UpdateRequest) (string, error) {
+ 		return "", err
+ 	}
+ 	defer cli.ContainerRemove(ctx, info.ID, types.ContainerRemoveOptions{})
+-	tarStream, stat, err := cli.CopyFromContainer(ctx, info.ID, "/")
++	tarStream, stat, err := cli.CopyFromContainer(ctx, info.ID, "/os.tar")
+ 	if err != nil {
+ 		return "", err
+ 	}
+@@ -71,6 +71,15 @@ func pullOSImage(req *pb.UpdateRequest) (string, error) {
+ 		return "", fmt.Errorf("space is not enough for downloaing")
+ 	}
+ 
++	srcInfo := archive.CopyInfo{
++		Path:   "/",
++		Exists: true,
++		IsDir:  stat.Mode.IsDir(),
++	}
++	if err = archive.CopyTo(tarStream, srcInfo, PersistDir); err != nil {
++		return "", err
++	}
++
+ 	tmpMountPath := filepath.Join(PersistDir, "/kubeos-update")
+ 	if err = os.Mkdir(tmpMountPath, imgPermission); err != nil {
+ 		return "", err
+@@ -80,25 +89,23 @@ func pullOSImage(req *pb.UpdateRequest) (string, error) {
+ 	if err = runCommand("dd", "if=/dev/zero", "of="+imagePath, "bs=2M", "count=1024"); err != nil {
+ 		return "", err
+ 	}
+-	if err = runCommand("mkfs.ext4", imagePath); err != nil {
++	_, next, err := getNextPart(partA, partB)
++	if err = runCommand("mkfs.ext4", "-L", "ROOT-"+next, imagePath); err != nil {
+ 		return "", err
+ 	}
+ 	if err = runCommand("mount", "-o", "loop", imagePath, tmpMountPath); err != nil {
+ 		return "", err
+ 	}
+ 	defer func() {
+-		runCommand("losetup", "-D")
+ 		syscall.Unmount(tmpMountPath, 0)
+-
++		runCommand("losetup", "-D")
+ 	}()
+-	srcInfo := archive.CopyInfo{
+-		Path:   "/",
+-		Exists: true,
+-		IsDir:  stat.Mode.IsDir(),
+-	}
++
+ 	logrus.Infoln("downloading to file " + imagePath)
+-	if err = archive.CopyTo(tarStream, srcInfo, tmpMountPath); err != nil {
++	tmpTarPath := filepath.Join(PersistDir, "/os.tar")
++	if err = runCommand("tar", "-xvf", tmpTarPath, "-C", tmpMountPath); err != nil {
+ 		return "", err
+ 	}
++	defer os.Remove(tmpTarPath)
+ 	return imagePath, nil
+ }
+diff --git a/docs/example/config/crd/upgrade.openeuler.org_os.yaml b/docs/example/config/crd/upgrade.openeuler.org_os.yaml
+index 465e803..f240b8d 100644
+--- a/docs/example/config/crd/upgrade.openeuler.org_os.yaml
++++ b/docs/example/config/crd/upgrade.openeuler.org_os.yaml
+@@ -51,7 +51,6 @@ spec:
+               maxunavailable:
+                 type: integer
+               mtls:
+-                default: true
+                 type: boolean
+               opstype:
+                 type: string
+diff --git a/scripts/Dockerfile b/scripts/Dockerfile
+index 6a616f5..3da4708 100644
+--- a/scripts/Dockerfile
++++ b/scripts/Dockerfile
+@@ -1,3 +1,3 @@
+ FROM scratch
+-ADD os.tar /
++COPY os.tar /
+ CMD ["/bin/sh"]
+diff --git a/scripts/common/utils.sh b/scripts/common/utils.sh
+index 3546c8c..cf9441b 100644
+--- a/scripts/common/utils.sh
++++ b/scripts/common/utils.sh
+@@ -87,19 +87,53 @@ function delete_file() {
+         return 0
+ }
+ 
+-function check_binary_exist() {
+-        if [ ! -f "$1" ];then
+-                log_error_print "binary path is invalid."
++function check_file_valid() {
++        local file="$1"
++        local mesg="$2"
++        if [ ! -e "${file}" ]; then
++                log_error_print "${mesg} is not exist."
++		exit 3
++        fi
++        if [ ! -f "${file}" ];then
++                log_error_print "${mesg} is not a file."
+                 exit 3
+         fi
+ }
+ 
+-function check_repo_path() {
+-        if [ ! -f "$1" ];then
+-                log_error_print "REPO path is invalid."
++function check_conf_valid() {
++        local conf_path="${PWD}/00bootup/Global.cfg"
++        check_file_valid ${conf_path} "Globab.cfg"
++        if [ $# != 7 ];then
++                log_error_print "configure configured in Global.cfg is empty."
+                 exit 3
+         fi
++        for addr in ${server_ip} ${local_ip} ${route_ip} ${netmask}; do
++                check_ip_valid $addr
++        done
++}
+ 
++function check_ip_valid() {
++        local ipaddr="$1";
++        if [[ ! $ipaddr =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]] ; then
++                log_error_print "ip address configured in Global.cfg is not valid."
++                exit 3;
++        fi
++        for quad in $(echo "${ipaddr//./ }"); do
++                if [ $quad -ge 0 ] && [ $quad -le 255 ];then
++                        continue
++                fi
++                log_error_print "ip address configured in Global.cfg is not valid."
++                exit 3;
++        done
++
++}
++
++function check_binary_exist() {
++        check_file_valid "$1" "os-agent binary"
++}
++
++function check_repo_path() {
++        check_file_valid $1 "REPO file"
+         if [ -d "${RPM_ROOT}" ]; then
+                 log_error_print "there is a rootfs folder. please confirm if rootfs is being used, if not, please remove ${RPM_ROOT} first."
+                 exit 5
+@@ -117,7 +151,7 @@ function check_disk_space() {
+           fi
+           ;;
+         vm)
+-          local maxsize=$((5*1024*1024))
++          local maxsize=$((25*1024*1024))
+           if [ "${disk_ava}" -lt "${maxsize}" ]; then
+              log_error_print "The available disk space is not enough, at least 25GiB."
+              exit 6
+diff --git a/scripts/create/imageCreate.sh b/scripts/create/imageCreate.sh
+index 564c740..9689f62 100644
+--- a/scripts/create/imageCreate.sh
++++ b/scripts/create/imageCreate.sh
+@@ -62,13 +62,12 @@ function create_pxe_img() {
+   case $opt in
+   "repo")
+     create_os_tar_from_repo "$@"
+-    tar -xvf os.tar  ./initramfs.img
+     ;;
+   "docker")
+     create_os_tar_from_docker "$@"
+-    tar -xvf os.tar  initramfs.img
+     ;;
+   esac
++  tar -xvf os.tar  ./initramfs.img
+   mv os.tar kubeos.tar
+ }
+ function create_docker_image() {
+diff --git a/scripts/create/rootfsCreate.sh b/scripts/create/rootfsCreate.sh
+index e5c53d5..4c02c35 100644
+--- a/scripts/create/rootfsCreate.sh
++++ b/scripts/create/rootfsCreate.sh
+@@ -65,8 +65,6 @@ EOF
+         cp set_in_chroot.sh "${RPM_ROOT}"
+         ROOT_PWD="${PASSWD}" chroot "${RPM_ROOT}" bash /set_in_chroot.sh
+         rm "${RPM_ROOT}/set_in_chroot.sh"
+-
+-        #todo:chroot create initramfs.img to include install-scripts for PXE install
+ }
+ 
+ function create_os_tar_from_repo() {
+@@ -80,9 +78,9 @@ function create_os_tar_from_repo() {
+         tar -C "$RPM_ROOT" -cf ./os.tar .
+ }
+ function create_os_tar_from_docker() {
+-  local DOCKER_IMG=$1
+-  container_id=$(docker create ${DOCKER_IMG})
+-  echo "$container_id"
+-  docker export $container_id > os.tar
+-  docker rm $container_id
++        local DOCKER_IMG=$1
++        container_id=$(docker create ${DOCKER_IMG})
++        echo "$container_id"
++        docker cp $container_id:/os.tar ./
++        docker rm $container_id
+ }
+diff --git a/scripts/kbimg.sh b/scripts/kbimg.sh
+index a77d62e..a623e3d 100644
+--- a/scripts/kbimg.sh
++++ b/scripts/kbimg.sh
+@@ -24,6 +24,7 @@ source common/log.sh &>/dev/null
+ source common/utils.sh &>/dev/null
+ source create/rootfsCreate.sh &>/dev/null
+ source create/imageCreate.sh &>/dev/null
++source 00bootup/Global.cfg &>/dev/null
+ 
+ function show_options() {
+    cat << EOF
+@@ -89,23 +90,6 @@ options:
+ EOF
+ }
+ 
+-function show_pxe_image_usage() {
+-  cat << EOF
+-
+-Usage : kbimg create pxe-image -p iso-path -v os-version -b os-agent-dir -e os-password
+-      or
+-        kbimg create pxe-image -d repository/name:tag
+-
+-options:
+-    -p                       repo path
+-    -v                       KubeOS version
+-    -b                       directory of os-agent binary
+-    -e                       os encrypted password
+-    -d                       docker image like repository/name:tag
+-    -h,--help                show help information
+-EOF
+-}
+-
+ function file_lock() {
+   local lock_file=$1
+   exec {lock_fd}>"${lock_file}"
+@@ -282,6 +266,7 @@ function verify_create_input() {
+       fi
+     fi
+     check_disk_space "pxe"
++    check_conf_valid ${rootfs_name} ${disk} ${server_ip} ${local_ip} ${route_ip} ${netmask} ${net_name}
+     if [ $# -eq 8 ]; then
+       verify_repo_input "$@"
+       check_repo_path "${REPO}"
+-- 
+2.33.0.windows.2
+
