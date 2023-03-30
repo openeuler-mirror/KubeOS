@@ -40,8 +40,10 @@ spec:
                 type: string
               clientkey:
                 type: string
-              dockerimage:
+              containerimage:
                 type: string
+              evictpodforce:
+                type: boolean
               flagSafe:
                 type: boolean
               imagetype:
@@ -58,7 +60,8 @@ spec:
                 type: string
             required:
             - checksum
-            - dockerimage
+            - containerimage
+            - evictpodforce
             - flagSafe
             - imagetype
             - imageurl

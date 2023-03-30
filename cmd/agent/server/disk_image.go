@@ -32,6 +32,27 @@ import (
 	pb "openeuler.org/KubeOS/cmd/agent/api"
 )
 
+type diskHandler struct{}
+
+func (d diskHandler) downloadImage(req *pb.UpdateRequest) (string, error) {
+	imagePath, err := d.getRootfsArchive(req, preparePath{})
+	if err != nil {
+		return "", err
+	}
+	return imagePath, nil
+}
+
+func (d diskHandler) getRootfsArchive(req *pb.UpdateRequest, neededPath preparePath) (string, error) {
+	imagePath, err := download(req)
+	if err != nil {
+		return "", err
+	}
+	if err = checkSumMatch(imagePath, req.CheckSum); err != nil {
+		return "", err
+	}
+	return imagePath, nil
+}
+
 func download(req *pb.UpdateRequest) (string, error) {
 	resp, err := getImageURL(req)
 	if err != nil {

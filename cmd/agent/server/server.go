@@ -104,24 +104,20 @@ func (s *Server) Rollback(_ context.Context, req *pb.RollbackRequest) (*pb.Rollb
 
 func (s *Server) update(req *pb.UpdateRequest) error {
 	action := req.ImageType
-	var imagePath string
-	var err error
+	var handler imageDownload
 	switch action {
 	case "docker":
-		imagePath, err = pullOSImage(req)
-		if err != nil {
-			return err
-		}
+		handler = dockerImageHandler{}
+	case "containerd":
+		handler = conImageHandler{}
 	case "disk":
-		imagePath, err = download(req)
-		if err != nil {
-			return err
-		}
-		if err = checkSumMatch(imagePath, req.CheckSum); err != nil {
-			return err
-		}
+		handler = diskHandler{}
 	default:
 		return fmt.Errorf("image type %s cannot be recognized", action)
+	}
+	imagePath, err := handler.downloadImage(req)
+	if err != nil {
+		return err
 	}
 	side, next, err := getNextPart(partA, partB)
 	if err != nil {

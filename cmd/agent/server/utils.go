@@ -14,13 +14,43 @@
 package server
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
+	"syscall"
 
 	"github.com/sirupsen/logrus"
+
+	pb "openeuler.org/KubeOS/cmd/agent/api"
 )
+
+const (
+	needGBSize = 3 // the max size of update files needed
+	// KB is 1024 B
+	KB = 1024
+)
+
+var (
+	rootfsArchive = "os.tar"
+	updateDir     = "KubeOS-Update"
+	mountDir      = "kubeos-update"
+	osImageName   = "update.img"
+)
+
+type imageDownload interface {
+	downloadImage(req *pb.UpdateRequest) (string, error)
+	getRootfsArchive(req *pb.UpdateRequest, neededPath preparePath) (string, error)
+}
+
+type preparePath struct {
+	updatePath string
+	mountPath  string
+	tarPath    string
+	imagePath  string
+}
 
 func runCommand(name string, args ...string) error {
 	out, err := exec.Command(name, args...).CombinedOutput()
@@ -28,6 +58,21 @@ func runCommand(name string, args ...string) error {
 		return fmt.Errorf("fail to run command:%s %v out:%s err:%s", name, args, out, err)
 	}
 	return nil
+}
+
+func runCommandWithOut(name string, args ...string) (string, error) {
+	out, err := exec.Command(name, args...).CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("fail to run command:%s %v out:%s err:%s", name, args, out, err)
+	}
+	return deleteNewline(string(out)), nil
+}
+
+func deleteNewline(out string) string {
+	if strings.HasSuffix(out, "\n") {
+		out = strings.TrimSuffix(out, "\n")
+	}
+	return out
 }
 
 func install(imagePath string, side string, next string) error {
@@ -56,4 +101,134 @@ func getNextPart(partA string, partB string) (string, string, error) {
 		next = "A"
 	}
 	return side, next, nil
+}
+
+func createOSImage(neededPath preparePath) (string, error) {
+	imagePath := neededPath.imagePath
+	updatePath := neededPath.updatePath
+	if err := runCommand("dd", "if=/dev/zero", "of="+imagePath, "bs=2M", "count=1024"); err != nil {
+		return "", err
+	}
+	if err := os.Chmod(imagePath, imgPermission); err != nil {
+		return "", err
+	}
+	if err := runCommand("mkfs.ext4", "-L", "ROOT-A", imagePath); err != nil {
+		return "", err
+	}
+	mountPath := neededPath.mountPath
+	if err := runCommand("mount", "-o", "loop", imagePath, mountPath); err != nil {
+		return "", err
+	}
+	defer func() {
+		if err := syscall.Unmount(mountPath, 0); err != nil {
+			logrus.Errorln("umount error " + mountPath)
+		}
+		if err := runCommand("losetup", "-D"); err != nil {
+			logrus.Errorln("delete loop device error")
+		}
+		if err := os.RemoveAll(updatePath); err != nil {
+			logrus.Errorln("remove dir error " + updatePath)
+		}
+	}()
+	logrus.Infoln("downloading to file " + imagePath)
+	tarPath := neededPath.tarPath
+	if err := runCommand("tar", "-xvf", tarPath, "-C", mountPath); err != nil {
+		return "", err
+	}
+	return imagePath, nil
+}
+
+func prepareEnv() (preparePath, error) {
+	if err := checkDiskSize(needGBSize, PersistDir); err != nil {
+		return preparePath{}, err
+	}
+	updatePath := splicePath(PersistDir, updateDir)
+	mountPath := splicePath(updatePath, mountDir)
+	tarPath := splicePath(updatePath, rootfsArchive)
+	imagePath := splicePath(PersistDir, osImageName)
+
+	if err := cleanSpace(updatePath, mountPath, imagePath); err != nil {
+		return preparePath{}, err
+	}
+	if err := os.MkdirAll(mountPath, imgPermission); err != nil {
+		return preparePath{}, err
+	}
+	upgradePath := preparePath{
+		updatePath: updatePath,
+		mountPath:  mountPath,
+		tarPath:    tarPath,
+		imagePath:  imagePath,
+	}
+	return upgradePath, nil
+}
+
+func checkDiskSize(needGBSize int, path string) error {
+	fs := syscall.Statfs_t{}
+	if err := syscall.Statfs(path, &fs); err != nil {
+		return err
+	}
+	needDiskSize := needGBSize * KB * KB * KB
+	if int64(fs.Bfree)*fs.Bsize < int64(needDiskSize) { // these data come from disk size, will not overflow
+		return fmt.Errorf("space is not enough for downloaing")
+	}
+	return nil
+}
+
+func splicePath(prefix string, path string) string {
+	return filepath.Join(prefix, path)
+}
+
+func cleanSpace(updatePath, mountPath, imagePath string) error {
+	isFileExist, err := checkFileExist(mountPath)
+	if err != nil {
+		return err
+	}
+	if isFileExist {
+		var st syscall.Stat_t
+		if err = syscall.Lstat(mountPath, &st); err != nil {
+			return err
+		}
+		dev := st.Dev
+		parent := filepath.Dir(mountPath)
+		if err = syscall.Lstat(parent, &st); err != nil {
+			return err
+		}
+		if dev != st.Dev {
+			if err = syscall.Unmount(mountPath, 0); err != nil {
+				return err
+			}
+		}
+	}
+
+	if err = deleteFile(updatePath); err != nil {
+		return err
+	}
+
+	if err = deleteFile(imagePath); err != nil {
+		return err
+	}
+	return nil
+}
+
+func deleteFile(path string) error {
+	isFileExist, err := checkFileExist(path)
+	if err != nil {
+		return err
+	}
+	if isFileExist {
+		if err = os.RemoveAll(path); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func checkFileExist(path string) (bool, error) {
+	if _, err := os.Stat(path); err == nil {
+		return true, nil
+	} else if errors.Is(err, os.ErrNotExist) {
+		return false, nil
+	} else {
+		return false, err
+	}
 }
