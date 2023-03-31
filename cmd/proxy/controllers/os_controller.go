@@ -77,12 +77,16 @@ func (r *OSReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Re
 	osVersionNode := node.Status.NodeInfo.OSImage
 
 	drainer := &drain.Helper{
-		Client:              r.kubeclientset,
-		Force:               true,
-		GracePeriodSeconds:  -1,
-		IgnoreAllDaemonSets: true,
-		Out:                 os.Stdout,
-		ErrOut:              os.Stderr,
+		Ctx:                ctx,
+		Client:             r.kubeclientset,
+		GracePeriodSeconds: -1,
+		Out:                os.Stdout,
+		ErrOut:             os.Stderr,
+	}
+	if osInstance.Spec.EvictPodForce {
+		drainer.DeleteEmptyDirData = true
+		drainer.IgnoreAllDaemonSets = true
+		drainer.Force = true
 	}
 	if osVersionNode == osVersionSpec {
 		delete(node.Labels, values.LabelUpgrading)
@@ -107,15 +111,15 @@ func (r *OSReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Re
 		case "upgrade":
 			version := osVersionSpec
 			downloadInfo := &agentclient.DownloadInfo{
-				ImageURL:    osInstance.Spec.ImageURL,
-				FlagSafe:    osInstance.Spec.FlagSafe,
-				CheckSum:    osInstance.Spec.CheckSum,
-				CaCert:      osInstance.Spec.CaCert,
-				ClientCert:  osInstance.Spec.ClientCert,
-				ClientKey:   osInstance.Spec.ClientKey,
-				MTLS:        osInstance.Spec.MTLS,
-				ImageType:   osInstance.Spec.ImageType,
-				DockerImage: osInstance.Spec.DockerImage,
+				ImageURL:       osInstance.Spec.ImageURL,
+				FlagSafe:       osInstance.Spec.FlagSafe,
+				CheckSum:       osInstance.Spec.CheckSum,
+				CaCert:         osInstance.Spec.CaCert,
+				ClientCert:     osInstance.Spec.ClientCert,
+				ClientKey:      osInstance.Spec.ClientKey,
+				MTLS:           osInstance.Spec.MTLS,
+				ImageType:      osInstance.Spec.ImageType,
+				ContainerImage: osInstance.Spec.ContainerImage,
 			}
 			if err := r.Connection.UpdateSpec(version, downloadInfo); err != nil {
 				return values.RequeueNow, err

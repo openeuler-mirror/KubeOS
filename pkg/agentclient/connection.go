@@ -32,15 +32,15 @@ type Client struct {
 
 // DownloadInfo contains the information required for image download
 type DownloadInfo struct {
-	ImageURL    string
-	FlagSafe    bool
-	CheckSum    string
-	CaCert      string
-	ClientCert  string
-	ClientKey   string
-	MTLS        bool
-	ImageType   string
-	DockerImage string
+	ImageURL       string
+	FlagSafe       bool
+	CheckSum       string
+	CaCert         string
+	ClientCert     string
+	ClientKey      string
+	MTLS           bool
+	ImageType      string
+	ContainerImage string
 }
 
 // New create a gRPC channel to communicate with the server and return a client stub to perform RPCs
@@ -72,14 +72,14 @@ func (c *Client) UpdateSpec(version string, downloadInfo *DownloadInfo) error {
 	}
 	_, err := c.client.Update(context.Background(),
 		&pb.UpdateRequest{
-			Version:     version,
-			ImageUrl:    downloadInfo.ImageURL,
-			FlagSafe:    downloadInfo.FlagSafe,
-			CheckSum:    downloadInfo.CheckSum,
-			MTLS:        downloadInfo.MTLS,
-			Certs:       certs,
-			ImageType:   downloadInfo.ImageType,
-			DockerImage: downloadInfo.DockerImage,
+			Version:        version,
+			ImageUrl:       downloadInfo.ImageURL,
+			FlagSafe:       downloadInfo.FlagSafe,
+			CheckSum:       downloadInfo.CheckSum,
+			MTLS:           downloadInfo.MTLS,
+			Certs:          certs,
+			ImageType:      downloadInfo.ImageType,
+			ContainerImage: downloadInfo.ContainerImage,
 		})
 	return err
 }

@@ -25,11 +25,12 @@ type OSSpec struct {
 	FlagSafe       bool   `json:"flagSafe"`
 	MTLS           bool   `json:"mtls"`
 	ImageType      string `json:"imagetype"`
-	DockerImage    string `json:"dockerimage"`
+	ContainerImage string `json:"containerimage"`
 	OpsType        string `json:"opstype"`
 	CaCert         string `json:"cacert"`
 	ClientCert     string `json:"clientcert"`
 	ClientKey      string `json:"clientkey"`
+	EvictPodForce  bool   `json:"evictpodforce"`
 }
 
 // +kubebuilder:subresource:status
