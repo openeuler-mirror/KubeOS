@@ -76,7 +76,7 @@ func checkAndCleanMount(mountPath string) error {
 		if err = runCommand("ctr", "-n="+defaultNamespace, "images", "unmount", mountPath); err != nil {
 			return err
 		}
-		if err = runCommand("ctr", "-n="+defaultNamespace, "snapshots", "delete", mountPath); err != nil {
+		if err = runCommand("ctr", "-n="+defaultNamespace, "snapshots", "remove", mountPath); err != nil {
 			return err
 		}
 	}

@@ -16,8 +16,6 @@ package server
 import (
 	"context"
 	"fmt"
-	"os/exec"
-	"strings"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -33,11 +31,6 @@ const (
 	unLocked      = 0
 	buffer        = 1024 * 10240
 	imgPermission = 0600
-)
-
-var (
-	partA string
-	partB string
 )
 
 // Lock is a custom Lock to implement a spin lock
@@ -60,16 +53,6 @@ type Server struct {
 	pb.UnimplementedOSServer
 	mutex         Lock
 	disableReboot bool
-}
-
-func init() {
-	out, err := exec.Command("sh", "-c", "df / | awk 'NR==2{print}' | awk '{print $1}'").CombinedOutput()
-	if err != nil {
-		logrus.Errorln("init error " + err.Error())
-	}
-	curRootfs := strings.TrimSpace(string(out))
-	partA = curRootfs[:len(curRootfs)-1] + "2"
-	partB = curRootfs[:len(curRootfs)-1] + "3"
 }
 
 // Update implements the OSServer.Update
@@ -119,6 +102,10 @@ func (s *Server) update(req *pb.UpdateRequest) error {
 	if err != nil {
 		return err
 	}
+	partA, partB, err := getRootfsDisks()
+	if err != nil {
+		return err
+	}
 	side, next, err := getNextPart(partA, partB)
 	if err != nil {
 		return err
@@ -130,6 +117,10 @@ func (s *Server) update(req *pb.UpdateRequest) error {
 }
 
 func (s *Server) rollback() error {
+	partA, partB, err := getRootfsDisks()
+	if err != nil {
+		return err
+	}
 	_, next, err := getNextPart(partA, partB)
 	if err != nil {
 		return err

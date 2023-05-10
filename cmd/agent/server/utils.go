@@ -103,6 +103,38 @@ func getNextPart(partA string, partB string) (string, string, error) {
 	return side, next, nil
 }
 
+func getRootfsDisks() (string, string, error) {
+	out, err := runCommandWithOut("lsblk", "-lno", "NAME,MOUNTPOINTS")
+	if err != nil {
+		logrus.Errorln("get rootfs disks error " + err.Error())
+		return "", "", err
+	}
+	var diskName string
+	const mountedDeviceOutLen = 2
+	mounts := strings.Split(out, "\n")
+	for _, m := range mounts {
+		res := strings.Fields(m)
+		if len(res) != mountedDeviceOutLen {
+			continue
+		}
+		if res[1] == "/" {
+			diskName = filepath.Join("/dev", res[0])
+		}
+	}
+	if len(diskName) == 0 {
+		logrus.Errorln("get rootfs disks error: not get diskName")
+		return "", "", fmt.Errorf("get rootfs disks error: not get diskName")
+	}
+	curDiskBytes := make([]byte, len(diskName)-1)
+	copy(curDiskBytes, diskName[:len(diskName)-1])
+	curDisk := string(curDiskBytes)
+	const partAPartitionNum = "2"
+	const partBartitionNum = "3"
+	partA := curDisk + partAPartitionNum
+	partB := curDisk + partBartitionNum
+	return partA, partB, nil
+}
+
 func createOSImage(neededPath preparePath) (string, error) {
 	imagePath := neededPath.imagePath
 	updatePath := neededPath.updatePath
