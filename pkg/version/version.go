@@ -10,10 +10,10 @@
  * See the Mulan PSL v2 for more details.
  */
 
-// Package version includes the saiyan version
+// Package version includes the KubeOS version
 package version
 
 var (
-	// Version represents saiyan version
+	// Version represents KubeOS version
 	Version string
 )

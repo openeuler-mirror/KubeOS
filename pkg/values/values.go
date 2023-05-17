@@ -25,7 +25,37 @@ const (
 	// LabelMaster is the key of the master-node label for nodes
 	LabelMaster   = "node-role.kubernetes.io/control-plane"
 	defaultPeriod = 15 * time.Second
+	// OsiStatusName is
+	OsiStatusName = "nodestatus"
+	// UpgradeConfigName is
+	UpgradeConfigName = "UpgradeConfig"
+	// SysConfigName is
+	SysConfigName = "SysConfig"
 )
+
+type NodeStatus int32
+
+const (
+	NodeStatusIdle     NodeStatus = 0
+	NodeStatusUpgrade  NodeStatus = 1
+	NodeStatusRollback NodeStatus = 2
+	NodeStatusConfig   NodeStatus = 3
+)
+
+func (n NodeStatus) String() string {
+	switch n {
+	case NodeStatusIdle:
+		return "idle"
+	case NodeStatusUpgrade:
+		return "upgrade"
+	case NodeStatusRollback:
+		return "rollback"
+	case NodeStatusConfig:
+		return "config"
+	default:
+		return "unknown"
+	}
+}
 
 var (
 	// NoRequeue indicates controller do not requeue the reconcile key

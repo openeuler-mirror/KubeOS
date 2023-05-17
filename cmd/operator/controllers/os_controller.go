@@ -15,6 +15,10 @@ package controllers
 
 import (
 	"context"
+	"k8s.io/client-go/util/workqueue"
+	"sigs.k8s.io/controller-runtime/pkg/event"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
+	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -23,6 +27,7 @@ import (
 	"k8s.io/apimachinery/pkg/selection"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
+
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	upgradev1 "openeuler.org/KubeOS/api/v1alpha1"
@@ -58,24 +63,64 @@ func Reconcile(ctx context.Context, r common.ReadStatusWriter, req ctrl.Request)
 		return values.RequeueNow, err
 	}
 
-	limit, err := checkUpgrading(ctx, r, min(os.Spec.MaxUnavailable, nodeNum)) // adjust maxUnavailable if need
-	if err != nil {
-		return values.RequeueNow, err
-	}
-
-	if needRequeue, err := assignUpgrade(ctx, r, os.Spec.OSVersion, limit); err != nil {
-		return values.RequeueNow, err
-	} else if needRequeue {
-		return values.Requeue, nil
+	ops := os.Spec.OpsType
+	switch ops {
+	case "upgrade", "rollback":
+		limit, err := checkUpgrading(ctx, r, min(os.Spec.MaxUnavailable, nodeNum)) // adjust maxUnavailable if need
+		if err != nil {
+			return values.RequeueNow, err
+		}
+		if needRequeue, err := assignUpgrade(ctx, r, os, limit, req.Namespace); err != nil {
+			return values.RequeueNow, err
+		} else if needRequeue {
+			return values.Requeue, nil
+		}
+	case "config":
+		limit, err := checkConfig(ctx, r, min(os.Spec.MaxUnavailable, nodeNum))
+		if err != nil {
+			return values.RequeueNow, err
+		}
+		if needRequeue, err := assignConfig(ctx, r, os.Spec.SysConfigs, os.Spec.SysConfigs.Version, limit); err != nil {
+			return values.RequeueNow, err
+		} else if needRequeue {
+			return values.Requeue, nil
+		}
+	default:
+		log.Error(nil, "operation "+ops+" cannot be recognized")
 	}
 	return values.Requeue, nil
 }
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *OSReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	if err := mgr.GetFieldIndexer().IndexField(context.Background(), &upgradev1.OSInstance{}, values.OsiStatusName,
+		func(rawObj client.Object) []string {
+			// grab the job object, extract the owner...
+			osi := rawObj.(*upgradev1.OSInstance)
+			return []string{osi.Spec.NodeStatus}
+		}); err != nil {
+		return err
+	}
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&upgradev1.OS{}).
+		Watches(&source.Kind{Type: &corev1.Node{}}, handler.Funcs{DeleteFunc: r.DeleteOSInstance}).
 		Complete(r)
+}
+
+func (r *OSReconciler) DeleteOSInstance(e event.DeleteEvent, q workqueue.RateLimitingInterface) {
+	ctx := context.Background()
+	hostname := e.Object.GetName()
+	osInstance := upgradev1.OSInstance{}
+	if err := r.Get(ctx, types.NamespacedName{
+		Namespace: "default",
+		Name:      hostname,
+	}, &osInstance); err != nil {
+		log.Error(err, "unable to get osinstance")
+		return
+	}
+	if err := r.Delete(ctx, &osInstance); err != nil {
+		log.Error(err, "unable to delete osinstance")
+	}
 }
 
 func getAndUpdateOS(ctx context.Context, r common.ReadStatusWriter, name types.NamespacedName) (os upgradev1.OS,
@@ -99,7 +144,8 @@ func getAndUpdateOS(ctx context.Context, r common.ReadStatusWriter, name types.N
 	return
 }
 
-func assignUpgrade(ctx context.Context, r common.ReadStatusWriter, osVersion string, limit int) (bool, error) {
+func assignUpgrade(ctx context.Context, r common.ReadStatusWriter, os upgradev1.OS, limit int,
+	nameSpace string) (bool, error) {
 	requirement, err := labels.NewRequirement(values.LabelUpgrading, selection.DoesNotExist, nil)
 	if err != nil {
 		log.Error(err, "unable to create requirement "+values.LabelUpgrading)
@@ -122,14 +168,56 @@ func assignUpgrade(ctx context.Context, r common.ReadStatusWriter, osVersion str
 			break
 		}
 		osVersionNode := node.Status.NodeInfo.OSImage
-		if osVersion != osVersionNode {
+		if os.Spec.OSVersion != osVersionNode {
 			count++
 			node.Labels[values.LabelUpgrading] = ""
+			var osInstance upgradev1.OSInstance
+			if err = r.Get(ctx, types.NamespacedName{Namespace: nameSpace, Name: node.Name}, &osInstance); err != nil {
+				log.Error(err, "unable to get osInstance "+node.Name)
+				return false, err
+			}
+			expUpVersion := os.Spec.UpgradeConfigs.Version
+			osiUpVersion := osInstance.Spec.UpgradeConfigs.Version
+			if osiUpVersion != expUpVersion {
+				osInstance.Spec.UpgradeConfigs = os.Spec.UpgradeConfigs
+			}
+			expSysVersion := os.Spec.SysConfigs.Version
+			osiSysVersion := osInstance.Spec.SysConfigs.Version
+			if osiSysVersion != expSysVersion {
+				osInstance.Spec.SysConfigs = os.Spec.SysConfigs
+			}
+			osInstance.Spec.NodeStatus = values.NodeStatusUpgrade.String()
+			if err = r.Update(ctx, &osInstance); err != nil {
+				log.Error(err, "unable to update", "osInstance", osInstance.Name)
+			}
 			if err = r.Update(ctx, &node); err != nil {
 				log.Error(err, "unable to label", "node", node.Name)
 			}
 		}
+	}
+	return count >= limit, nil
+}
 
+func assignConfig(ctx context.Context, r common.ReadStatusWriter, sysConfigs upgradev1.SysConfigs,
+	configVersion string, limit int) (bool, error) {
+	osInstances, err := getIdleOSInstances(ctx, r, limit+1) // one more to see if all node updated
+	if err != nil {
+		return false, err
+	}
+	var count = 0
+	for _, osInstance := range osInstances {
+		if count >= limit {
+			break
+		}
+		configVersionNode := osInstance.Spec.SysConfigs.Version
+		if configVersion != configVersionNode {
+			count++
+			osInstance.Spec.SysConfigs = sysConfigs
+			osInstance.Spec.NodeStatus = values.NodeStatusConfig.String()
+			if err = r.Update(ctx, &osInstance); err != nil {
+				log.Error(err, "unable update osInstance ", "osInstanceName ", osInstance.Name)
+			}
+		}
 	}
 	return count >= limit, nil
 }
@@ -145,6 +233,29 @@ func getNodes(ctx context.Context, r common.ReadStatusWriter, limit int,
 	return nodeList.Items, nil
 }
 
+func getIdleOSInstances(ctx context.Context, r common.ReadStatusWriter, limit int) ([]upgradev1.OSInstance, error) {
+	var osInstanceList upgradev1.OSInstanceList
+	opt := []client.ListOption{
+		client.MatchingFields{values.OsiStatusName: values.NodeStatusIdle.String()},
+		&client.ListOptions{Limit: int64(limit)},
+	}
+	if err := r.List(ctx, &osInstanceList, opt...); err != nil {
+		log.Error(err, "unable to list nodes with requirements")
+		return nil, err
+	}
+	return osInstanceList.Items, nil
+}
+
+func getConfigOSInstances(ctx context.Context, r common.ReadStatusWriter) ([]upgradev1.OSInstance, error) {
+	var osInstanceList upgradev1.OSInstanceList
+	if err := r.List(ctx, &osInstanceList,
+		client.MatchingFields{values.OsiStatusName: values.NodeStatusConfig.String()}); err != nil {
+		log.Error(err, "unable to list nodes with requirements")
+		return nil, err
+	}
+	return osInstanceList.Items, nil
+}
+
 func checkUpgrading(ctx context.Context, r common.ReadStatusWriter, maxUnavailable int) (int, error) {
 	requirement, err := labels.NewRequirement(values.LabelUpgrading, selection.Exists, nil)
 	if err != nil {
@@ -156,6 +267,14 @@ func checkUpgrading(ctx context.Context, r common.ReadStatusWriter, maxUnavailab
 		return 0, err
 	}
 	return maxUnavailable - len(nodes), nil
+}
+
+func checkConfig(ctx context.Context, r common.ReadStatusWriter, maxUnavailable int) (int, error) {
+	osInstances, err := getConfigOSInstances(ctx, r)
+	if err != nil {
+		return 0, err
+	}
+	return maxUnavailable - len(osInstances), nil
 }
 
 func min(a, b int) int {
