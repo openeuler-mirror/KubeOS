@@ -85,6 +85,17 @@ func (s *Server) Rollback(_ context.Context, req *pb.RollbackRequest) (*pb.Rollb
 	return &pb.RollbackResponse{}, nil
 }
 
+func (s *Server) Configure(_ context.Context, req *pb.ConfigureRequest) (*pb.ConfigureResponse, error) {
+	if !s.mutex.TryLock() {
+		return &pb.ConfigureResponse{}, fmt.Errorf("server is processing another request")
+	}
+	defer s.mutex.Unlock()
+	if err := s.configure(req); err != nil {
+		return &pb.ConfigureResponse{}, err
+	}
+	return &pb.ConfigureResponse{}, nil
+}
+
 func (s *Server) update(req *pb.UpdateRequest) error {
 	action := req.ImageType
 	var handler imageDownload
@@ -129,6 +140,13 @@ func (s *Server) rollback() error {
 		return err
 	}
 	return s.reboot()
+}
+
+func (s *Server) configure(req *pb.ConfigureRequest) error {
+	if err := startConfig(req.Configs); err != nil {
+		return err
+	}
+	return nil
 }
 
 func (s *Server) reboot() error {

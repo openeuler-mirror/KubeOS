@@ -21,3 +21,29 @@ const (
 	// SockName is the path of the socket file
 	SockName = "os-agent.sock"
 )
+
+// ConfigType defines type of configurations
+type ConfigType int32
+
+const (
+	// KernelSysctlName is the configuration name of the kernel parameter set by using sysctl
+	KernelSysctlName ConfigType = 0
+	// KerSysctlPersistName is the configuration name of the kernel parameter
+	// set by writing /etc/sysctl.conf or other files
+	KerSysctlPersistName ConfigType = 1
+	// GrubCmdlineName is configuration name of cmdline
+	GrubCmdlineName ConfigType = 2
+)
+
+func (c ConfigType) String() string {
+	switch c {
+	case KernelSysctlName:
+		return "kernel.sysctl"
+	case KerSysctlPersistName:
+		return "kernel.sysctl.persist"
+	case GrubCmdlineName:
+		return "grub.cmdline"
+	default:
+		return "unknown"
+	}
+}
