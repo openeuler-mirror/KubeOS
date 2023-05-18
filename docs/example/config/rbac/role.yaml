@@ -62,3 +62,29 @@ rules:
   - get
   - patch
   - update
+- apiGroups:
+  - upgrade.openeuler.org
+  resources:
+  - osinstances
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - upgrade.openeuler.org
+  resources:
+  - osinstances/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - upgrade.openeuler.org
+  resources:
+  - osinstances/status
+  verbs:
+  - get
+  - patch
+  - update

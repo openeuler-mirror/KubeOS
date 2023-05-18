@@ -112,7 +112,7 @@
   - 使用docker镜像升级和mtls双向认证仅支持 openEuler 22.09 及之后的版本 
   - 不支持跨大版本升级
 
-- 升级指导
+- 使用指导
     - 参数说明：在集群中创建类别为OS的定制对象，设置相应字段。类别OS来自于安装和部署章节创建的CRD对象，字段及说明如下：
       - imageurl指定的地址里包含协议，只支持http或https协议。imageurl为https协议时为安全传输，imageurl为http地址时，需指定flagSafe为true，即用户明确该地址为安全时，才会下载镜像。如imageurl为http地址且没有指定flagSafe为true，默认该地址不安全，不会下载镜像并且在升级节点的日志中提示用户该地址不安全
       - 对于imageurl，推荐使用https协议，使用https协议需要升级的机器已安装相应证书。如果镜像服务器由用户自己维护，需要用户自己进行签名，并保证升级节点已安装对应证书。用户需要将证书放在容器OS /etc/KubeOS/certs目录下。地址由管理员传入，管理员应该保证网址的安全性，推荐采用内网地址。
@@ -120,11 +120,11 @@
       
       | 参数            |参数类型  | 参数说明                                                     | 使用说明 | 是否必选         |
       | -------------- | ------ | ------------------------------------------------------------ | ----- | ---------------- |
-      | imagetype      | string | 使用的升级镜像的类型           | 需为 docker 或者 disk ，其他值无效，且该参数仅在升级场景有效|是               |
-      | opstype        | string | 进行的操作，升级或者回退 | 需为 upgrade ，或者 rollback ，其他值无效 |是               |
+      | imagetype      | string | 使用的升级镜像的类型           | 需为 docker ，containerd ，或者是 disk，其他值无效，且该参数仅在升级场景有效|是               |
+      | opstype        | string | 进行的操作，升级,回退或者配置 | 需为 upgrade ，config 或者 rollback ，其他值无效 |是               |
       | osversion      | string | 用于升级或回退的镜像的OS版本          | 需为 KubeOS version , 例如: KubeOS 1.0.0|是               |
       | maxunavailable | int    | 同时进行升级或回退的节点数 | maxunavailable值设置为大于实际集群的节点数时也可正常部署，升级或回退时会按照集群内实际节点数进行|是               |
-      | dockerimage    | string | 用于升级的容器镜像               | 需要为容器镜像格式：repository/name:tag，仅在使用容器镜像升级场景下有效|是               |
+      | containerimage    | string | 用于升级的容器镜像               | 需要为容器镜像格式：repository/name:tag，仅在使用容器镜像升级场景下有效|是               |
       | imageurl       | string | 用于升级的磁盘镜像的地址 | imageurl中包含协议，只支持http或https协议，例如：https://192.168.122.15/update.img 仅在使用磁盘镜像升级场景下有效|是               |
       | checksum       | string | 用于升级的磁盘镜像校验的checksum(SHA-256)值                      | 仅在使用磁盘镜像升级场景下有效 |是               |
       | flagSafe       | bool   | 当imageurl的地址使用http协议表示是否是安全的                 | 需为 true 或者 false ，仅在imageurl使用http协议时有效 |是               |
@@ -132,9 +132,12 @@
       | cacert         | string | https或者https双向认证时使用的根证书文件                       | 仅在imageurl使用https协议时有效| imageurl使用https协议时必选 |
       | clientcert     | string | https双向认证时使用的客户端证书文件                          | 仅在使用https双向认证时有效|mtls为true时必选 |
       | clientkey      | string | https双向认证时使用的客户端公钥                              | 仅在使用https双向认证时有效|mtls为true时必选 |
+      | evictpodforce      | bool | 用于表示升级/回退时是否强制驱逐pod                            | 需为 true 或者 false ，仅在升级或者回退时有效| 必选 |
+      | sysconfigs      | / | 需要进行配置的参数值                            | 在配置或者升级或者回退机器时有效，在升级或者回退操作之后即机器重启之后起效，详细字段说明请见```配置（Settings）指导```| 可选 |
+      | upgradeconfigs      | / | 需要升级前进行的配置的参数值                            | 在升级或者回退时有效，在升级或者回退操作之前起效，详细字段说明请见```配置（Settings）指导```| 可选 |  
 
-  - 使用
-    - 编写YAML文件，在集群中部署 OS 的cr实例，用于部署cr实例的YAML示例如下，假定将上面的YAML保存到upgrade_v1alpha1_os.yaml：
+  - 升级指导
+    - 编写YAML文件，在集群中部署 OS 的cr实例，用于部署cr实例的YAML示例如下，假定将上面的YAML保存到upgrade_v1alpha1_os.yaml;
       * 使用磁盘镜像进行升级
 
           ```
@@ -180,76 +183,198 @@
           apiVersion: upgrade.openeuler.org/v1alpha1
           kind: OS
           metadata:
-          name: os-sample
-          spec:
-          imagetype: containerd
-          opstype: upgrade
-          osversion: edit.os.version
-          maxunavailable: edit.node.upgrade.number
-          containerimage: container image like repository/name:tag
-          imageurl: ""
-          checksum: ""
-          flagSafe: false
-          mtls: true
-          ```
-    - 查看未升级的节点的 OS 版本
-    ```
-    kubectl get nodes -o custom-columns='NAME:.metadata.name,OS:.status.nodeInfo.osImage'
-    ```
-    - 执行命令，在集群中部署cr实例后，节点会根据配置的参数信息进行升级。
-    ```
-    kubectl apply -f upgrade_v1alpha1_os.yaml
-    ```
-    - 再次查看节点的 OS 版本来确认节点是否升级完成
-    ```
-    kubectl get nodes -o custom-columns='NAME:.metadata.name,OS:.status.nodeInfo.osImage'
-    ```
-    - 如果后续需要再次升级，与上面相同对 upgrade_v1alpha1_os.yaml 的 imageurl ，osversion，checksum，maxunavailable，flagSafe 或者containerimage字段进行相应修改。
-
-- 回退指导
-  - 回退场景 
-    - 虚拟机无法正常启动时，需要退回到上一可以启动的版本时进行回退操作，仅支持手动回退容器 OS 。
-    - 虚拟机能够正常启动并且进入系统，需要将当前版本退回到老版本时进行回退操作，支持工具回退（类似升级方式）和手动回退，建议使用工具回退。
-  - 手动回退指导
-    - 手动重启虚拟机，选择第二启动项进行回退，手动回退仅支持回退到本次升级之前的版本。
-  - 工具回退指导
-    - 回退至任意版本
-      * 修改 OS 的cr实例的YAML 配置文件（例如 upgrade_v1alpha1_os.yaml），设置相应字段为期望回退的老版本镜像信息。类别OS来自于安装和部署章节创建的CRD对象，字段说明及示例请见上一节升级指导。
-        * YAML修改完成后执行更新命令，在集群中更新定制对象后，节点会根据配置的字段信息进行回退
-          ``` 
-          kubectl apply -f upgrade_v1alpha1_os.yaml
-          ```
-    - 回退至上一版本
-      - 修改upgrade_v1alpha1_os.yaml，设置osversion为上一版本，opstype为rollback，回退至上一版本（即切换至上一分区）。YAML示例如下：
-          ```
-          apiVersion: upgrade.openeuler.org/v1alpha1
-          kind: OS
-          metadata:
             name: os-sample
           spec:
-            imagetype: ""
-            opstype: rollback
-            osversion: KubeOS pervious version
-            maxunavailable: 2
-            containerimage: ""
+            imagetype: containerd
+            opstype: upgrade
+            osversion: edit.os.version
+            maxunavailable: edit.node.upgrade.number
+            containerimage: container image like repository/name:tag
             imageurl: ""
             checksum: ""
             flagSafe: false
-            mtls:true
+            mtls: true
           ```
-      - YAML修改完成后执行更新命令，在集群中更新定制对象后，节点会根据配置的字段信息进行回退
-        ``` 
+        * 升级并且进行配置的示例如下，
+          * 以节点容器引擎为containerd为例，升级方式对配置无影响，upgradeconfigs在升级前起效，sysconfigs在升级后起效，配置参数说明请见```配置(Settings)指导```
+          * 升级并且配置时opstype字段需为upgrade
+          * upgradeconfig为升级之前执行的配置，sysconfigs为升级机器重启后执行的配置，用户可按需进行配置
+            ```
+            apiVersion: upgrade.openeuler.org/v1alpha1
+            kind: OS
+            metadata:
+                name: os-sample
+            spec:
+                imagetype: ""
+                opstype: upgrade
+                osversion: edit.os.version
+                maxunavailable: edit.node.upgrade.number
+                dockerimage: ""
+                imageurl: ""
+                checksum: ""
+                flagSafe: false
+                mtls: false
+                sysconfigs:
+                    version: edit.os.version
+                    configs:
+                        - model: kernel.systcl
+                        contents:
+                            - key: kernel param key1
+                              value: kernel param value1
+                            - key: kernel param key2
+                              value: kernel param value2
+                        - model: kernel.systcl.persist
+                          configpath: persist file path
+                          contents:
+                            - key: kernel param key3
+                              value: kernel param value3
+                            - key: ""
+                              value: ""
+                upgradeconfigs:
+                    version: 1.0.0
+                    configs:
+                        - model: kernel.systcl
+                        contents:
+                            - key: kernel param key4
+                              value: kernel param value4          
+            ```       
+    - 查看未升级的节点的 OS 版本
+        ```
+        kubectl get nodes -o custom-columns='NAME:.metadata.name,OS:.status.nodeInfo.osImage'
+        ```
+    - 执行命令，在集群中部署cr实例后，节点会根据配置的参数信息进行升级。
+        ```
         kubectl apply -f upgrade_v1alpha1_os.yaml
         ```
-        更新完成后，节点会根据配置信息回退容器 OS。
-      - 查看节点容器 OS 版本，确认回退是否成功。
+    - 再次查看节点的 OS 版本来确认节点是否升级完成
+        ```
+        kubectl get nodes -o custom-columns='NAME:.metadata.name,OS:.status.nodeInfo.osImage'
+        ```
+    - 如果后续需要再次升级，与上面相同对 upgrade_v1alpha1_os.yaml 的 imageurl ，osversion，checksum，maxunavailable，flagSafe 或者containerimage字段进行相应修改。
+  - 配置（Settings）指导
+    - Settings参数说明:     
+      以进行配置时的示例yaml为例对配置的参数进行说明，示例yaml如下：
+      ```
+      apiVersion: upgrade.openeuler.org/v1alpha1
+      kind: OS
+      metadata:
+        name: os-sample
+      spec:
+        imagetype: ""
+        opstype: config
+        osversion: edit.os.version
+        maxunavailable: edit.node.config.number
+        dockerimage: ""
+        imageurl: ""
+        checksum: ""
+        flagSafe: false
+        mtls: false
+        sysconfigs:
+            version: 1.0.0
+            configs:
+                - model: kernel.systcl
+                  contents:
+                    - key: kernel param key1
+                      value: kernel param value1
+                    - key: kernel param key2
+                      value: kernel param value2
+                - model: kernel.systcl.persist
+                  configpath: persist file path
+                  contents:
+                    - key: kernel param key3
+                      value: kernel param value3         
+      ```
+      - 配置的参数说明如下：
+        - version : 配置的版本,通过版本差异触发配置，请修改配置后更新 version
+        - configs : 具体配置内容
+            - model : 进行的配置的类型，支持的配置类型请看附录 Settings 列表
+            - configpath : 如为持久化配置，配置文件路径
+            - contents : 配置参数的 key , value 的集合
+                - key / value : 请看附录 Settings 列表对支持的配置的 key / value的说明
+      - upgradeconfigs与sysconfig参数相同，upgradeconfig为升级前进行的配置，仅在升级/回滚场景起效，在升级/回滚操作执行前进行配置，只进行配置或者需要升级/回滚重启后执行配置，使用sysconfigs
+    - 使用说明
+      - 编写YAML文件，在集群中部署 OS 的cr实例，用于部署cr实例的YAML示例如上，假定将上面的YAML保存到upgrade_v1alpha1_os.yaml
+      - 查看配置之前的节点的配置的版本和节点状态（NODESTATUS状态为idle）
+        ```
+        kubectl get osinstances -o custom-columns='NAME:.metadata.name,NODESTATUS:.spec.nodestatus,SYSCONFIG:status.sysconfigs.version,UPGRADESYSCONFIG:status.upgradesysconfigs.version'
+ 
+        ```
+      - 执行命令，在集群中部署cr实例后，节点会根据配置的参数信息进行配置，再次查看节点状态(NODESTATUS变成config)
+        ```
+        kubectl apply -f upgrade_v1alpha1_os.yaml
+        kubectl get osinstances -o custom-columns='NAME:.metadata.name,NODESTATUS:.spec.nodestatus,SYSCONFIG:status.sysconfigs.version,UPGRADESYSCONFIG:status.upgradesysconfigs.version'
+        ```
+      - 再次查看节点的配置的版本确认节点是否配置完成(NODESTATUS恢复为idle)
+        ```
+        kubectl get osinstances -o custom-columns='NAME:.metadata.name,NODESTATUS:.spec.nodestatus,SYSCONFIG:status.sysconfigs.version,UPGRADESYSCONFIG:status.upgradesysconfigs.version'
 
-      ```
-      kubectl get nodes -o custom-columns='NAME:.metadata.name,OS:.status.nodeInfo.osImage'
-      ```
+    - 如果后续需要再次升级，与上面相同对 upgrade_v1alpha1_os.yaml 的相应字段进行相应修改。
+  - 回退指导
+    - 回退场景 
+        - 虚拟机无法正常启动时，需要退回到上一可以启动的版本时进行回退操作，仅支持手动回退容器 OS 。
+        - 虚拟机能够正常启动并且进入系统，需要将当前版本退回到老版本时进行回退操作，支持工具回退（类似升级方式）和手动回退，建议使用工具回退。
+    - 手动回退指导
+        - 手动重启虚拟机，选择第二启动项进行回退，手动回退仅支持回退到本次升级之前的版本。
+    - 工具回退指导
+        - 回退至任意版本
+        * 修改 OS 的cr实例的YAML 配置文件（例如 upgrade_v1alpha1_os.yaml），设置相应字段为期望回退的老版本镜像信息。类别OS来自于安装和部署章节创建的CRD对象，字段说明及示例请见上一节升级指导。
+            * YAML修改完成后执行更新命令，在集群中更新定制对象后，节点会根据配置的字段信息进行回退
+            ``` 
+            kubectl apply -f upgrade_v1alpha1_os.yaml
+            ```
+        - 回退至上一版本
+            - 修改upgrade_v1alpha1_os.yaml，设置osversion为上一版本，opstype为rollback，回退至上一版本（即切换至上一分区）。YAML示例如下：
+            ```
+            apiVersion: upgrade.openeuler.org/v1alpha1
+            kind: OS
+            metadata:
+            name: os-sample
+            spec:
+                imagetype: ""
+                opstype: rollback
+                osversion: KubeOS pervious version
+                maxunavailable: 2
+                containerimage: ""
+                imageurl: ""
+                checksum: ""
+                flagSafe: false
+                mtls:true
+            ```
+        - YAML修改完成后执行更新命令，在集群中更新定制对象后，节点会根据配置的字段信息进行回退
+            ``` 
+            kubectl apply -f upgrade_v1alpha1_os.yaml
+            ```
+            更新完成后，节点会根据配置信息回退容器 OS。
+        - 查看节点容器 OS 版本，确认回退是否成功。
+
+            ```
+            kubectl get nodes -o custom-columns='NAME:.metadata.name,OS:.status.nodeInfo.osImage'
+            ```
 # 常见问题及解决办法
 1. 使用容器OS的虚拟机加入集群后相关pod启动失败，kubelet日志错误为"not found /etc/resolv.conf"        
    解决方法：镜像制作时配置或者手动添加/etc/resolv.conf文件，内容与集群master节点上/etc/resolv.conf一致
    
-
-
+# 附录
+## Setting 列表
+### kernel Settings
+- kenerl.sysctl : 设置内核参数，key/value 表示内核参数的 key/value , 示例如下 :
+    ```
+    configs:
+      - model: kernel.systcl
+        contents:
+            - key: user.max_user_namespaces
+              value: 16384
+            - key: net.ipv4.tcp_tw_recycle
+              value: 0
+    ```
+- kernel.sysctl.persist : 设置持久化内核参数，key/value 表示内核参数的 key/value , configpath为配置修改/新建的文件路径，如不指定configpath默认修改/etc/sysctl.conf
+    ```
+    configs:
+      - model: kernel.systcl.persist
+        configpath : /etc/persist.conf
+        contents:
+            - key: user.max_user_namespaces
+              value: 16384
+            - key: net.ipv4.tcp_tw_recycle
+              value: 0
+    ```

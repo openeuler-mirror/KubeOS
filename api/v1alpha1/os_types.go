@@ -27,10 +27,17 @@ type OSSpec struct {
 	ImageType      string `json:"imagetype"`
 	ContainerImage string `json:"containerimage"`
 	OpsType        string `json:"opstype"`
-	CaCert         string `json:"cacert"`
-	ClientCert     string `json:"clientcert"`
-	ClientKey      string `json:"clientkey"`
 	EvictPodForce  bool   `json:"evictpodforce"`
+	// +kubebuilder:validation:Optional`
+	CaCert string `json:"cacert"`
+	// +kubebuilder:validation:Optional
+	ClientCert string `json:"clientcert"`
+	// +kubebuilder:validation:Optional
+	ClientKey string `json:"clientkey"`
+	// +kubebuilder:validation:Optional
+	SysConfigs SysConfigs `json:"sysconfigs"`
+	// +kubebuilder:validation:Optional
+	UpgradeConfigs SysConfigs `json:"upgradeconfigs"`
 }
 
 // +kubebuilder:subresource:status
@@ -53,6 +60,73 @@ type OSList struct {
 	Items           []OS `json:"items"`
 }
 
+// SysConfigs defines all configurations expected by the user
+type SysConfigs struct {
+	// +kubebuilder:validation:Optional
+	Version string `json:"version"`
+	// +kubebuilder:validation:Optional
+	Configs []SysConfig `json:"configs"`
+}
+
+// SysConfig defines a type of configurations expected by the user
+type SysConfig struct {
+	// +kubebuilder:validation:Optional
+	Model string `json:"model"`
+	// +kubebuilder:validation:Optional
+	ConfigPath string `json:"configpath"`
+	// +kubebuilder:validation:Optional
+	Contents []Content `json:"contents"`
+}
+
+// Content defines the key and value of configuration
+type Content struct {
+	// +kubebuilder:validation:Optional
+	Key string `json:"key"`
+	// +kubebuilder:validation:Optional
+	Value string `json:"value"`
+}
+
+// +kubebuilder:subresource:status
+// +kubebuilder:object:root=true
+
+// OSInstance defines some infomation of a node
+type OSInstance struct {
+	metav1.TypeMeta   `json:",inline"`
+	metav1.ObjectMeta `json:"metadata,omitempty"`
+	// +kubebuilder:validation:Optional
+	Status OSInstanceStatus `json:"status,omitempty"`
+	// +kubebuilder:validation:Optional
+	Spec OSInstanceSpec `json:"spec,omitempty"`
+}
+
+// OSInstanceStatus defines status of a node
+type OSInstanceStatus struct {
+	// +kubebuilder:validation:Optional
+	SysConfigs SysConfigs `json:"sysconfigs"`
+	// +kubebuilder:validation:Optional
+	UpgradeConfigs SysConfigs `json:"upgradeconfigs"`
+}
+
+// OSInstanceSpec defines desired state of OS
+type OSInstanceSpec struct {
+	// +kubebuilder:validation:Optional
+	NodeStatus string `json:"nodestatus"`
+	// +kubebuilder:validation:Optional
+	SysConfigs SysConfigs `json:"sysconfigs"`
+	// +kubebuilder:validation:Optional
+	UpgradeConfigs SysConfigs `json:"upgradeconfigs"`
+}
+
+// +kubebuilder:object:root=true
+
+// OSInstanceList is a list of OSInstance
+type OSInstanceList struct {
+	metav1.TypeMeta `json:",inline"`
+	metav1.ListMeta `json:"metadata,omitempty"`
+	Items           []OSInstance `json:"items"`
+}
+
 func init() {
 	SchemeBuilder.Register(&OS{}, &OSList{})
+	SchemeBuilder.Register(&OSInstance{}, &OSInstanceList{})
 }

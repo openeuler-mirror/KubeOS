@@ -18,10 +18,6 @@
 package agent
 
 import (
-	context "context"
-	grpc "google.golang.org/grpc"
-	codes "google.golang.org/grpc/codes"
-	status "google.golang.org/grpc/status"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	reflect "reflect"
@@ -333,6 +329,163 @@ func (x *RollbackResponse) GetErr() int32 {
 	return 0
 }
 
+type ConfigureRequest struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	Configs []*SysConfig `protobuf:"bytes,1,rep,name=configs,proto3" json:"configs,omitempty"`
+}
+
+func (x *ConfigureRequest) Reset() {
+	*x = ConfigureRequest{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_api_agent_proto_msgTypes[5]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *ConfigureRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ConfigureRequest) ProtoMessage() {}
+
+func (x *ConfigureRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_api_agent_proto_msgTypes[5]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ConfigureRequest.ProtoReflect.Descriptor instead.
+func (*ConfigureRequest) Descriptor() ([]byte, []int) {
+	return file_api_agent_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *ConfigureRequest) GetConfigs() []*SysConfig {
+	if x != nil {
+		return x.Configs
+	}
+	return nil
+}
+
+type ConfigureResponse struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	Err int32 `protobuf:"varint,1,opt,name=err,proto3" json:"err,omitempty"`
+}
+
+func (x *ConfigureResponse) Reset() {
+	*x = ConfigureResponse{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_api_agent_proto_msgTypes[6]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *ConfigureResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ConfigureResponse) ProtoMessage() {}
+
+func (x *ConfigureResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_api_agent_proto_msgTypes[6]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ConfigureResponse.ProtoReflect.Descriptor instead.
+func (*ConfigureResponse) Descriptor() ([]byte, []int) {
+	return file_api_agent_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *ConfigureResponse) GetErr() int32 {
+	if x != nil {
+		return x.Err
+	}
+	return 0
+}
+
+type SysConfig struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	Model      string            `protobuf:"bytes,1,opt,name=model,proto3" json:"model,omitempty"`
+	ConfigPath string            `protobuf:"bytes,2,opt,name=configPath,proto3" json:"configPath,omitempty"`
+	Contents   map[string]string `protobuf:"bytes,3,rep,name=contents,proto3" json:"contents,omitempty" protobuf_key:"bytes,1,opt,name=key,proto3" protobuf_val:"bytes,2,opt,name=value,proto3"`
+}
+
+func (x *SysConfig) Reset() {
+	*x = SysConfig{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_api_agent_proto_msgTypes[7]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *SysConfig) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SysConfig) ProtoMessage() {}
+
+func (x *SysConfig) ProtoReflect() protoreflect.Message {
+	mi := &file_api_agent_proto_msgTypes[7]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SysConfig.ProtoReflect.Descriptor instead.
+func (*SysConfig) Descriptor() ([]byte, []int) {
+	return file_api_agent_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *SysConfig) GetModel() string {
+	if x != nil {
+		return x.Model
+	}
+	return ""
+}
+
+func (x *SysConfig) GetConfigPath() string {
+	if x != nil {
+		return x.ConfigPath
+	}
+	return ""
+}
+
+func (x *SysConfig) GetContents() map[string]string {
+	if x != nil {
+		return x.Contents
+	}
+	return nil
+}
+
 var File_api_agent_proto protoreflect.FileDescriptor
 
 var file_api_agent_proto_rawDesc = []byte{
@@ -366,17 +519,40 @@ var file_api_agent_proto_rawDesc = []byte{
 	0x6c, 0x6c, 0x62, 0x61, 0x63, 0x6b, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x22, 0x24, 0x0a,
 	0x10, 0x52, 0x6f, 0x6c, 0x6c, 0x62, 0x61, 0x63, 0x6b, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73,
 	0x65, 0x12, 0x10, 0x0a, 0x03, 0x65, 0x72, 0x72, 0x18, 0x01, 0x20, 0x01, 0x28, 0x05, 0x52, 0x03,
-	0x65, 0x72, 0x72, 0x32, 0x7c, 0x0a, 0x02, 0x4f, 0x53, 0x12, 0x37, 0x0a, 0x06, 0x55, 0x70, 0x64,
-	0x61, 0x74, 0x65, 0x12, 0x14, 0x2e, 0x61, 0x67, 0x65, 0x6e, 0x74, 0x2e, 0x55, 0x70, 0x64, 0x61,
-	0x74, 0x65, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x1a, 0x15, 0x2e, 0x61, 0x67, 0x65, 0x6e,
-	0x74, 0x2e, 0x55, 0x70, 0x64, 0x61, 0x74, 0x65, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65,
-	0x22, 0x00, 0x12, 0x3d, 0x0a, 0x08, 0x52, 0x6f, 0x6c, 0x6c, 0x62, 0x61, 0x63, 0x6b, 0x12, 0x16,
-	0x2e, 0x61, 0x67, 0x65, 0x6e, 0x74, 0x2e, 0x52, 0x6f, 0x6c, 0x6c, 0x62, 0x61, 0x63, 0x6b, 0x52,
-	0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x1a, 0x17, 0x2e, 0x61, 0x67, 0x65, 0x6e, 0x74, 0x2e, 0x52,
-	0x6f, 0x6c, 0x6c, 0x62, 0x61, 0x63, 0x6b, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x22,
-	0x00, 0x42, 0x20, 0x5a, 0x1e, 0x6f, 0x70, 0x65, 0x6e, 0x65, 0x75, 0x6c, 0x65, 0x72, 0x2e, 0x6f,
-	0x72, 0x67, 0x2f, 0x6b, 0x75, 0x62, 0x65, 0x6f, 0x73, 0x2f, 0x61, 0x70, 0x69, 0x2f, 0x61, 0x67,
-	0x65, 0x6e, 0x74, 0x62, 0x06, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x33,
+	0x65, 0x72, 0x72, 0x22, 0x3e, 0x0a, 0x10, 0x43, 0x6f, 0x6e, 0x66, 0x69, 0x67, 0x75, 0x72, 0x65,
+	0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x12, 0x2a, 0x0a, 0x07, 0x63, 0x6f, 0x6e, 0x66, 0x69,
+	0x67, 0x73, 0x18, 0x01, 0x20, 0x03, 0x28, 0x0b, 0x32, 0x10, 0x2e, 0x61, 0x67, 0x65, 0x6e, 0x74,
+	0x2e, 0x53, 0x79, 0x73, 0x43, 0x6f, 0x6e, 0x66, 0x69, 0x67, 0x52, 0x07, 0x63, 0x6f, 0x6e, 0x66,
+	0x69, 0x67, 0x73, 0x22, 0x25, 0x0a, 0x11, 0x43, 0x6f, 0x6e, 0x66, 0x69, 0x67, 0x75, 0x72, 0x65,
+	0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x12, 0x10, 0x0a, 0x03, 0x65, 0x72, 0x72, 0x18,
+	0x01, 0x20, 0x01, 0x28, 0x05, 0x52, 0x03, 0x65, 0x72, 0x72, 0x22, 0xba, 0x01, 0x0a, 0x09, 0x53,
+	0x79, 0x73, 0x43, 0x6f, 0x6e, 0x66, 0x69, 0x67, 0x12, 0x14, 0x0a, 0x05, 0x6d, 0x6f, 0x64, 0x65,
+	0x6c, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x05, 0x6d, 0x6f, 0x64, 0x65, 0x6c, 0x12, 0x1e,
+	0x0a, 0x0a, 0x63, 0x6f, 0x6e, 0x66, 0x69, 0x67, 0x50, 0x61, 0x74, 0x68, 0x18, 0x02, 0x20, 0x01,
+	0x28, 0x09, 0x52, 0x0a, 0x63, 0x6f, 0x6e, 0x66, 0x69, 0x67, 0x50, 0x61, 0x74, 0x68, 0x12, 0x3a,
+	0x0a, 0x08, 0x63, 0x6f, 0x6e, 0x74, 0x65, 0x6e, 0x74, 0x73, 0x18, 0x03, 0x20, 0x03, 0x28, 0x0b,
+	0x32, 0x1e, 0x2e, 0x61, 0x67, 0x65, 0x6e, 0x74, 0x2e, 0x53, 0x79, 0x73, 0x43, 0x6f, 0x6e, 0x66,
+	0x69, 0x67, 0x2e, 0x43, 0x6f, 0x6e, 0x74, 0x65, 0x6e, 0x74, 0x73, 0x45, 0x6e, 0x74, 0x72, 0x79,
+	0x52, 0x08, 0x63, 0x6f, 0x6e, 0x74, 0x65, 0x6e, 0x74, 0x73, 0x1a, 0x3b, 0x0a, 0x0d, 0x43, 0x6f,
+	0x6e, 0x74, 0x65, 0x6e, 0x74, 0x73, 0x45, 0x6e, 0x74, 0x72, 0x79, 0x12, 0x10, 0x0a, 0x03, 0x6b,
+	0x65, 0x79, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x03, 0x6b, 0x65, 0x79, 0x12, 0x14, 0x0a,
+	0x05, 0x76, 0x61, 0x6c, 0x75, 0x65, 0x18, 0x02, 0x20, 0x01, 0x28, 0x09, 0x52, 0x05, 0x76, 0x61,
+	0x6c, 0x75, 0x65, 0x3a, 0x02, 0x38, 0x01, 0x32, 0xbe, 0x01, 0x0a, 0x02, 0x4f, 0x53, 0x12, 0x37,
+	0x0a, 0x06, 0x55, 0x70, 0x64, 0x61, 0x74, 0x65, 0x12, 0x14, 0x2e, 0x61, 0x67, 0x65, 0x6e, 0x74,
+	0x2e, 0x55, 0x70, 0x64, 0x61, 0x74, 0x65, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x1a, 0x15,
+	0x2e, 0x61, 0x67, 0x65, 0x6e, 0x74, 0x2e, 0x55, 0x70, 0x64, 0x61, 0x74, 0x65, 0x52, 0x65, 0x73,
+	0x70, 0x6f, 0x6e, 0x73, 0x65, 0x22, 0x00, 0x12, 0x3d, 0x0a, 0x08, 0x52, 0x6f, 0x6c, 0x6c, 0x62,
+	0x61, 0x63, 0x6b, 0x12, 0x16, 0x2e, 0x61, 0x67, 0x65, 0x6e, 0x74, 0x2e, 0x52, 0x6f, 0x6c, 0x6c,
+	0x62, 0x61, 0x63, 0x6b, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x1a, 0x17, 0x2e, 0x61, 0x67,
+	0x65, 0x6e, 0x74, 0x2e, 0x52, 0x6f, 0x6c, 0x6c, 0x62, 0x61, 0x63, 0x6b, 0x52, 0x65, 0x73, 0x70,
+	0x6f, 0x6e, 0x73, 0x65, 0x22, 0x00, 0x12, 0x40, 0x0a, 0x09, 0x43, 0x6f, 0x6e, 0x66, 0x69, 0x67,
+	0x75, 0x72, 0x65, 0x12, 0x17, 0x2e, 0x61, 0x67, 0x65, 0x6e, 0x74, 0x2e, 0x43, 0x6f, 0x6e, 0x66,
+	0x69, 0x67, 0x75, 0x72, 0x65, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x1a, 0x18, 0x2e, 0x61,
+	0x67, 0x65, 0x6e, 0x74, 0x2e, 0x43, 0x6f, 0x6e, 0x66, 0x69, 0x67, 0x75, 0x72, 0x65, 0x52, 0x65,
+	0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x22, 0x00, 0x42, 0x20, 0x5a, 0x1e, 0x6f, 0x70, 0x65, 0x6e,
+	0x65, 0x75, 0x6c, 0x65, 0x72, 0x2e, 0x6f, 0x72, 0x67, 0x2f, 0x6b, 0x75, 0x62, 0x65, 0x6f, 0x73,
+	0x2f, 0x61, 0x70, 0x69, 0x2f, 0x61, 0x67, 0x65, 0x6e, 0x74, 0x62, 0x06, 0x70, 0x72, 0x6f, 0x74,
+	0x6f, 0x33,
 }
 
 var (
@@ -391,25 +567,33 @@ func file_api_agent_proto_rawDescGZIP() []byte {
 	return file_api_agent_proto_rawDescData
 }
 
-var file_api_agent_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
+var file_api_agent_proto_msgTypes = make([]protoimpl.MessageInfo, 9)
 var file_api_agent_proto_goTypes = []interface{}{
-	(*UpdateRequest)(nil),    // 0: agent.UpdateRequest
-	(*CertsInfo)(nil),        // 1: agent.CertsInfo
-	(*UpdateResponse)(nil),   // 2: agent.UpdateResponse
-	(*RollbackRequest)(nil),  // 3: agent.RollbackRequest
-	(*RollbackResponse)(nil), // 4: agent.RollbackResponse
+	(*UpdateRequest)(nil),     // 0: agent.UpdateRequest
+	(*CertsInfo)(nil),         // 1: agent.CertsInfo
+	(*UpdateResponse)(nil),    // 2: agent.UpdateResponse
+	(*RollbackRequest)(nil),   // 3: agent.RollbackRequest
+	(*RollbackResponse)(nil),  // 4: agent.RollbackResponse
+	(*ConfigureRequest)(nil),  // 5: agent.ConfigureRequest
+	(*ConfigureResponse)(nil), // 6: agent.ConfigureResponse
+	(*SysConfig)(nil),         // 7: agent.SysConfig
+	nil,                       // 8: agent.SysConfig.ContentsEntry
 }
 var file_api_agent_proto_depIdxs = []int32{
 	1, // 0: agent.UpdateRequest.certs:type_name -> agent.CertsInfo
-	0, // 1: agent.OS.Update:input_type -> agent.UpdateRequest
-	3, // 2: agent.OS.Rollback:input_type -> agent.RollbackRequest
-	2, // 3: agent.OS.Update:output_type -> agent.UpdateResponse
-	4, // 4: agent.OS.Rollback:output_type -> agent.RollbackResponse
-	3, // [3:5] is the sub-list for method output_type
-	1, // [1:3] is the sub-list for method input_type
-	1, // [1:1] is the sub-list for extension type_name
-	1, // [1:1] is the sub-list for extension extendee
-	0, // [0:1] is the sub-list for field type_name
+	7, // 1: agent.ConfigureRequest.configs:type_name -> agent.SysConfig
+	8, // 2: agent.SysConfig.contents:type_name -> agent.SysConfig.ContentsEntry
+	0, // 3: agent.OS.Update:input_type -> agent.UpdateRequest
+	3, // 4: agent.OS.Rollback:input_type -> agent.RollbackRequest
+	5, // 5: agent.OS.Configure:input_type -> agent.ConfigureRequest
+	2, // 6: agent.OS.Update:output_type -> agent.UpdateResponse
+	4, // 7: agent.OS.Rollback:output_type -> agent.RollbackResponse
+	6, // 8: agent.OS.Configure:output_type -> agent.ConfigureResponse
+	6, // [6:9] is the sub-list for method output_type
+	3, // [3:6] is the sub-list for method input_type
+	3, // [3:3] is the sub-list for extension type_name
+	3, // [3:3] is the sub-list for extension extendee
+	0, // [0:3] is the sub-list for field type_name
 }
 
 func init() { file_api_agent_proto_init() }
@@ -478,6 +662,42 @@ func file_api_agent_proto_init() {
 				return nil
 			}
 		}
+		file_api_agent_proto_msgTypes[5].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*ConfigureRequest); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_api_agent_proto_msgTypes[6].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*ConfigureResponse); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_api_agent_proto_msgTypes[7].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*SysConfig); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
@@ -485,7 +705,7 @@ func file_api_agent_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: file_api_agent_proto_rawDesc,
 			NumEnums:      0,
-			NumMessages:   5,
+			NumMessages:   9,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
@@ -497,120 +717,4 @@ func file_api_agent_proto_init() {
 	file_api_agent_proto_rawDesc = nil
 	file_api_agent_proto_goTypes = nil
 	file_api_agent_proto_depIdxs = nil
-}
-
-// Reference imports to suppress errors if they are not otherwise used.
-var _ context.Context
-var _ grpc.ClientConnInterface
-
-// This is a compile-time assertion to ensure that this generated file
-// is compatible with the grpc package it is being compiled against.
-const _ = grpc.SupportPackageIsVersion6
-
-// OSClient is the client API for OS service.
-//
-// For semantics around ctx use and closing/ending streaming RPCs, please refer to https://godoc.org/google.golang.org/grpc#ClientConn.NewStream.
-type OSClient interface {
-	Update(ctx context.Context, in *UpdateRequest, opts ...grpc.CallOption) (*UpdateResponse, error)
-	Rollback(ctx context.Context, in *RollbackRequest, opts ...grpc.CallOption) (*RollbackResponse, error)
-}
-
-type oSClient struct {
-	cc grpc.ClientConnInterface
-}
-
-func NewOSClient(cc grpc.ClientConnInterface) OSClient {
-	return &oSClient{cc}
-}
-
-func (c *oSClient) Update(ctx context.Context, in *UpdateRequest, opts ...grpc.CallOption) (*UpdateResponse, error) {
-	out := new(UpdateResponse)
-	err := c.cc.Invoke(ctx, "/agent.OS/Update", in, out, opts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *oSClient) Rollback(ctx context.Context, in *RollbackRequest, opts ...grpc.CallOption) (*RollbackResponse, error) {
-	out := new(RollbackResponse)
-	err := c.cc.Invoke(ctx, "/agent.OS/Rollback", in, out, opts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-// OSServer is the server API for OS service.
-type OSServer interface {
-	Update(context.Context, *UpdateRequest) (*UpdateResponse, error)
-	Rollback(context.Context, *RollbackRequest) (*RollbackResponse, error)
-}
-
-// UnimplementedOSServer can be embedded to have forward compatible implementations.
-type UnimplementedOSServer struct {
-}
-
-func (*UnimplementedOSServer) Update(context.Context, *UpdateRequest) (*UpdateResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method Update not implemented")
-}
-func (*UnimplementedOSServer) Rollback(context.Context, *RollbackRequest) (*RollbackResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method Rollback not implemented")
-}
-
-func RegisterOSServer(s *grpc.Server, srv OSServer) {
-	s.RegisterService(&_OS_serviceDesc, srv)
-}
-
-func _OS_Update_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(UpdateRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(OSServer).Update(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: "/agent.OS/Update",
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(OSServer).Update(ctx, req.(*UpdateRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _OS_Rollback_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(RollbackRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(OSServer).Rollback(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: "/agent.OS/Rollback",
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(OSServer).Rollback(ctx, req.(*RollbackRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-var _OS_serviceDesc = grpc.ServiceDesc{
-	ServiceName: "agent.OS",
-	HandlerType: (*OSServer)(nil),
-	Methods: []grpc.MethodDesc{
-		{
-			MethodName: "Update",
-			Handler:    _OS_Update_Handler,
-		},
-		{
-			MethodName: "Rollback",
-			Handler:    _OS_Rollback_Handler,
-		},
-	},
-	Streams:  []grpc.StreamDesc{},
-	Metadata: "api/agent.proto",
 }

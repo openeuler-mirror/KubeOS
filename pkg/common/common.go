@@ -28,7 +28,8 @@ import (
 // ReadStatusWriter is the API for reconcile methods to interact with Kubernetes API servers
 type ReadStatusWriter interface {
 	client.Reader
-	client.StatusWriter
+	client.StatusClient
+	client.Writer
 }
 
 // NewControllerManager configure and return a manager

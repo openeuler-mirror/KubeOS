@@ -43,6 +43,18 @@ type DownloadInfo struct {
 	ContainerImage string
 }
 
+// ConfigsInfo contains the information required for settings
+type ConfigsInfo struct {
+	Configs []SysConfig
+}
+
+// SysConfig contains configuration parameters of a type
+type SysConfig struct {
+	Model      string
+	ConfigPath string
+	Contents   map[string]string
+}
+
 // New create a gRPC channel to communicate with the server and return a client stub to perform RPCs
 func New(sockAddr string) (*Client, error) {
 	if sockAddr == "" {
@@ -87,5 +99,25 @@ func (c *Client) UpdateSpec(version string, downloadInfo *DownloadInfo) error {
 // RollbackSpec send rollback requests to the server in os-agent
 func (c *Client) RollbackSpec() error {
 	_, err := c.client.Rollback(context.Background(), &pb.RollbackRequest{})
+	return err
+}
+
+// ConfigureSpec send configure requests to the server in os-agent
+func (c *Client) ConfigureSpec(configsInfo *ConfigsInfo) error {
+	var sysConfigs []*pb.SysConfig
+	configs := configsInfo.Configs
+	for _, config := range configs {
+		sysConfig := &pb.SysConfig{
+			Model:      config.Model,
+			ConfigPath: config.ConfigPath,
+		}
+		sysContents := make(map[string]string)
+		for configName, content := range config.Contents {
+			sysContents[configName] = content
+		}
+		sysConfig.Contents = sysContents
+		sysConfigs = append(sysConfigs, sysConfig)
+	}
+	_, err := c.client.Configure(context.Background(), &pb.ConfigureRequest{Configs: sysConfigs})
 	return err
 }

@@ -6,20 +6,20 @@ metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.5.0
   creationTimestamp: null
-  name: os.upgrade.openeuler.org
+  name: osinstances.upgrade.openeuler.org
 spec:
   group: upgrade.openeuler.org
   names:
-    kind: OS
-    listKind: OSList
-    plural: os
-    singular: os
+    kind: OSInstance
+    listKind: OSInstanceList
+    plural: osinstances
+    singular: osinstance
   scope: Namespaced
   versions:
   - name: v1alpha1
     schema:
       openAPIV3Schema:
-        description: OS is a specification for OS in the cluster
+        description: OSInstance defines some infomation of a node
         properties:
           apiVersion:
             description: 'APIVersion defines the versioned schema of this representation of an object. Servers should convert recognized schemas to the latest internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
@@ -30,33 +30,9 @@ spec:
           metadata:
             type: object
           spec:
-            description: OSSpec defines the desired state of OS
+            description: OSInstanceSpec defines desired state of OS
             properties:
-              cacert:
-                type: string
-              checksum:
-                type: string
-              clientcert:
-                type: string
-              clientkey:
-                type: string
-              containerimage:
-                type: string
-              evictpodforce:
-                type: boolean
-              flagSafe:
-                type: boolean
-              imagetype:
-                type: string
-              imageurl:
-                type: string
-              maxunavailable:
-                type: integer
-              mtls:
-                type: boolean
-              opstype:
-                type: string
-              osversion:
+              nodestatus:
                 type: string
               sysconfigs:
                 description: SysConfigs defines all configurations expected by the user
@@ -110,17 +86,62 @@ spec:
                   version:
                     type: string
                 type: object
-            required:
-            - checksum
-            - containerimage
-            - evictpodforce
-            - flagSafe
-            - imagetype
-            - imageurl
-            - maxunavailable
-            - mtls
-            - opstype
-            - osversion
+            type: object
+          status:
+            description: OSInstanceStatus defines status of a node
+            properties:
+              sysconfigs:
+                description: SysConfigs defines all configurations expected by the user
+                properties:
+                  configs:
+                    items:
+                      description: SysConfig defines a type of configurations expected by the user
+                      properties:
+                        configpath:
+                          type: string
+                        contents:
+                          items:
+                            description: Content defines the key and value of configuration
+                            properties:
+                              key:
+                                type: string
+                              value:
+                                type: string
+                            type: object
+                          type: array
+                        model:
+                          type: string
+                      type: object
+                    type: array
+                  version:
+                    type: string
+                type: object
+              upgradeconfigs:
+                description: SysConfigs defines all configurations expected by the user
+                properties:
+                  configs:
+                    items:
+                      description: SysConfig defines a type of configurations expected by the user
+                      properties:
+                        configpath:
+                          type: string
+                        contents:
+                          items:
+                            description: Content defines the key and value of configuration
+                            properties:
+                              key:
+                                type: string
+                              value:
+                                type: string
+                            type: object
+                          type: array
+                        model:
+                          type: string
+                      type: object
+                    type: array
+                  version:
+                    type: string
+                type: object
             type: object
         type: object
     served: true
