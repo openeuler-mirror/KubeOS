@@ -15,10 +15,6 @@ package controllers
 
 import (
 	"context"
-	"k8s.io/client-go/util/workqueue"
-	"sigs.k8s.io/controller-runtime/pkg/event"
-	"sigs.k8s.io/controller-runtime/pkg/handler"
-	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -26,9 +22,12 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/selection"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/util/workqueue"
 	ctrl "sigs.k8s.io/controller-runtime"
-
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/event"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
+	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	upgradev1 "openeuler.org/KubeOS/api/v1alpha1"
 	"openeuler.org/KubeOS/pkg/common"
@@ -95,7 +94,6 @@ func Reconcile(ctx context.Context, r common.ReadStatusWriter, req ctrl.Request)
 func (r *OSReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	if err := mgr.GetFieldIndexer().IndexField(context.Background(), &upgradev1.OSInstance{}, values.OsiStatusName,
 		func(rawObj client.Object) []string {
-			// grab the job object, extract the owner...
 			osi := rawObj.(*upgradev1.OSInstance)
 			return []string{osi.Spec.NodeStatus}
 		}); err != nil {
@@ -107,6 +105,7 @@ func (r *OSReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Complete(r)
 }
 
+// DeleteOSInstance delete osInstance when delete nodes in cluster
 func (r *OSReconciler) DeleteOSInstance(e event.DeleteEvent, q workqueue.RateLimitingInterface) {
 	ctx := context.Background()
 	hostname := e.Object.GetName()

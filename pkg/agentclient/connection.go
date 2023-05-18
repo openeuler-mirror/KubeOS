@@ -43,10 +43,12 @@ type DownloadInfo struct {
 	ContainerImage string
 }
 
+// ConfigsInfo contains the information required for settings
 type ConfigsInfo struct {
 	Configs []SysConfig
 }
 
+// SysConfig contains configuration parameters of a type
 type SysConfig struct {
 	Model      string
 	ConfigPath string
@@ -100,6 +102,7 @@ func (c *Client) RollbackSpec() error {
 	return err
 }
 
+// ConfigureSpec send configure requests to the server in os-agent
 func (c *Client) ConfigureSpec(configsInfo *ConfigsInfo) error {
 	var sysConfigs []*pb.SysConfig
 	configs := configsInfo.Configs

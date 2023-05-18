@@ -32,25 +32,31 @@ const (
 	defaultKernelConPermission = 0644
 )
 
+// Configuration defines interface of configuring
 type Configuration interface {
 	SetConfig(config *agent.SysConfig) error
 }
 
+// KernelSysctl represents kernel.sysctl configuration
 type KernelSysctl struct{}
 
+// SetConfig sets kernel.sysctl configuration
 func (k KernelSysctl) SetConfig(config *agent.SysConfig) error {
 	logrus.Info("start set kernel.sysctl")
 	for key, value := range config.Contents {
 		procPath := getProcPath(key)
-		if err := os.WriteFile(procPath, []byte(value), 0644); err != nil {
+
+		if err := os.WriteFile(procPath, []byte(value), defaultKernelConPermission); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
+// KerSysctlPersist represents kernel.sysctl.persist configuration
 type KerSysctlPersist struct{}
 
+// SetConfig sets kernel.sysctl.persist configuration
 func (k KerSysctlPersist) SetConfig(config *agent.SysConfig) error {
 	logrus.Info("start set kernel.sysctl")
 	configPath := config.ConfigPath
@@ -71,8 +77,10 @@ func (k KerSysctlPersist) SetConfig(config *agent.SysConfig) error {
 	return nil
 }
 
+// GrubCmdline represents grub.cmdline configuration
 type GrubCmdline struct{}
 
+// SetConfig sets grub.cmdline configuration
 func (g GrubCmdline) SetConfig(config *agent.SysConfig) error {
 	logrus.Info("start set kernel.sysctl")
 	for key, value := range config.Contents {
@@ -83,7 +91,6 @@ func (g GrubCmdline) SetConfig(config *agent.SysConfig) error {
 
 func startConfig(configs []*agent.SysConfig) error {
 	for _, config := range configs {
-		fmt.Println(config.Model)
 		if err := ConfigFactoryTemplate(config.Model, config); err != nil {
 			return err
 		}
@@ -94,13 +101,17 @@ func startConfig(configs []*agent.SysConfig) error {
 var doConfig sync.Once
 var configTemplate = make(map[string]Configuration)
 
+// ConfigFactoryTemplate returns the corresponding struct that implements the Configuration
 func ConfigFactoryTemplate(configType string, config *agent.SysConfig) error {
 	doConfig.Do(func() {
 		configTemplate[KernelSysctlName.String()] = new(KernelSysctl)
 		configTemplate[KerSysctlPersistName.String()] = new(KerSysctlPersist)
 		configTemplate[GrubCmdlineName.String()] = new(GrubCmdline)
 	})
-	return configTemplate[configType].SetConfig(config)
+	if _,ok := configTemplate[configType];ok{
+		return configTemplate[configType].SetConfig(config)
+	}
+	return fmt.Errorf("get configTemplate error : cannot recoginze configType %s",configType)
 }
 
 func getProcPath(key string) string {
@@ -119,13 +130,14 @@ func getAndSetConfigsFromFile(expectConfigs map[string]string, path string, file
 		configScanner := bufio.NewScanner(file)
 		for configScanner.Scan() {
 			line := configScanner.Text()
-			//if comment or blank
+			// if line is comment or blank
 			if strings.HasPrefix(line, "#") || strings.HasPrefix(line, ";") || line == "" {
 				configsWrite = append(configsWrite, line)
 				continue
 			}
 			configKV := strings.Split(line, "=")
-			if len(configKV) != 2 {
+			requiredLen := 2 // If it is in the key=value format, the length after splitting is 2
+			if len(configKV) != requiredLen {
 				logrus.Errorln("could not parse systctl config %s", line)
 				return nil, fmt.Errorf("could not parse systctl config %s", line)
 			}
@@ -133,7 +145,7 @@ func getAndSetConfigsFromFile(expectConfigs map[string]string, path string, file
 			if newValue, ok := expectConfigs[key]; ok {
 				config := key + " = " + newValue
 				configsWrite = append(configsWrite, config)
-				delete(expectConfigs, key) //删除已经赋值的
+				delete(expectConfigs, key)
 				continue
 			}
 			configsWrite = append(configsWrite, line)

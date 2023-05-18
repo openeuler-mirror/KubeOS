@@ -25,21 +25,26 @@ const (
 	// LabelMaster is the key of the master-node label for nodes
 	LabelMaster   = "node-role.kubernetes.io/control-plane"
 	defaultPeriod = 15 * time.Second
-	// OsiStatusName is
+	// OsiStatusName is param name of nodeStatus in osInstance
 	OsiStatusName = "nodestatus"
-	// UpgradeConfigName is
+	// UpgradeConfigName is param name of UpgradeConfig
 	UpgradeConfigName = "UpgradeConfig"
-	// SysConfigName is
+	// SysConfigName is param name of SysConfig
 	SysConfigName = "SysConfig"
 )
 
+// NodeStatus defines state of nodes
 type NodeStatus int32
 
 const (
-	NodeStatusIdle     NodeStatus = 0
-	NodeStatusUpgrade  NodeStatus = 1
+	// NodeStatusIdle represents idle state of nodes
+	NodeStatusIdle NodeStatus = 0
+	// NodeStatusUpgrade represents upgrade state of nodes
+	NodeStatusUpgrade NodeStatus = 1
+	// NodeStatusRollback represents rollback state of nodes
 	NodeStatusRollback NodeStatus = 2
-	NodeStatusConfig   NodeStatus = 3
+	// NodeStatusConfig represents config state of nodes
+	NodeStatusConfig NodeStatus = 3
 )
 
 func (n NodeStatus) String() string {

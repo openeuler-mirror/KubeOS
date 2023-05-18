@@ -85,6 +85,7 @@ func (s *Server) Rollback(_ context.Context, req *pb.RollbackRequest) (*pb.Rollb
 	return &pb.RollbackResponse{}, nil
 }
 
+// Configure implements the OSServer.Configure
 func (s *Server) Configure(_ context.Context, req *pb.ConfigureRequest) (*pb.ConfigureResponse, error) {
 	if !s.mutex.TryLock() {
 		return &pb.ConfigureResponse{}, fmt.Errorf("server is processing another request")
