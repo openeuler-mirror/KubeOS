@@ -185,3 +185,7 @@ function check_docker_exist() {
           exit 9
         fi
 }
+
+function check_docker_file() {
+        check_file_valid $1 "admin-container Dockerfile"
+}
