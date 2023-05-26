@@ -91,3 +91,9 @@ function create_vm_img() {
     esac
 
 }
+
+function create_admin_img() {
+  local DOCKERFILE="$1"
+  local DOCKER_IMG="$2"
+  docker build -t ${DOCKER_IMG} -f ${DOCKERFILE} ./admin_container
+}

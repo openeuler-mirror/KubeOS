@@ -1,0 +1,43 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: admin-container
+  namespace: default
+  labels:
+    control-plane: admin-container
+spec:
+  selector:
+    matchLabels:
+      control-plane: admin-container
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        control-plane: admin-container
+    spec:
+      hostPID: true
+      containers:
+        - name: admin-container
+          image: edit.your.admin-container.image
+          securityContext:
+            privileged: true
+          ports:
+            - containerPort: 22
+          env:
+            - name: container
+              value: containerd
+      nodeName: edit.your.target.node
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: admin-container
+  namespace: default
+spec:
+  type: NodePort
+  ports:
+    - port: 22
+      targetPort: 22
+      nodePort: 32388
+  selector:
+    control-plane: admin-container

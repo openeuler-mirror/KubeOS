@@ -17,6 +17,7 @@ VERSION=""
 AGENT_PATH=""
 PASSWD=""
 DOCKER_IMG=""
+DOCKERFILE=""
 LOCK=./test.lock
 
 source common/globalVariables.sh &>/dev/null
@@ -48,9 +49,10 @@ function show_create_usage() {
 Usage : kbimg create [COMMAND] [OPTIONS]
 
 commands:
-    upgrade-image            create KubeOS docker image used for installation and upgrade
+    upgrade-image            create KubeOS OCI image used for installation and upgrade
     vm-image                 create KubeOS virtual machine image
     pxe-image                create images required for KubeOS PXE installation on physical machines
+    admin-image              create KubeOS admin container OCI image used for debug of worker nodes in clusters
 options:
     -h,--help                show help information
 
@@ -90,10 +92,22 @@ options:
 EOF
 }
 
+function show_admin_image_usage() {
+  cat << EOF
+
+Usage : kbimg create admin-image -f dockerfile-path -d repository/name:tag
+
+options:
+    -f                       Dockerfile path
+    -d                       admin container image like repository/name:tag
+    -h,--help                show help information
+EOF
+}
+
 function file_lock() {
   local lock_file=$1
   exec {lock_fd}>"${lock_file}"
-   flock -xn "${lock_fd}"
+  flock -xn "${lock_fd}"
 }
 
 function test_lock() {
@@ -201,6 +215,7 @@ function verify_repo_input() {
         esac
        done
 }
+
 function verify_docker_input() {
   if [ $1 != "-d" ]; then
     log_error_print "option $1 not found"
@@ -209,6 +224,38 @@ function verify_docker_input() {
   fi
   check_param $2
   DOCKER_IMG=$2
+}
+
+function verify_admin_input() {
+  set +eE
+  for i in "f" "d"
+  do
+    echo "$@" | grep -q "\-$i "
+    if [ "$?" -ne 0 ];then
+          log_error_print "option -$i is mandatory, please check input"
+          show_admin_image_usage
+          exit 3
+    fi
+  done
+  set -eE
+  while getopts "f:d:" opt
+      do
+        case $opt in
+          f)
+            check_param $OPTARG
+            DOCKERFILE="$OPTARG"
+            ;;
+          d)
+            check_param $OPTARG
+            DOCKER_IMG="$OPTARG"
+            ;;
+          *)
+            log_error_print "option $opt not found"
+            show_admin_image_usage
+            exit 3
+           ;;
+        esac
+      done
 }
 
 function verify_create_input() {
@@ -282,6 +329,23 @@ function verify_create_input() {
       show_vm_pxe_image_usage
       exit 3
     fi
+    ;;
+  "admin-image")
+    shift
+    if [ $# -eq 1 ]; then
+      if [ "$1" == "-h" ] || [ "$1" == "--help" ]; then
+        show_admin_image_usage
+        exit 0
+      fi
+    fi
+    if [ $# -ne 4 ]; then
+      log_error_print "the number of parameters is incorrect, please check it."
+      show_admin_image_usage
+      exit 3
+    fi
+    verify_admin_input "$@"
+    check_docker_file "${DOCKERFILE}"
+    create_admin_img  "${DOCKERFILE}" "${DOCKER_IMG}"
     ;;
   "-h"|"--help")
     show_create_usage
