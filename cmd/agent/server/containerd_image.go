@@ -48,6 +48,9 @@ func (c conImageHandler) getRootfsArchive(req *pb.UpdateRequest, neededPath prep
 	if err := runCommand("crictl", "pull", imageName); err != nil {
 		return "", err
 	}
+	if err := checkOCIImageDigestMatch("containerd", imageName, req.CheckSum); err != nil {
+		return "", err
+	}
 	if err := checkAndCleanMount(mountPath); err != nil {
 		logrus.Errorln("containerd clean environment error", err)
 		return "", err

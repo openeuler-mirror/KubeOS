@@ -30,7 +30,7 @@ endif
 
 VERSION_FILE := ./VERSION
 VERSION := $(shell cat $(VERSION_FILE))
-PACKAGE:=openeuler.org/saiyan/pkg/version
+PACKAGE:=openeuler.org/KubeOS/pkg/version
 BUILDFLAGS = -buildmode=pie -trimpath
 LDFLAGS = -w -s -buildid=IdByKubeOS -linkmode=external -extldflags=-static -extldflags=-zrelro -extldflags=-Wl,-z,now -X ${PACKAGE}.Version=${VERSION}
 ENV = CGO_CFLAGS="-fstack-protector-all" CGO_CPPFLAGS="-D_FORTIFY_SOURCE=2 -O2"

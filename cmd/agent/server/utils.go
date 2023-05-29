@@ -264,3 +264,47 @@ func checkFileExist(path string) (bool, error) {
 		return false, err
 	}
 }
+
+func checkOCIImageDigestMatch(containerRuntime string, imageName string, checkSum string) error {
+	var cmdOutput string
+	var err error
+	switch containerRuntime {
+	case "containerd":
+		cmdOutput, err = runCommandWithOut("crictl", "inspecti", "--output", "go-template",
+			"--template", "{{.status.repoDigests}}", imageName)
+		if err != nil {
+			return err
+		}
+	case "docker":
+		cmdOutput, err = runCommandWithOut("docker", "inspect", "--format", "{{.RepoDigests}}", imageName)
+		if err != nil {
+			return err
+		}
+	default:
+		logrus.Errorln("containerRuntime ", containerRuntime, " cannot be recognized")
+		return fmt.Errorf("containerRuntime %s cannot be recognized", containerRuntime)
+	}
+	// cmdOutput format is as follows:
+	// [imageRepository/imageName:imageTag@sha256:digests]
+	// parse the output and get digest
+	var imageDigests string
+	outArray := strings.Split(cmdOutput, "@")
+	if strings.HasPrefix(outArray[len(outArray)-1], "sha256") {
+		pasredArray := strings.Split(strings.TrimSuffix(outArray[len(outArray)-1], "]"), ":")
+		// 2 is the expected length of the array after dividing "imageName:imageTag@sha256:digests" based on ':'
+		rightLen := 2
+		if len(pasredArray) == rightLen {
+			digestIndex := 1 // 1 is the index of digest data in pasredArray
+			imageDigests = pasredArray[digestIndex]
+		}
+	}
+	if imageDigests == "" {
+		logrus.Errorln("error when get ", imageName, " digests")
+		return fmt.Errorf("error when get %s digests", imageName)
+	}
+	if imageDigests != checkSum {
+		logrus.Errorln("checkSumFailed ", imageDigests, " mismatch to ", checkSum)
+		return fmt.Errorf("checkSumFailed %s mismatch to %s", imageDigests, checkSum)
+	}
+	return nil
+}
