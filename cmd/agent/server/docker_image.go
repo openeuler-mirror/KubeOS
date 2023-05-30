@@ -38,6 +38,9 @@ func (d dockerImageHandler) getRootfsArchive(req *pb.UpdateRequest, neededPath p
 	if err := runCommand("docker", "pull", imageName); err != nil {
 		return "", err
 	}
+	if err := checkOCIImageDigestMatch("docker", imageName, req.CheckSum); err != nil {
+		return "", err
+	}
 	containerName := "kubeos-temp"
 	dockerPsCmd := "docker ps -a -f=name=" + containerName + "| awk 'NR==2' | awk '{print $1}'"
 	existId, err := runCommandWithOut("bash", "-c", dockerPsCmd)

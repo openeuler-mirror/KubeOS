@@ -126,7 +126,7 @@
       | maxunavailable | int    | 同时进行升级或回退的节点数 | maxunavailable值设置为大于实际集群的节点数时也可正常部署，升级或回退时会按照集群内实际节点数进行|是               |
       | containerimage    | string | 用于升级的容器镜像               | 需要为容器镜像格式：repository/name:tag，仅在使用容器镜像升级场景下有效|是               |
       | imageurl       | string | 用于升级的磁盘镜像的地址 | imageurl中包含协议，只支持http或https协议，例如：https://192.168.122.15/update.img 仅在使用磁盘镜像升级场景下有效|是               |
-      | checksum       | string | 用于升级的磁盘镜像校验的checksum(SHA-256)值                      | 仅在使用磁盘镜像升级场景下有效 |是               |
+      | checksum       | string | 用于升级的磁盘镜像校验的checksum(SHA-256)值或者是用于升级的容器镜像的digests值                      | 仅在升级场景下有效 |是               |
       | flagSafe       | bool   | 当imageurl的地址使用http协议表示是否是安全的                 | 需为 true 或者 false ，仅在imageurl使用http协议时有效 |是               |
       | mtls           | bool   | 用于表示与imageurl连接是否采用https双向认证     | 需为 true 或者 false ，仅在imageurl使用https协议时有效|是               |
       | cacert         | string | https或者https双向认证时使用的根证书文件                       | 仅在imageurl使用https协议时有效| imageurl使用https协议时必选 |
@@ -174,7 +174,7 @@
             maxunavailable: edit.node.upgrade.number
             containerimage: container image like repository/name:tag
             imageurl: ""
-            checksum: ""
+            checksum: container image digests
             flagSafe: false
             mtls: true
           ```
@@ -191,7 +191,7 @@
             maxunavailable: edit.node.upgrade.number
             containerimage: container image like repository/name:tag
             imageurl: ""
-            checksum: ""
+            checksum: container image digests
             flagSafe: false
             mtls: true
           ```
@@ -211,7 +211,7 @@
                 maxunavailable: edit.node.upgrade.number
                 dockerimage: ""
                 imageurl: ""
-                checksum: ""
+                checksum: container image digests
                 flagSafe: false
                 mtls: false
                 sysconfigs:
