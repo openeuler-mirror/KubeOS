@@ -299,9 +299,12 @@ func (r *OSReconciler) setConfig(ctx context.Context, osInstance *upgradev1.OSIn
 				Model:      config.Model,
 				ConfigPath: config.ConfigPath,
 			}
-			contentsTmp := make(map[string]string)
+			contentsTmp := make(map[string]agentclient.KeyInfo)
 			for _, content := range config.Contents {
-				contentsTmp[content.Key] = content.Value
+				contentsTmp[content.Key] = agentclient.KeyInfo{
+					Value:     content.Value,
+					Operation: content.Operation,
+				}
 			}
 			configTmp.Contents = contentsTmp
 			sysConfigs = append(sysConfigs, configTmp)

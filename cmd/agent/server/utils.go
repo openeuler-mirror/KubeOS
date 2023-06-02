@@ -308,3 +308,14 @@ func checkOCIImageDigestMatch(containerRuntime string, imageName string, checkSu
 	}
 	return nil
 }
+
+func deepCopyConfigMap(m map[string]*pb.KeyInfo) map[string]*pb.KeyInfo {
+	result := make(map[string]*pb.KeyInfo)
+	for key, val := range m {
+		result[key] = &pb.KeyInfo{
+			Value:     val.Value,
+			Operation: val.Operation,
+		}
+	}
+	return result
+}

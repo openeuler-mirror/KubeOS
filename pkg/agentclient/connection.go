@@ -52,7 +52,13 @@ type ConfigsInfo struct {
 type SysConfig struct {
 	Model      string
 	ConfigPath string
-	Contents   map[string]string
+	Contents   map[string]KeyInfo
+}
+
+// KeyInfo contains value and operation (i.e. delete, update or add) of a given key for configuration
+type KeyInfo struct {
+	Value     string
+	Operation string
 }
 
 // New create a gRPC channel to communicate with the server and return a client stub to perform RPCs
@@ -111,9 +117,12 @@ func (c *Client) ConfigureSpec(configsInfo *ConfigsInfo) error {
 			Model:      config.Model,
 			ConfigPath: config.ConfigPath,
 		}
-		sysContents := make(map[string]string)
+		sysContents := make(map[string]*pb.KeyInfo)
 		for configName, content := range config.Contents {
-			sysContents[configName] = content
+			sysContents[configName] = &pb.KeyInfo{
+				Value:     content.Value,
+				Operation: content.Operation,
+			}
 		}
 		sysConfig.Contents = sysContents
 		sysConfigs = append(sysConfigs, sysConfig)
