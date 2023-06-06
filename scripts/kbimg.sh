@@ -19,6 +19,7 @@ PASSWD=""
 DOCKER_IMG=""
 DOCKERFILE=""
 LOCK=./test.lock
+ADMIN_CONTAINER_DIR=./admin-container
 
 source common/globalVariables.sh &>/dev/null
 source common/log.sh &>/dev/null
@@ -123,6 +124,7 @@ function clean_space() {
   delete_dir "${TMP_MOUNT_PATH}"
   delete_file os.tar
   rm -rf "${LOCK}"
+  delete_file ${ADMIN_CONTAINER_DIR}/hostshell
 }
 
 function clean_img() {
@@ -345,7 +347,7 @@ function verify_create_input() {
     fi
     verify_admin_input "$@"
     check_docker_file "${DOCKERFILE}"
-    create_admin_img  "${DOCKERFILE}" "${DOCKER_IMG}"
+    create_admin_img  "${DOCKERFILE}" "${DOCKER_IMG}" "${ADMIN_CONTAINER_DIR}"
     ;;
   "-h"|"--help")
     show_create_usage

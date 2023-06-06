@@ -50,6 +50,10 @@ agent:
 	${ENV} ${GO_BUILD} -tags "osusergo netgo static_build" -ldflags '$(LDFLAGS)' $(BUILDFLAGS) -o bin/os-agent cmd/agent/main.go
 	strip bin/os-agent
 
+hostshell:
+	${ENV} ${GO_BUILD} -tags "osusergo netgo static_build" -ldflags '$(LDFLAGS)' $(BUILDFLAGS) -o bin/hostshell cmd/admin-container/main.go
+	strip bin/hostshell
+
 test:
 	$(GO) test $(shell go list ./... ) -race -cover -count=1 -timeout=300s
 	
