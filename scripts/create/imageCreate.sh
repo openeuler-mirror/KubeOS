@@ -95,5 +95,8 @@ function create_vm_img() {
 function create_admin_img() {
   local DOCKERFILE="$1"
   local DOCKER_IMG="$2"
-  docker build -t ${DOCKER_IMG} -f ${DOCKERFILE} ./admin_container
+  local ADMIN_CONTAINER_DIR="$3"
+  cp ../bin/hostshell ${ADMIN_CONTAINER_DIR}
+  docker build -t ${DOCKER_IMG} -f ${DOCKERFILE} ${ADMIN_CONTAINER_DIR}
+  rm -rf ${ADMIN_CONTAINER_DIR}/hostshell
 }
