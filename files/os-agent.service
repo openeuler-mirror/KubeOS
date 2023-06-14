@@ -12,6 +12,7 @@
 Description=Agent For KubeOS
 
 [Service]
+Environment=GOTRACEBACK=crash
 ExecStart=/usr/bin/os-agent
 KillMode=process
 Restart=on-failure
