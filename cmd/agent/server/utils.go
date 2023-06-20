@@ -80,7 +80,15 @@ func install(imagePath string, side string, next string) error {
 		return err
 	}
 	defer os.Remove(imagePath)
-	return runCommand("grub2-editenv", grubenvPath, "set", "saved_entry="+next)
+	bootMode, err := getBootMode()
+	if err != nil {
+		return err
+	}
+	if bootMode == "uefi" {
+		return runCommand("grub2-editenv", grubenvPath, "set", "saved_entry="+next)
+	} else {
+		return runCommand("grub2-set-default", next)
+	}
 }
 
 func getNextPart(partA string, partB string) (string, string, error) {
@@ -133,6 +141,17 @@ func getRootfsDisks() (string, string, error) {
 	partA := curDisk + partAPartitionNum
 	partB := curDisk + partBartitionNum
 	return partA, partB, nil
+}
+
+func getBootMode() (string, error) {
+	_, err := os.Stat("/sys/firmware/efi")
+	if err == nil {
+		return "uefi", nil
+	} else if os.IsNotExist(err) {
+		return "legacy", nil
+	} else {
+		return "", err
+	}
 }
 
 func createOSImage(neededPath preparePath) (string, error) {

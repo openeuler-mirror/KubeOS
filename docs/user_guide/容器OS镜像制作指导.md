@@ -31,6 +31,7 @@ kbimg是KubeOS部署和升级所需的镜像制作工具，可以使用kbimg制�
   | -b           | os-agent二进制的路径                                         |
   | -e           | KubeOS 镜像 root 用户密码，加密后的带盐值的密码，可以用 openssl，kiwi 命令生成 |
   | -d           | 生成或者使用的 docke r镜像                                     |
+  | -l           | 如果指定参数，则镜像为legacy引导，不指定默认是UEFI引导               |
   | -h  --help | 查看帮助信息                                                 |
 
 

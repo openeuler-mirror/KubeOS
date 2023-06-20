@@ -1,7 +1,11 @@
 #!/bin/bash
 ln -s /usr/lib/systemd/system/os-agent.service /usr/lib/systemd/system/multi-user.target.wants/os-agent.service
 ln -s /usr/lib/systemd/system/kubelet.service /usr/lib/systemd/system/multi-user.target.wants/kubelet.service
-ln -s /usr/lib/systemd/system/boot-efi.mount /lib/systemd/system/local-fs.target.wants/boot-efi.mount
+if [ "$BOOT_MODE" = "legacy" ]; then
+    ln -s /usr/lib/systemd/system/boot-grub2.mount /lib/systemd/system/local-fs.target.wants/boot-grub2.mount
+else
+    ln -s /usr/lib/systemd/system/boot-efi.mount /lib/systemd/system/local-fs.target.wants/boot-efi.mount
+fi
 ln -s /usr/lib/systemd/system/etc.mount /lib/systemd/system/local-fs.target.wants/etc.mount
 
 str=`sed -n '/^root:/p' /etc/shadow | awk -F "root:" '{print $2}'`

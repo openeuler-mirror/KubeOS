@@ -77,7 +77,7 @@
                 * raw格式的系统镜像system.img，system.img大小默认为20G，支持的根文件系统分区大小<2020MiB，持久化分区<16GB。
                 * qcow2 格式的系统镜像 system.qcow2。
                 * 可用于升级的根文件系统分区镜像 update.img 。
-              * 制作出来的容器 OS 虚拟机镜像目前只能用于 CPU 架构为 x86 和 AArch64 的虚拟机场景，不支持 x86 架构的虚拟机使用 legacy 启动模式启动
+              * 制作出来的容器 OS 虚拟机镜像目前只能用于 CPU 架构为 x86 和 AArch64 的虚拟机场景，x86 架构的虚拟机使用 legacy 启动模式启动需制作镜像时指定-l参数
               * 容器OS运行底噪<150M (不包含k8s组件及相关依赖kubernetes-kubeadm，kubernetes-kubelet， containernetworking-plugins，socat，conntrack-tools，ebtables，ethtool)
               * 本项目不提供容器OS镜像，仅提供裁剪工具，裁剪出来的容器OS内部的安全性由OS发行商保证。
     - 声明： os-agent使用本地unix socket进行通信，因此不会新增端口。下载镜像的时候会新增一个客户端的随机端口，1024~65535使用完后关闭。proxy和operator与api-server通信时作为客户端也会有一个随机端口，基于kubernetes的operator框架，必须使用端口。他们部署在容器里。
