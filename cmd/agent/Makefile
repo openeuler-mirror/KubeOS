@@ -9,7 +9,7 @@
 ## See the Mulan PSL v2 for more details.
 
 grpc:
-	protoc --go_out=plugins=grpc:. --go_opt=paths=source_relative   api/agent.proto
+	protoc --go_out=. --go_opt=paths=source_relative     --go-grpc_out=. --go-grpc_opt=paths=source_relative     api/agent.proto
 cover:
 	go test -v ./... -coverprofile=cover.out
 	go tool cover -html=cover.out -o cover.html

@@ -84,6 +84,8 @@ type Content struct {
 	Key string `json:"key"`
 	// +kubebuilder:validation:Optional
 	Value string `json:"value"`
+	// +kubebuilder:validation:Optional
+	Operation string `json:"operation"`
 }
 
 // +kubebuilder:subresource:status
