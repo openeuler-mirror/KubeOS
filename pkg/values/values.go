@@ -70,3 +70,15 @@ var (
 	// Requeue indicates controller requeue the reconcile key after defaultPeriod
 	Requeue = ctrl.Result{Requeue: true, RequeueAfter: defaultPeriod}
 )
+
+// ConfigOperation defines operations about configuration when check config version
+type ConfigOperation string
+
+const (
+	// DoNothing represents config version is same, continue
+	DoNothing ConfigOperation = "doNothing"
+	// Reassign represents config version is  not same, reassgin config
+	Reassign ConfigOperation = "reassgin"
+	// UpdateConfig represents config version is  not same, update config
+	UpdateConfig ConfigOperation = "updateConfig"
+)
