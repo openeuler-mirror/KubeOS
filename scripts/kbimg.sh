@@ -20,6 +20,7 @@ DOCKER_IMG=""
 DOCKERFILE=""
 LOCK=./test.lock
 ADMIN_CONTAINER_DIR=./admin-container
+BOOT_MODE=efi
 
 source common/globalVariables.sh &>/dev/null
 source common/log.sh &>/dev/null
@@ -72,6 +73,7 @@ options:
     -b                       directory of os-agent binary
     -e                       os encrypted password
     -d                       docker image like repository/name:tag
+    -l                       boot to legacy BIOS mode, if not specify, then UEFI mode
     -h,--help                show help information
 EOF
 }
@@ -89,6 +91,7 @@ options:
     -b                       directory of os-agent binary
     -e                       os encrypted password
     -d                       docker image like repository/name:tag
+    -l                       boot to legacy BIOS mode, if not specify, then UEFI mode
     -h,--help                show help information
 EOF
 }
@@ -146,7 +149,7 @@ function verify_upgrade_image_input() {
     fi
   done
   set -eE
-  while getopts "p:v:e:b:d:" opt
+  while getopts "p:v:e:b:d:l" opt
     do
       case $opt in
         p)
@@ -169,6 +172,9 @@ function verify_upgrade_image_input() {
           check_param $OPTARG
           DOCKER_IMG="$OPTARG"
           ;;
+        l)
+          BOOT_MODE=legacy
+          ;;
        *)
          log_error_print "option $opt not found"
          show_upgrade_image_usage
@@ -190,7 +196,7 @@ function verify_repo_input() {
     fi
   done
   set -eE
-    while getopts "p:v:e:b:" opt
+    while getopts "p:v:e:b:l" opt
       do
         case $opt in
           p)
@@ -208,6 +214,9 @@ function verify_repo_input() {
           e)
             # encrypted password contains special characters.,not verify.
             PASSWD="$OPTARG"
+            ;;
+          l)
+            BOOT_MODE=legacy
             ;;
           *)
             log_error_print "option $opt not found"
@@ -272,7 +281,7 @@ function verify_create_input() {
         exit 0
       fi
     fi
-    if [ $# -ne 10 ]; then
+    if [[  $# -ne 10 && $# -ne 11 ]]; then
       log_error_print "the number of parameters is incorrect, please check it."
       show_upgrade_image_usage
       exit 3
@@ -281,7 +290,7 @@ function verify_create_input() {
     verify_upgrade_image_input "$@"
     check_repo_path "${REPO}"
     check_binary_exist "${AGENT_PATH}"
-    create_docker_image "${REPO}" "${VERSION}" "${AGENT_PATH}" "${PASSWD}" "${DOCKER_IMG}"
+    create_docker_image "${REPO}" "${VERSION}" "${AGENT_PATH}" "${PASSWD}" "${BOOT_MODE}" "${DOCKER_IMG}"
     ;;
   "vm-image")
     shift
@@ -292,11 +301,11 @@ function verify_create_input() {
       fi
     fi
     check_disk_space "vm"
-    if [ $# -eq 8 ]; then
+    if [[  $# -eq 8 || $# -eq 9  ]]; then
       verify_repo_input "$@"
       check_repo_path "${REPO}"
       check_binary_exist "${AGENT_PATH}"
-      create_vm_img "repo" "${REPO}" "${VERSION}" "${AGENT_PATH}" "${PASSWD}"
+      create_vm_img "repo" "${REPO}" "${VERSION}" "${AGENT_PATH}" "${PASSWD}" "${BOOT_MODE}"
     elif [ $# -eq 2 ]; then
       verify_docker_input "$@"
       check_docker_exist "${DOCKER_IMG}"

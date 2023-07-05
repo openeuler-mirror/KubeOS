@@ -137,8 +137,18 @@ func (s *Server) rollback() error {
 	if err != nil {
 		return err
 	}
-	if err = runCommand("grub2-editenv", grubenvPath, "set", "saved_entry="+next); err != nil {
+	bootMode, err := getBootMode()
+	if err != nil {
 		return err
+	}
+	if bootMode == "uefi" {
+		if err = runCommand("grub2-editenv", grubenvPath, "set", "saved_entry="+next); err != nil {
+			return err
+		}
+	} else {
+		if err = runCommand("grub2-set-default", next); err != nil {
+			return err
+		}
 	}
 	return s.reboot()
 }
