@@ -28,7 +28,7 @@ type OSSpec struct {
 	ContainerImage string `json:"containerimage"`
 	OpsType        string `json:"opstype"`
 	EvictPodForce  bool   `json:"evictpodforce"`
-	// +kubebuilder:validation:Optional`
+	// +kubebuilder:validation:Optional
 	CaCert string `json:"cacert"`
 	// +kubebuilder:validation:Optional
 	ClientCert string `json:"clientcert"`
