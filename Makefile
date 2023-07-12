@@ -54,9 +54,6 @@ hostshell:
 	${ENV} ${GO_BUILD} -tags "osusergo netgo static_build" -ldflags '$(LDFLAGS)' $(BUILDFLAGS) -o bin/hostshell cmd/admin-container/main.go
 	strip bin/hostshell
 
-test:
-	$(GO) test $(shell go list ./... ) -race -cover -count=1 -timeout=300s
-	
 # Install CRDs into a cluster
 install: manifests
 	kubectl apply -f confg/crd
@@ -101,15 +98,37 @@ docker-push:
 	docker push ${IMG_OPERATOR}
 	docker push ${IMG_PROXY}
 
-# Download controller-gen locally if necessary
-CONTROLLER_GEN = $(shell pwd)/bin/controller-gen
-controller-gen:
-	$(call go-get-tool,$(CONTROLLER_GEN),sigs.k8s.io/controller-tools/cmd/controller-gen@v0.5.0)
+## Location to install dependencies to
+LOCALBIN = $(shell pwd)/bin
+$(LOCALBIN):
+	mkdir -p $(LOCALBIN)
+
+## Tool Binaries
+CONTROLLER_GEN = $(LOCALBIN)/controller-gen
+ENVTEST = $(LOCALBIN)/setup-envtest
+
+## Tool Versionsjk
+CONTROLLER_TOOLS_VERSION = v0.5.0
+ENVTEST_K8S_VERSION = 1.20.2 ## ENVTEST_K8S_VERSION refers to the version of kubebuilder assets to be downloaded by envtest binary.
+
+controller-gen: $(CONTROLLER_GEN) ## Download controller-gen locally if necessary. If wrong version is installed, it will be overwritten.
+$(CONTROLLER_GEN): $(LOCALBIN)
+	test -s $(LOCALBIN)/controller-gen && $(LOCALBIN)/controller-gen --version | grep -q $(CONTROLLER_TOOLS_VERSION) || \
+	GOBIN=$(LOCALBIN) go install sigs.k8s.io/controller-tools/cmd/controller-gen@$(CONTROLLER_TOOLS_VERSION)
 
 # Download kustomize locally if necessary
-KUSTOMIZE = $(shell pwd)/bin/kustomize
+KUSTOMIZE = $(LOCALBIN)/kustomize
 kustomize:
 	$(call go-get-tool,$(KUSTOMIZE),sigs.k8s.io/kustomize/kustomize/v3@v3.8.7)
+
+.PHONY: test
+test: manifests fmt vet envtest ## Run tests.
+	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" go test ./... -coverprofile cover.out
+
+.PHONY: envtest
+envtest: $(ENVTEST) ## Download envtest-setup locally if necessary.
+$(ENVTEST): $(LOCALBIN)
+	test -s $(LOCALBIN)/setup-envtest || GOBIN=$(LOCALBIN) go install sigs.k8s.io/controller-runtime/tools/setup-envtest@latest
 
 # go-get-tool will 'go get' any package $2 and install it to $1.
 PROJECT_DIR := $(shell dirname $(abspath $(lastword $(MAKEFILE_LIST))))
