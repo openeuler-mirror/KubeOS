@@ -65,8 +65,6 @@ func (c conImageHandler) getRootfsArchive(req *pb.UpdateRequest, neededPath prep
 		return "", err
 	}
 	return "", nil
-	return neededPath.tarPath, nil
-
 }
 
 func checkAndCleanMount(mountPath string) error {
