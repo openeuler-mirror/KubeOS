@@ -160,7 +160,8 @@ func modifyLinuxCfg(m map[string]*agent.KeyInfo, line string) (string, error) {
 		if oldConfig == "" {
 			continue
 		}
-		config := strings.Split(oldConfig, "=")
+		// At most 2 substrings can be returned to satisfy the case like root=UUID=xxxx
+		config := strings.SplitN(oldConfig, "=", KVpair)
 		if len(config) != onlyKey && len(config) != KVpair {
 			return "", fmt.Errorf("cannot parse grub.cfg linux line %s", oldConfig)
 		}
