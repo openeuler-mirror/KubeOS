@@ -310,6 +310,8 @@ func updateConfigStatus(ctx context.Context, r common.ReadStatusWriter, osInstan
 		osInstance.Status.UpgradeConfigs = osInstance.Spec.UpgradeConfigs
 	case values.SysConfigName:
 		osInstance.Status.SysConfigs = osInstance.Spec.SysConfigs
+	default:
+		log.Error(nil, "Cannot recognize configType: "+configType)
 	}
 	if err := r.Status().Update(ctx, osInstance); err != nil {
 		log.Error(err, "Update OSInstance Error")

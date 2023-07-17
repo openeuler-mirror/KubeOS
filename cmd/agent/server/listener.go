@@ -14,11 +14,12 @@
 package server
 
 import (
-	"github.com/sirupsen/logrus"
 	"net"
 	"os"
 	"path/filepath"
 	"syscall"
+
+	"github.com/sirupsen/logrus"
 )
 
 // NewListener is used to listen the socket

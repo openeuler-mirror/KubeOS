@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/sirupsen/logrus"
+
 	pb "openeuler.org/KubeOS/cmd/agent/api"
 )
 
