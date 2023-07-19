@@ -144,7 +144,7 @@
 
   | 参数            |参数类型  | 参数说明                                                     | 使用说明 | 是否必选         |
   | -------------- | ------ | ------------------------------------------------------------ | ----- | ---------------- |
-  | imagetype      | string | 使用的升级镜像的类型           | 需为 docker ，containerd ，或者是 disk，其他值无效，且该参数仅在升级场景有效|是               |
+  | imagetype      | string | 使用的升级镜像的类型           | 需为 docker ，containerd ，或者是 disk，其他值无效，且该参数仅在升级场景有效。<br> **注意**：若使用containerd，agent优先使用crictl工具拉取镜像，没有crictl时才会使用ctr命令拉取镜像。使用ctr拉取镜像时，镜像如果在私有仓内，需按照[官方文档](https://github.com/containerd/containerd/blob/main/docs/hosts.md)在/etc/containerd/certs.d目录下配置私有仓主机信息，才能成功拉取镜像。|是               |
   | opstype        | string | 进行的操作，升级,回退或者配置 | 需为 upgrade ，config 或者 rollback ，其他值无效 |是               |
   | osversion      | string | 用于升级或回退的镜像的OS版本          | 需为 KubeOS version , 例如: KubeOS 1.0.0|是               |
   | maxunavailable | int    | 同时进行升级或回退的节点数 | maxunavailable值设置为大于实际集群的节点数时也可正常部署，升级或回退时会按照集群内实际节点数进行|是               |
