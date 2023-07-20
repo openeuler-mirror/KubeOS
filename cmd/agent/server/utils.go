@@ -288,7 +288,7 @@ func checkOCIImageDigestMatch(containerRuntime string, imageName string, checkSu
 	var cmdOutput string
 	var err error
 	switch containerRuntime {
-	case "containerd":
+	case "crictl":
 		cmdOutput, err = runCommandWithOut("crictl", "inspecti", "--output", "go-template",
 			"--template", "{{.status.repoDigests}}", imageName)
 		if err != nil {
@@ -299,6 +299,19 @@ func checkOCIImageDigestMatch(containerRuntime string, imageName string, checkSu
 		if err != nil {
 			return err
 		}
+	case "ctr":
+		cmdOutput, err = runCommandWithOut("ctr", "-n", "k8s.io", "images", "ls", "name=="+imageName)
+		if err != nil {
+			return err
+		}
+		// after Fields, we get slice like [REF TYPE DIGEST SIZE PLATFORMS LABELS x x x x x x]
+		// the digest is the position 8 element
+		imageDigest := strings.Split(strings.Fields(cmdOutput)[8], ":")[1]
+		if imageDigest != checkSum {
+			logrus.Errorln("checkSumFailed ", imageDigest, " mismatch to ", checkSum)
+			return fmt.Errorf("checkSumFailed %s mismatch to %s", imageDigest, checkSum)
+		}
+		return nil
 	default:
 		logrus.Errorln("containerRuntime ", containerRuntime, " cannot be recognized")
 		return fmt.Errorf("containerRuntime %s cannot be recognized", containerRuntime)
@@ -337,4 +350,12 @@ func deepCopyConfigMap(m map[string]*pb.KeyInfo) map[string]*pb.KeyInfo {
 		}
 	}
 	return result
+}
+
+func isCommandAvailable(name string) bool {
+	cmd := exec.Command("/bin/sh", "-c", "command -v"+name)
+	if err := cmd.Run(); err != nil {
+		return false
+	}
+	return true
 }
