@@ -108,7 +108,26 @@
   * YAML举例说明模板参见本目录下example文件夹下的文件夹，你也可以将config文件夹拷贝到docs上一级目录，并进行简单的修改使用
   * 这些YAML配置文件，由K8s集群管理员加载，如果恶意在yaml文件里面写了病毒，K8s集群管理员如果放行，传到我们的处理模块我们也是没有办法校验的，此处有风险
   * operator和proxy部署在kubernets集群中，operator应部署为deployment，proxy应部署为damonset
-  * 尽量部署好k8s的安全措施，如rbac机制，pod的service account和security policy配置等。
+  * 尽量部署好k8s的安全措施，如rbac机制，pod的service account和security policy配置等。**注意**：operator所在容器仅需要普通用户权限运行，proxy所在容器需要root权限运行以访问worker节点上的os-agent.sock，但是可以drop全部的capabilities，如：
+
+    ```yaml
+    # operator
+    spec:
+      containers:
+        securityContext:
+          allowPrivilegeEscalation: false
+          runAsUser: 6552
+          runAsGroup: 6552
+    ---
+    # proxy
+    spec:
+      containers:
+        securityContext:
+          capabilities:
+            drop:
+            - all
+    ```
+
   * 假定您已经编辑好了YAML，并且CRD，rbac机制，operator和proxy的YAML分别放在了当前目录下config/crd，config/rbac目录下和config/manager目录下，执行部署命令：
 
     ```shell
@@ -175,7 +194,8 @@
         opstype: upgrade
         osversion: edit.os.version
         maxunavailable: edit.node.upgrade.number
-        dockerimage: ""
+        containerimage: ""
+        evictpodforce: true/false
         imageurl: edit.image.url
         checksum: image.checksum
         flagSafe: imageurl.safety
@@ -200,6 +220,7 @@
         osversion: edit.os.version
         maxunavailable: edit.node.upgrade.number
         containerimage: container image like repository/name:tag
+        evictpodforce: true/false
         imageurl: ""
         checksum: container image digests
         flagSafe: false
@@ -219,6 +240,7 @@
         osversion: edit.os.version
         maxunavailable: edit.node.upgrade.number
         containerimage: container image like repository/name:tag
+        evictpodforce: true/false
         imageurl: ""
         checksum: container image digests
         flagSafe: false
@@ -240,7 +262,8 @@
             opstype: upgrade
             osversion: edit.os.version
             maxunavailable: edit.node.upgrade.number
-            dockerimage: ""
+            containerimage: ""
+            evictpodforce: true/false
             imageurl: ""
             checksum: container image digests
             flagSafe: false
@@ -305,7 +328,8 @@
     opstype: config
     osversion: edit.os.version
     maxunavailable: edit.node.config.number
-    dockerimage: ""
+    containerimage: ""
+    evictpodforce: false
     imageurl: ""
     checksum: ""
     flagSafe: false
@@ -392,6 +416,7 @@
             osversion: KubeOS pervious version
             maxunavailable: 2
             containerimage: ""
+            evictpodforce: true/false
             imageurl: ""
             checksum: ""
             flagSafe: false
@@ -410,7 +435,8 @@
         opstype: config
         osversion: edit.os.version
         maxunavailable: edit.node.config.number
-        dockerimage: ""
+        containerimage: ""
+        evictpodforce: true/false
         imageurl: ""
         checksum: ""
         flagSafe: false
@@ -465,12 +491,11 @@ ADD ./your-sysmaster.rpm /home
 RUN rpm -ivh  /home/your-sysmaster.rpm
 
 COPY ./hostshell /usr/bin/
-COPY ./setPasswd.sh /usr/local/bin
-COPY ./setPasswd.service /usr/lib/sysmaster
+COPY ./set-ssh-pub-key.sh /usr/local/bin
+COPY ./set-ssh-pub-key.service /usr/lib/sysmaster
 
 EXPOSE 22
-# set sshd.service adn setPassed.service pulled up by default
-RUN sed -i 's/sysinit.target/sysinit.target;sshd.service;setPasswd.service/g' /usr/lib/sysmaster/basic.target
+RUN sed -i 's/sysinit.target/sysinit.target;sshd.service;set-ssh-pub-key.service/g' /usr/lib/sysmaster/basic.target
 
 CMD ["/usr/lib/sysmaster/init"]
 ```
@@ -485,11 +510,11 @@ make hostshell
 
 ```shell
 cd scripts
-bash -x kbimg.sh create admin-image -f admin-container/Dockerfile -d your_imageRepository/proxy_imageName:version
-docker push your_imageRepository/proxy_imageName:version
+bash -x kbimg.sh create admin-image -f admin-container/Dockerfile -d your_imageRepository/admin_imageName:version
+docker push your_imageRepository/admin_imageName:version
 ```
 
-在master节点上部署Admin容器，**修改**并应用如下示例yaml文件:
+在master节点上部署Admin容器，需要提供ssh公钥来免密登录，**修改**并应用如下示例yaml文件:
 
 ```yaml
 apiVersion: v1
@@ -497,7 +522,7 @@ kind: Secret
 metadata:
   name: root-secret
 data:
-  password: your-encoded-login-password
+  ssh-pub-key: your-ssh-pub-key
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -519,18 +544,20 @@ spec:
       hostPID: true
       containers:
       - name: admin-container-sysmaster
-        image: your_imageRepository/proxy_imageName:version
+        image: your_imageRepository/admin_imageName:version
         imagePullPolicy: Always
         securityContext:
           privileged: true
         ports:
           - containerPort: 22
+        # sysmaster要求
         env:
           - name: container
             value: containerd
         volumeMounts:
         # name 必须与下面的卷名匹配
         - name: secret-volume
+        # mountPath必须为/etc/secret-volume
           mountPath: /etc/secret-volume
           readOnly: true
       nodeName: your-worker-node-name
@@ -543,16 +570,16 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-        name: admin-container-sysmaster
-        namespace: default
+  name: admin-container-sysmaster
+  namespace: default
 spec:
-        type: NodePort
-        ports:
-          - port: 22
-            targetPort: 22
-            nodePort: your-exposed-port
-        selector:
-            control-plane: admin-container-sysmaster
+  type: NodePort
+  ports:
+    - port: 22
+      targetPort: 22
+      nodePort: your-exposed-port
+  selector:
+      control-plane: admin-container-sysmaster
 ```
 
 ssh到Admin容器，然后执行hostshell命令进入host root shell, 如：
