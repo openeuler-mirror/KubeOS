@@ -6,7 +6,6 @@ if [ "$BOOT_MODE" = "legacy" ]; then
 else
     ln -s /usr/lib/systemd/system/boot-efi.mount /lib/systemd/system/local-fs.target.wants/boot-efi.mount
 fi
-ln -s /usr/lib/systemd/system/etc.mount /lib/systemd/system/local-fs.target.wants/etc.mount
 
 str=`sed -n '/^root:/p' /etc/shadow | awk -F "root:" '{print $2}'`
 umask 0666
@@ -16,5 +15,13 @@ echo "root:"${ROOT_PWD}${str:1} > /etc/shadow
 cat /etc/shadow_bak >> /etc/shadow
 rm -rf /etc/shadow_bak
 
-dracut -f -v --add bootup /initramfs.img --kver `ls /lib/modules`
-rm -rf /usr/lib/dracut/modules.d/00bootup
+# move the 10-mount-etc.sh out
+mv /usr/lib/dracut/modules.d/00bootup/10-mount-etc.sh /
+
+# make initramfs.img for baremetal PXE mode
+dracut -f -v --add bootup /initramfs.img --include /10-mount-etc.sh /usr/lib/dracut/hooks/pre-pivot/10-mount-etc.sh --kver `ls /lib/modules`
+
+# make initramfs.img for vms
+rm -f /boot/initramfs.img
+dracut -f -v /boot/initramfs.img --include /10-mount-etc.sh /usr/lib/dracut/hooks/pre-pivot/10-mount-etc.sh --force --kver `ls /lib/modules`
+rm -rf /usr/lib/dracut/modules.d/00bootup /10-mount-etc.sh
