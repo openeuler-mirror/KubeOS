@@ -9,11 +9,18 @@
 # PURPOSE.
 ## See the Mulan PSL v2 for more details.
 
-passwd=$(cat /etc/secret-volume/password)
-str=`sed -n '/^root:/p' /etc/shadow | awk -F "root:" '{print $2}'`
-umask 0666
-mv /etc/shadow /etc/shadow_bak
-sed -i '/^root:/d' /etc/shadow_bak
-echo "root:"${passwd}":"${str#*:} > /etc/shadow
-cat /etc/shadow_bak >> /etc/shadow
-rm -rf /etc/shadow_bak
+ssh_pub=$(cat /etc/secret-volume/ssh-pub-key)
+ssh_dir="/root/.ssh"
+authorized_file="$ssh_dir/authorized_keys"
+
+if [ ! -d "$ssh_dir" ]; then
+    mkdir "$ssh_dir"
+    chmod 700 "$ssh_dir"
+fi
+
+if [ ! -f "$authorized_file" ]; then
+    touch "$authorized_file"
+    chmod 600 "$authorized_file"
+fi
+
+echo "$ssh_pub" >> "$authorized_file"

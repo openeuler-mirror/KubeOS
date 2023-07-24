@@ -9,7 +9,7 @@
 ## See the Mulan PSL v2 for more details.
 
 [Unit]
-Description="set root passwd according to the secret which is set by user"
+Description="set ssh authorized keys according to the secret which is set by user"
 
 [Service]
-ExecStart="/usr/local/bin/setPasswd.sh"
+ExecStart="/usr/local/bin/set-ssh-pub-key.sh"
