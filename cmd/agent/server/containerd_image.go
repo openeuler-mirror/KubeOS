@@ -42,6 +42,9 @@ func (c conImageHandler) downloadImage(req *pb.UpdateRequest) (string, error) {
 
 func (c conImageHandler) getRootfsArchive(req *pb.UpdateRequest, neededPath preparePath) (string, error) {
 	imageName := req.ContainerImage
+	if err := isValidImageName(imageName); err != nil {
+		return "", err
+	}
 	mountPath := neededPath.mountPath
 	var containerdCommand string
 	logrus.Infof("start pull %s", imageName)

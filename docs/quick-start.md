@@ -167,7 +167,7 @@
   | opstype        | string | 进行的操作，升级,回退或者配置 | 需为 upgrade ，config 或者 rollback ，其他值无效 |是               |
   | osversion      | string | 用于升级或回退的镜像的OS版本          | 需为 KubeOS version , 例如: KubeOS 1.0.0|是               |
   | maxunavailable | int    | 同时进行升级或回退的节点数 | maxunavailable值设置为大于实际集群的节点数时也可正常部署，升级或回退时会按照集群内实际节点数进行|是               |
-  | containerimage    | string | 用于升级的容器镜像               | 需要为容器镜像格式：repository/name:tag，仅在使用容器镜像升级场景下有效|是               |
+  | containerimage    | string | 用于升级的容器镜像               | 需要为容器镜像格式：[REPOSITORY/NAME[:TAG@DIGEST]](https://docs.docker.com/engine/reference/commandline/tag/#extended-description)，仅在使用容器镜像升级场景下有效|是               |
   | imageurl       | string | 用于升级的磁盘镜像的地址 | imageurl中包含协议，只支持http或https协议，例如：<https://192.168.122.15/update.img> 仅在使用磁盘镜像升级场景下有效|是               |
   | checksum       | string | 用于升级的磁盘镜像校验的checksum(SHA-256)值或者是用于升级的容器镜像的digests值                      | 仅在升级场景下有效 |是               |
   | flagSafe       | bool   | 当imageurl的地址使用http协议表示是否是安全的                 | 需为 true 或者 false ，仅在imageurl使用http协议时有效 |是               |
@@ -522,6 +522,7 @@ kind: Secret
 metadata:
   name: root-secret
 data:
+  # base64 encode your pub key in one line
   ssh-pub-key: your-ssh-pub-key
 ---
 apiVersion: apps/v1
