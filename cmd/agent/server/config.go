@@ -70,7 +70,7 @@ func (k KerSysctlPersist) SetConfig(config *agent.SysConfig) error {
 	logrus.Info("start set kernel.sysctl.persist")
 	configPath := config.ConfigPath
 	if configPath == "" {
-		configPath = defaultKernelConPath
+		configPath = getKernelConPath()
 	}
 	if err := createConfigPath(configPath); err != nil {
 		logrus.Errorf("Failed to find config path: %v", err)
@@ -94,33 +94,36 @@ type GrubCmdline struct{}
 // SetConfig sets grub.cmdline configuration
 func (g GrubCmdline) SetConfig(config *agent.SysConfig) error {
 	logrus.Info("start set grub.cmdline configuration")
-	fileExist, err := checkFileExist(defalutGrubCfgPath)
+	fileExist, err := checkFileExist(getGrubCfgPath())
 	if err != nil {
 		logrus.Errorf("Failed to find config path: %v", err)
 		return err
 	}
 	if !fileExist {
-		return fmt.Errorf("failed to find grub.cfg %s", defalutGrubCfgPath)
+		return fmt.Errorf("failed to find grub.cfg %s", getGrubCfgPath())
 	}
-	err = getAndSetGrubCfg(config.Contents)
+	lines, err := getAndSetGrubCfg(config.Contents)
 	if err != nil {
 		logrus.Errorf("Failed to set grub configs: %v", err)
+		return err
+	}
+	if err := writeConfigToFile(getGrubCfgPath(), lines); err != nil {
 		return err
 	}
 	return nil
 }
 
-func getAndSetGrubCfg(expectConfigs map[string]*agent.KeyInfo) error {
-	file, err := os.OpenFile(defalutGrubCfgPath, os.O_RDWR, defaultGrubCfgPermission)
+func getAndSetGrubCfg(expectConfigs map[string]*agent.KeyInfo) ([]string, error) {
+	file, err := os.OpenFile(getGrubCfgPath(), os.O_RDWR, defaultGrubCfgPermission)
 	if err != nil {
-		return err
+		return []string{}, err
 	}
 	defer file.Close()
 
 	reFindCurLinux := `^\s*linux.*root=.*`
 	r, err := regexp.Compile(reFindCurLinux)
 	if err != nil {
-		return err
+		return []string{}, err
 	}
 
 	var lines []string
@@ -130,24 +133,12 @@ func getAndSetGrubCfg(expectConfigs map[string]*agent.KeyInfo) error {
 		if r.MatchString(line) {
 			line, err = modifyLinuxCfg(expectConfigs, line)
 			if err != nil {
-				return fmt.Errorf("error modify grub.cfg %v", err)
+				return []string{}, fmt.Errorf("error modify grub.cfg %v", err)
 			}
 		}
 		lines = append(lines, line)
 	}
-
-	// override new configs to the grub.cfg file
-	_, err = file.Seek(0, 0)
-	if err != nil {
-		return err
-	}
-	writer := bufio.NewWriter(file)
-	for _, line := range lines {
-		if _, err := fmt.Fprintln(writer, line); err != nil {
-			return fmt.Errorf("error write grub.cfg %v", err)
-		}
-	}
-	return nil
+	return lines, nil
 }
 
 func modifyLinuxCfg(m map[string]*agent.KeyInfo, line string) (string, error) {
@@ -240,7 +231,7 @@ func ConfigFactoryTemplate(configType string, config *agent.SysConfig) error {
 }
 
 func getProcPath(key string) string {
-	return filepath.Join(defaultProcPath, strings.Replace(key, ".", "/", -1))
+	return filepath.Join(getDefaultProcPath(), strings.Replace(key, ".", "/", -1))
 }
 
 func getAndSetConfigsFromFile(expectConfigs map[string]*agent.KeyInfo, path string) ([]string, error) {
@@ -328,4 +319,16 @@ func createConfigPath(configPath string) error {
 	}
 	defer f.Close()
 	return nil
+}
+
+func getDefaultProcPath() string {
+	return "/proc/sys/"
+}
+
+func getKernelConPath() string {
+	return "/etc/sysctl.conf"
+}
+
+func getGrubCfgPath() string {
+	return "/boot/efi/EFI/openEuler/grub.cfg"
 }

@@ -19,6 +19,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"syscall"
 
@@ -353,9 +354,18 @@ func deepCopyConfigMap(m map[string]*pb.KeyInfo) map[string]*pb.KeyInfo {
 }
 
 func isCommandAvailable(name string) bool {
-	cmd := exec.Command("/bin/sh", "-c", "command -v"+name)
-	if err := cmd.Run(); err != nil {
-		return false
+	_, err := exec.LookPath(name)
+	return err == nil
+}
+
+func isValidImageName(image string) error {
+	pattern := `^((?:[\w.-]+)(?::\d+)?\/)*(?:[\w.-]+)(?::[\w_.-]+)?(?:@sha256:[a-fA-F0-9]+)?$`
+	regEx, err := regexp.Compile(pattern)
+	if err != nil {
+		return err
 	}
-	return true
+	if !regEx.MatchString(image) {
+		return fmt.Errorf("invalid image name %s", image)
+	}
+	return nil
 }

@@ -34,6 +34,9 @@ func (d dockerImageHandler) downloadImage(req *pb.UpdateRequest) (string, error)
 
 func (d dockerImageHandler) getRootfsArchive(req *pb.UpdateRequest, neededPath preparePath) (string, error) {
 	imageName := req.ContainerImage
+	if err := isValidImageName(imageName); err != nil {
+		return "", err
+	}
 	logrus.Infof("start pull %s", imageName)
 	if err := runCommand("docker", "pull", imageName); err != nil {
 		return "", err
