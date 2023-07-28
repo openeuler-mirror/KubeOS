@@ -168,13 +168,17 @@ func assignUpgrade(ctx context.Context, r common.ReadStatusWriter, os upgradev1.
 		}
 		osVersionNode := node.Status.NodeInfo.OSImage
 		if os.Spec.OSVersion != osVersionNode {
-			count++
-			node.Labels[values.LabelUpgrading] = ""
 			var osInstance upgradev1.OSInstance
 			if err = r.Get(ctx, types.NamespacedName{Namespace: nameSpace, Name: node.Name}, &osInstance); err != nil {
-				log.Error(err, "unable to get osInstance "+node.Name)
-				return false, err
+				if err = client.IgnoreNotFound(err); err != nil {
+					log.Error(err, "failed to get osInstance "+node.Name)
+					return false, err
+				}
+				log.Error(err, "not found osInstance "+node.Name)
+				continue
 			}
+			count++
+			node.Labels[values.LabelUpgrading] = ""
 			expUpVersion := os.Spec.UpgradeConfigs.Version
 			osiUpVersion := osInstance.Spec.UpgradeConfigs.Version
 			if osiUpVersion != expUpVersion {

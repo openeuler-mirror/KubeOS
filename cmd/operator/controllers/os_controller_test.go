@@ -312,4 +312,80 @@ var _ = Describe("OsController", func() {
 		})
 	})
 
+	Context("When we deploy OS, but there is a node without osinstance", func() {
+		It("Should not label upgrading and skip that node", func() {
+			ctx := context.Background()
+			// create Node
+			node1Name = "test-node-" + uuid.New().String()
+			node1 := &v1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      node1Name,
+					Namespace: testNamespace,
+					Labels: map[string]string{
+						"beta.kubernetes.io/os": "linux",
+					},
+				},
+				TypeMeta: metav1.TypeMeta{
+					APIVersion: "v1",
+					Kind:       "Node",
+				},
+				Status: v1.NodeStatus{
+					NodeInfo: v1.NodeSystemInfo{
+						OSImage: "KubeOS v1",
+					},
+				},
+			}
+			err := k8sClient.Create(ctx, node1)
+			Expect(err).ToNot(HaveOccurred())
+			existingNode := &v1.Node{}
+			Eventually(func() bool {
+				err := k8sClient.Get(context.Background(),
+					types.NamespacedName{Name: node1Name, Namespace: testNamespace}, existingNode)
+				return err == nil
+			}, timeout, interval).Should(BeTrue())
+
+			OS := &upgradev1.OS{
+				TypeMeta: metav1.TypeMeta{
+					APIVersion: "upgrade.openeuler.org/v1alpha1",
+					Kind:       "OS",
+				},
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      OSName,
+					Namespace: testNamespace,
+				},
+				Spec: upgradev1.OSSpec{
+					OpsType:        "upgrade",
+					MaxUnavailable: 3,
+					OSVersion:      "KubeOS v2",
+					FlagSafe:       true,
+					MTLS:           false,
+					EvictPodForce:  true,
+					SysConfigs: upgradev1.SysConfigs{
+						Configs: []upgradev1.SysConfig{},
+					},
+					UpgradeConfigs: upgradev1.SysConfigs{Configs: []upgradev1.SysConfig{}},
+				},
+			}
+			Expect(k8sClient.Create(ctx, OS)).Should(Succeed())
+
+			osCRLookupKey := types.NamespacedName{Name: OSName, Namespace: testNamespace}
+			createdOS := &upgradev1.OS{}
+			Eventually(func() bool {
+				err := k8sClient.Get(ctx, osCRLookupKey, createdOS)
+				return err == nil
+			}, timeout, interval).Should(BeTrue())
+			Expect(createdOS.Spec.OSVersion).Should(Equal("KubeOS v2"))
+
+			time.Sleep(1 * time.Second) // sleep a while to make sure Reconcile finished
+			existingNode = &v1.Node{}
+			Eventually(func() bool {
+				err := k8sClient.Get(context.Background(),
+					types.NamespacedName{Name: node1Name, Namespace: testNamespace}, existingNode)
+				return err == nil
+			}, timeout, interval).Should(BeTrue())
+			_, ok := existingNode.Labels[values.LabelUpgrading]
+			Expect(ok).Should(Equal(false))
+		})
+	})
+
 })

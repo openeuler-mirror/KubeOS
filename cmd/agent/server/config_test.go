@@ -203,8 +203,8 @@ menuentry 'B' --class KubeOS --class gnu-linux --class gnu --class os --unrestri
 		wantErr bool
 	}{
 		{
-			name: "add, update and delete kernel boot parameters",
-			g:    GrubCmdline{},
+			name: "add, update and delete kernel boot parameters of current partition",
+			g:    GrubCmdline{isCurPartition: true},
 			args: args{
 				config: &agent.SysConfig{
 					Contents: map[string]*agent.KeyInfo{
@@ -220,9 +220,32 @@ menuentry 'B' --class KubeOS --class gnu-linux --class gnu --class os --unrestri
 			pattern: `(?m)^\s+linux\s+\/boot\/vmlinuz\s+root=UUID=[0-1]\s+ro\s+rootfstype=ext4\s+nomodeset\s+oops=panic\s+softlockup_panic=1\s+nmi_watchdog=1\s+rd\.shell=0\s+selinux=0\s+crashkernel=256M\s+panic=5\s+(debug\spci=nomis|pci=nomis\sdebug)$`,
 			wantErr: false,
 		},
+		{
+			name: "add, update and delete kernel boot parameters of next partition",
+			g:    GrubCmdline{isCurPartition: false},
+			args: args{
+				config: &agent.SysConfig{
+					Contents: map[string]*agent.KeyInfo{
+						"panic":   {Value: "4"},
+						"quiet":   {Value: "", Operation: "delete"},
+						"selinux": {Value: "1", Operation: "delete"},
+						"acpi":    {Value: "off", Operation: "delete"},
+						"debug":   {},
+						"pci":     {Value: "nomis"},
+					},
+				},
+			},
+			pattern: `(?m)^\s+linux\s+\/boot\/vmlinuz\s+root=UUID=[0-1]\s+ro\s+rootfstype=ext4\s+nomodeset\s+oops=panic\s+softlockup_panic=1\s+nmi_watchdog=1\s+rd\.shell=0\s+selinux=0\s+crashkernel=256M\s+panic=4\s+(debug\spci=nomis|pci=nomis\sdebug)$`,
+			wantErr: false,
+		},
 	}
 	patchGetGrubPath := gomonkey.ApplyFuncReturn(getGrubCfgPath, grubCfgPath)
 	defer patchGetGrubPath.Reset()
+	patchGetConfigPartition := gomonkey.ApplyFuncSeq(getConfigPartition, []gomonkey.OutputCell{
+		{Values: gomonkey.Params{false, nil}},
+		{Values: gomonkey.Params{true, nil}},
+	})
+	defer patchGetConfigPartition.Reset()
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			g := GrubCmdline{}
@@ -236,7 +259,7 @@ menuentry 'B' --class KubeOS --class gnu-linux --class gnu --class os --unrestri
 			re := regexp.MustCompile(tt.pattern)
 			match := re.FindAllStringIndex(string(contents), -1)
 			// it should match partition A and B in total twice
-			if len(match) != 2 {
+			if len(match) != 1 {
 				t.Fatalf("expected pattern not found in grub.cfg")
 			}
 		})
@@ -267,7 +290,8 @@ func Test_startConfig(t *testing.T) {
 				configs: []*agent.SysConfig{
 					{Model: KernelSysctlName.String()},
 					{Model: KerSysctlPersistName.String()},
-					{Model: GrubCmdlineName.String()},
+					{Model: GrubCmdlineCurName.String()},
+					{Model: GrubCmdlineNextName.String()},
 				},
 			},
 			wantErr: false,

@@ -31,8 +31,10 @@ const (
 	// KerSysctlPersistName is the configuration name of the kernel parameter
 	// set by writing /etc/sysctl.conf or other files
 	KerSysctlPersistName ConfigType = 1
-	// GrubCmdlineName is configuration name of cmdline
-	GrubCmdlineName ConfigType = 2
+	// GrubCmdlineCurName is configuration name of current partition's grub cmdline
+	GrubCmdlineCurName ConfigType = 2
+	// GrubCmdlineNextName is configuration name of next partition's grub cmdline
+	GrubCmdlineNextName ConfigType = 3
 )
 
 func (c ConfigType) String() string {
@@ -41,8 +43,10 @@ func (c ConfigType) String() string {
 		return "kernel.sysctl"
 	case KerSysctlPersistName:
 		return "kernel.sysctl.persist"
-	case GrubCmdlineName:
-		return "grub.cmdline"
+	case GrubCmdlineCurName:
+		return "grub.cmdline.current"
+	case GrubCmdlineNextName:
+		return "grub.cmdline.next"
 	default:
 		return "unknown"
 	}

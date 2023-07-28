@@ -89,7 +89,10 @@ func (k KerSysctlPersist) SetConfig(config *agent.SysConfig) error {
 }
 
 // GrubCmdline represents grub.cmdline configuration
-type GrubCmdline struct{}
+type GrubCmdline struct {
+	// it represents which partition the user want to configure
+	isCurPartition bool
+}
 
 // SetConfig sets grub.cmdline configuration
 func (g GrubCmdline) SetConfig(config *agent.SysConfig) error {
@@ -102,7 +105,12 @@ func (g GrubCmdline) SetConfig(config *agent.SysConfig) error {
 	if !fileExist {
 		return fmt.Errorf("failed to find grub.cfg %s", getGrubCfgPath())
 	}
-	lines, err := getAndSetGrubCfg(config.Contents)
+	configPartition, err := getConfigPartition(g.isCurPartition)
+	if err != nil {
+		logrus.Errorf("Failed to get config partition: %v", err)
+		return err
+	}
+	lines, err := getAndSetGrubCfg(config.Contents, configPartition)
 	if err != nil {
 		logrus.Errorf("Failed to set grub configs: %v", err)
 		return err
@@ -113,7 +121,25 @@ func (g GrubCmdline) SetConfig(config *agent.SysConfig) error {
 	return nil
 }
 
-func getAndSetGrubCfg(expectConfigs map[string]*agent.KeyInfo) ([]string, error) {
+// getConfigPartition return false if the user want to configure partition A,
+// return true if the user want to configure partition B
+func getConfigPartition(isCurPartition bool) (bool, error) {
+	partA, partB, err := getRootfsDisks()
+	if err != nil {
+		return false, err
+	}
+	_, next, err := getNextPart(partA, partB)
+	if err != nil {
+		return false, err
+	}
+	var flag bool
+	if next == "B" {
+		flag = true
+	}
+	return isCurPartition != flag, nil
+}
+
+func getAndSetGrubCfg(expectConfigs map[string]*agent.KeyInfo, configPartition bool) ([]string, error) {
 	file, err := os.OpenFile(getGrubCfgPath(), os.O_RDWR, defaultGrubCfgPermission)
 	if err != nil {
 		return []string{}, err
@@ -127,14 +153,18 @@ func getAndSetGrubCfg(expectConfigs map[string]*agent.KeyInfo) ([]string, error)
 	}
 
 	var lines []string
+	var matchCount bool
 	configScanner := bufio.NewScanner(file)
 	for configScanner.Scan() {
 		line := configScanner.Text()
 		if r.MatchString(line) {
-			line, err = modifyLinuxCfg(expectConfigs, line)
-			if err != nil {
-				return []string{}, fmt.Errorf("error modify grub.cfg %v", err)
+			if matchCount == configPartition {
+				line, err = modifyLinuxCfg(expectConfigs, line)
+				if err != nil {
+					return []string{}, fmt.Errorf("error modify grub.cfg %v", err)
+				}
 			}
+			matchCount = true
 		}
 		lines = append(lines, line)
 	}
@@ -221,8 +251,8 @@ func ConfigFactoryTemplate(configType string, config *agent.SysConfig) error {
 	doConfig.Do(func() {
 		configTemplate[KernelSysctlName.String()] = new(KernelSysctl)
 		configTemplate[KerSysctlPersistName.String()] = new(KerSysctlPersist)
-		configTemplate[GrubCmdlineName.String()] = new(GrubCmdline)
-
+		configTemplate[GrubCmdlineCurName.String()] = &GrubCmdline{isCurPartition: true}
+		configTemplate[GrubCmdlineNextName.String()] = &GrubCmdline{isCurPartition: false}
 	})
 	if _, ok := configTemplate[configType]; ok {
 		return configTemplate[configType].SetConfig(config)
