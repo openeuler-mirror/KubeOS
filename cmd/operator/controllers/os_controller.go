@@ -174,7 +174,6 @@ func assignUpgrade(ctx context.Context, r common.ReadStatusWriter, os upgradev1.
 					log.Error(err, "failed to get osInstance "+node.Name)
 					return false, err
 				}
-				log.Error(err, "not found osInstance "+node.Name)
 				continue
 			}
 			count++
@@ -188,6 +187,14 @@ func assignUpgrade(ctx context.Context, r common.ReadStatusWriter, os upgradev1.
 			osiSysVersion := osInstance.Spec.SysConfigs.Version
 			if osiSysVersion != expSysVersion {
 				osInstance.Spec.SysConfigs = os.Spec.SysConfigs
+				for i, config := range osInstance.Spec.SysConfigs.Configs {
+					if config.Model == "grub.cmdline.current" {
+						osInstance.Spec.SysConfigs.Configs[i].Model = "grub.cmdline.next"
+					}
+					if config.Model == "grub.cmdline.next" {
+						osInstance.Spec.SysConfigs.Configs[i].Model = "grub.cmdline.current"
+					}
+				}
 			}
 			osInstance.Spec.NodeStatus = values.NodeStatusUpgrade.String()
 			if err = r.Update(ctx, &osInstance); err != nil {

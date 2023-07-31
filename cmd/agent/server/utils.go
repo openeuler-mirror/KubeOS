@@ -98,13 +98,11 @@ func getNextPart(partA string, partB string) (string, string, error) {
 		return "", "", fmt.Errorf("fail to lsblk %s out:%s err:%s", partA, out, err)
 	}
 	mountPoint := strings.TrimSpace(string(out))
-	logrus.Infoln(partA + " mounted on " + mountPoint)
 
 	side := partA
 	if mountPoint == "/" {
 		side = partB
 	}
-	logrus.Infoln("side is " + side)
 	next := "B"
 	if side != partB {
 		next = "A"
