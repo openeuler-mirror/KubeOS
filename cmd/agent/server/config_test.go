@@ -59,7 +59,7 @@ func TestKernelSysctl_SetConfig(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name: "invalide operation",
+			name: "invalid operation",
 			k:    KernelSysctl{},
 			args: args{config: &agent.SysConfig{
 				Contents: map[string]*agent.KeyInfo{
@@ -102,12 +102,13 @@ func TestKerSysctlPersist_SetConfig(t *testing.T) {
 					Contents: map[string]*agent.KeyInfo{
 						"a": {Value: "1"},
 						"b": {Value: "2"},
+						"c": {Value: ""},
 					},
 				},
 			},
 			want: []string{
-				"a = 1",
-				"b = 2",
+				"a=1",
+				"b=2",
 			},
 			wantErr: false,
 		},
@@ -118,12 +119,13 @@ func TestKerSysctlPersist_SetConfig(t *testing.T) {
 					ConfigPath: persistPath,
 					Contents: map[string]*agent.KeyInfo{
 						"a": {Value: "2"},
+						"b": {Value: ""},
 					},
 				},
 			},
 			want: []string{
-				"a = 2",
-				"b = 2",
+				"a=2",
+				"b=2",
 			},
 			wantErr: false,
 		},
@@ -139,7 +141,7 @@ func TestKerSysctlPersist_SetConfig(t *testing.T) {
 				},
 			},
 			want: []string{
-				"a = 2",
+				"a=2",
 			},
 			wantErr: false,
 		},
@@ -208,12 +210,13 @@ menuentry 'B' --class KubeOS --class gnu-linux --class gnu --class os --unrestri
 			args: args{
 				config: &agent.SysConfig{
 					Contents: map[string]*agent.KeyInfo{
-						"panic":   {Value: "5"},
-						"quiet":   {Value: "", Operation: "delete"},
-						"selinux": {Value: "1", Operation: "delete"},
-						"acpi":    {Value: "off", Operation: "delete"},
-						"debug":   {},
-						"pci":     {Value: "nomis"},
+						"panic":   {Value: "5"},                        // update existent kv
+						"quiet":   {Value: "", Operation: "delete"},    // delete existent key
+						"oops":    {Value: ""},                         // update existent kv with null value
+						"selinux": {Value: "1", Operation: "delete"},   // failed to delete inconsistent kv
+						"acpi":    {Value: "off", Operation: "delete"}, // failed to delete inexistent kv
+						"debug":   {},                                  // add key
+						"pci":     {Value: "nomis"},                    // add kv
 					},
 				},
 			},
@@ -228,6 +231,7 @@ menuentry 'B' --class KubeOS --class gnu-linux --class gnu --class os --unrestri
 					Contents: map[string]*agent.KeyInfo{
 						"panic":   {Value: "4"},
 						"quiet":   {Value: "", Operation: "delete"},
+						"oops":    {Value: ""}, // update existent kv with null value
 						"selinux": {Value: "1", Operation: "delete"},
 						"acpi":    {Value: "off", Operation: "delete"},
 						"debug":   {},

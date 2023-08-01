@@ -120,6 +120,7 @@ func (s *Server) update(req *pb.UpdateRequest) error {
 		return err
 	}
 	side, next, err := getNextPart(partA, partB)
+	logrus.Infoln("switching to " + side + " partition " + next)
 	if err != nil {
 		return err
 	}
