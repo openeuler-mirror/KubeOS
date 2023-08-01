@@ -23,7 +23,8 @@ endif
 
 GO := go
 ifeq ($(shell go help mod >/dev/null 2>&1 && echo true), true)
-export GO_BUILD=GO111MODULE=on; $(GO) build -mod=vendor
+export GO111MODULE=on
+export GO_BUILD = $(GO) build -mod=vendor
 else
 export GO_BUILD=$(GO) build
 endif
@@ -31,27 +32,37 @@ endif
 VERSION_FILE := ./VERSION
 VERSION := $(shell cat $(VERSION_FILE))
 PACKAGE:=openeuler.org/KubeOS/pkg/version
-BUILDFLAGS = -buildmode=pie -trimpath
-LDFLAGS = -w -s -buildid=IdByKubeOS -linkmode=external -extldflags=-static -extldflags=-zrelro -extldflags=-Wl,-z,now -X ${PACKAGE}.Version=${VERSION}
-ENV = CGO_CFLAGS="-fstack-protector-all" CGO_CPPFLAGS="-D_FORTIFY_SOURCE=2 -O2"
 
-all: proxy operator agent
+EXTRALDFLAGS := -linkmode=external -extldflags=-ftrapv \
+	-extldflags=-Wl,-z,relro,-z,now
+
+LD_FLAGS := -ldflags '-buildid=IdByKubeOS \
+	-X ${PACKAGE}.Version=${VERSION} \
+	$(EXTRALDFLAGS)   '
+
+GO_BUILD_CGO = CGO_ENABLED=1 \
+	CGO_CFLAGS="-fstack-protector-strong -fPIE -D_FORTIFY_SOURCE=2 -O2" \
+	CGO_LDFLAGS_ALLOW='-Wl,-z,relro,-z,now' \
+	CGO_LDFLAGS="-Wl,-z,relro,-z,now -Wl,-z,noexecstack" \
+	${GO_BUILD} -buildmode=pie -trimpath -tags "seccomp selinux static_build cgo netgo osusergo"
+
+all: proxy operator agent hostshell
 
 # Build binary
 proxy:
-	${ENV} ${GO_BUILD} -ldflags '$(LDFLAGS)' $(BUILDFLAGS) -o bin/proxy cmd/proxy/main.go
-	strip bin/proxy
+	${GO_BUILD_CGO} ${LD_FLAGS} -o bin/os-proxy  cmd/proxy/main.go
+	strip bin/os-proxy
 
 operator:
-	${ENV} ${GO_BUILD} -ldflags '$(LDFLAGS)' $(BUILDFLAGS) -o bin/operator cmd/operator/main.go
-	strip bin/operator
+	${GO_BUILD_CGO} ${LD_FLAGS} -o bin/os-operator cmd/operator/main.go
+	strip bin/os-operator
 
 agent:
-	${ENV} ${GO_BUILD} -tags "osusergo netgo static_build" -ldflags '$(LDFLAGS)' $(BUILDFLAGS) -o bin/os-agent cmd/agent/main.go
+	${GO_BUILD_CGO} ${LD_FLAGS} -o bin/os-agent cmd/agent/main.go
 	strip bin/os-agent
 
 hostshell:
-	${ENV} ${GO_BUILD} -tags "osusergo netgo static_build" -ldflags '$(LDFLAGS)' $(BUILDFLAGS) -o bin/hostshell cmd/admin-container/main.go
+	${GO_BUILD_CGO} ${LD_FLAGS} -o bin/hostshell cmd/admin-container/main.go
 	strip bin/hostshell
 
 # Install CRDs into a cluster
