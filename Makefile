@@ -41,7 +41,7 @@ LD_FLAGS := -ldflags '-buildid=IdByKubeOS \
 	$(EXTRALDFLAGS)   '
 
 GO_BUILD_CGO = CGO_ENABLED=1 \
-	CGO_CFLAGS="-fstack-protector-strong -fPIE -D_FORTIFY_SOURCE=2 -O2" \
+	CGO_CFLAGS="-fstack-protector-strong -fPIE -fPIC -D_FORTIFY_SOURCE=2 -O2" \
 	CGO_LDFLAGS_ALLOW='-Wl,-z,relro,-z,now' \
 	CGO_LDFLAGS="-Wl,-z,relro,-z,now -Wl,-z,noexecstack" \
 	${GO_BUILD} -buildmode=pie -trimpath -tags "seccomp selinux static_build cgo netgo osusergo"

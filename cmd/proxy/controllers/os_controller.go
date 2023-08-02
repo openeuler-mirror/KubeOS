@@ -260,6 +260,9 @@ func checkOsiExist(ctx context.Context, r common.ReadStatusWriter, nameSpace str
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: nameSpace,
 					Name:      nodeName,
+					Labels: map[string]string{
+						"upgrade.openeuler.org/osinstance-node": nodeName,
+					},
 				},
 			}
 			osInstance.Spec.NodeStatus = values.NodeStatusIdle.String()

@@ -109,16 +109,17 @@ func (r *OSReconciler) SetupWithManager(mgr ctrl.Manager) error {
 func (r *OSReconciler) DeleteOSInstance(e event.DeleteEvent, q workqueue.RateLimitingInterface) {
 	ctx := context.Background()
 	hostname := e.Object.GetName()
-	osInstance := upgradev1.OSInstance{}
-	if err := r.Get(ctx, types.NamespacedName{
-		Namespace: "default",
-		Name:      hostname,
-	}, &osInstance); err != nil {
-		log.Error(err, "unable to get osinstance")
+	labelSelector := labels.SelectorFromSet(labels.Set{"upgrade.openeuler.org/osinstance-node": hostname})
+	osInstanceList := &upgradev1.OSInstanceList{}
+	if err := r.List(ctx, osInstanceList, client.MatchingLabelsSelector{Selector: labelSelector}); err != nil {
+		log.Error(err, "unable to list osInstances")
 		return
 	}
-	if err := r.Delete(ctx, &osInstance); err != nil {
-		log.Error(err, "unable to delete osinstance")
+	for _, osInstance := range osInstanceList.Items {
+		if err := r.Delete(ctx, &osInstance); err != nil {
+			log.Error(err, "unable to delete osInstance")
+		}
+		log.Info("Delete osinstance successfully", "name", hostname)
 	}
 }
 
