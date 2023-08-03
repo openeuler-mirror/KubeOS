@@ -134,6 +134,9 @@ var _ = Describe("OsController", func() {
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      node1Name,
 					Namespace: testNamespace,
+					Labels: map[string]string{
+						values.LabelOSinstance: node1Name,
+					},
 				},
 				Spec: upgradev1.OSInstanceSpec{
 					SysConfigs: upgradev1.SysConfigs{
@@ -189,7 +192,7 @@ var _ = Describe("OsController", func() {
 			}, timeout, interval).Should(BeTrue())
 			Expect(createdOS.Spec.OSVersion).Should(Equal("KubeOS v1"))
 
-			time.Sleep(2 * time.Second) // sleep a while to make sure Reconcile finished
+			time.Sleep(1 * time.Second) // sleep a while to make sure Reconcile finished
 			osInsCRLookupKey = types.NamespacedName{Name: node1Name, Namespace: testNamespace}
 			createdOSIns = &upgradev1.OSInstance{}
 			Eventually(func() bool {
@@ -301,7 +304,7 @@ var _ = Describe("OsController", func() {
 			}, timeout, interval).Should(BeTrue())
 			Expect(createdOS.Spec.OSVersion).Should(Equal("KubeOS v1"))
 
-			time.Sleep(2 * time.Second) // sleep a while to make sure Reconcile finished
+			time.Sleep(1 * time.Second) // sleep a while to make sure Reconcile finished
 			configedOSIns := &upgradev1.OSInstance{}
 			Eventually(func() bool {
 				err := k8sClient.Get(ctx, osInsCRLookupKey, configedOSIns)
@@ -388,4 +391,118 @@ var _ = Describe("OsController", func() {
 		})
 	})
 
+	Context("When we want to upgrade and do sysconfigs which contain grub.cmd.current and .next", func() {
+		It("Should exchange .current and .next", func() {
+			ctx := context.Background()
+
+			// create Node
+			node1Name = "test-node-" + uuid.New().String()
+			node1 := &v1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      node1Name,
+					Namespace: testNamespace,
+					Labels: map[string]string{
+						"beta.kubernetes.io/os": "linux",
+					},
+				},
+				TypeMeta: metav1.TypeMeta{
+					APIVersion: "v1",
+					Kind:       "Node",
+				},
+				Status: v1.NodeStatus{
+					NodeInfo: v1.NodeSystemInfo{
+						OSImage: "KubeOS v1",
+					},
+				},
+			}
+			err := k8sClient.Create(ctx, node1)
+			Expect(err).ToNot(HaveOccurred())
+			existingNode := &v1.Node{}
+			Eventually(func() bool {
+				err := k8sClient.Get(context.Background(),
+					types.NamespacedName{Name: node1Name, Namespace: testNamespace}, existingNode)
+				return err == nil
+			}, timeout, interval).Should(BeTrue())
+
+			// create OSInstance
+			OSIns := &upgradev1.OSInstance{
+				TypeMeta: metav1.TypeMeta{
+					Kind:       "OSInstance",
+					APIVersion: "upgrade.openeuler.org/v1alpha1",
+				},
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      node1Name,
+					Namespace: testNamespace,
+					Labels: map[string]string{
+						values.LabelOSinstance: node1Name,
+					},
+				},
+				Spec: upgradev1.OSInstanceSpec{
+					SysConfigs: upgradev1.SysConfigs{
+						Version: "v1",
+						Configs: []upgradev1.SysConfig{},
+					},
+					UpgradeConfigs: upgradev1.SysConfigs{Configs: []upgradev1.SysConfig{}},
+				},
+			}
+			Expect(k8sClient.Create(ctx, OSIns)).Should(Succeed())
+
+			// Check that the corresponding OSIns CR has been created
+			osInsCRLookupKey := types.NamespacedName{Name: node1Name, Namespace: testNamespace}
+			createdOSIns := &upgradev1.OSInstance{}
+			Eventually(func() bool {
+				err := k8sClient.Get(ctx, osInsCRLookupKey, createdOSIns)
+				return err == nil
+			}, timeout, interval).Should(BeTrue())
+			Expect(createdOSIns.ObjectMeta.Name).Should(Equal(node1Name))
+
+			// create OS CR
+			OS := &upgradev1.OS{
+				TypeMeta: metav1.TypeMeta{
+					APIVersion: "upgrade.openeuler.org/v1alpha1",
+					Kind:       "OS",
+				},
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      OSName,
+					Namespace: testNamespace,
+				},
+				Spec: upgradev1.OSSpec{
+					OpsType:        "upgrade",
+					MaxUnavailable: 3,
+					OSVersion:      "KubeOS v2",
+					FlagSafe:       true,
+					MTLS:           false,
+					EvictPodForce:  true,
+					SysConfigs: upgradev1.SysConfigs{
+						Version: "v2",
+						Configs: []upgradev1.SysConfig{
+							{Model: "grub.cmdline.current", Contents: []upgradev1.Content{{Key: "a", Value: "1"}}},
+							{Model: "grub.cmdline.next", Contents: []upgradev1.Content{{Key: "b", Value: "2"}}},
+						},
+					},
+					UpgradeConfigs: upgradev1.SysConfigs{Configs: []upgradev1.SysConfig{}},
+				},
+			}
+			Expect(k8sClient.Create(ctx, OS)).Should(Succeed())
+
+			// Check that the corresponding OS CR has been created
+			osCRLookupKey := types.NamespacedName{Name: OSName, Namespace: testNamespace}
+			createdOS := &upgradev1.OS{}
+			Eventually(func() bool {
+				err := k8sClient.Get(ctx, osCRLookupKey, createdOS)
+				return err == nil
+			}, timeout, interval).Should(BeTrue())
+			Expect(createdOS.Spec.OSVersion).Should(Equal("KubeOS v2"))
+
+			time.Sleep(1 * time.Second) // sleep a while to make sure Reconcile finished
+			osInsCRLookupKey = types.NamespacedName{Name: node1Name, Namespace: testNamespace}
+			createdOSIns = &upgradev1.OSInstance{}
+			Eventually(func() bool {
+				err := k8sClient.Get(ctx, osInsCRLookupKey, createdOSIns)
+				return err == nil
+			}, timeout, interval).Should(BeTrue())
+			Expect(createdOSIns.Spec.SysConfigs.Configs[0]).Should(Equal(upgradev1.SysConfig{Model: "grub.cmdline.next", Contents: []upgradev1.Content{{Key: "a", Value: "1"}}}))
+			Expect(createdOSIns.Spec.SysConfigs.Configs[1]).Should(Equal(upgradev1.SysConfig{Model: "grub.cmdline.current", Contents: []upgradev1.Content{{Key: "b", Value: "2"}}}))
+		})
+	})
 })

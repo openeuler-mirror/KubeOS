@@ -261,7 +261,7 @@ func checkOsiExist(ctx context.Context, r common.ReadStatusWriter, nameSpace str
 					Namespace: nameSpace,
 					Name:      nodeName,
 					Labels: map[string]string{
-						"upgrade.openeuler.org/osinstance-node": nodeName,
+						values.LabelOSinstance: nodeName,
 					},
 				},
 			}

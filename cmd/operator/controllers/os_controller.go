@@ -109,7 +109,7 @@ func (r *OSReconciler) SetupWithManager(mgr ctrl.Manager) error {
 func (r *OSReconciler) DeleteOSInstance(e event.DeleteEvent, q workqueue.RateLimitingInterface) {
 	ctx := context.Background()
 	hostname := e.Object.GetName()
-	labelSelector := labels.SelectorFromSet(labels.Set{"upgrade.openeuler.org/osinstance-node": hostname})
+	labelSelector := labels.SelectorFromSet(labels.Set{values.LabelOSinstance: hostname})
 	osInstanceList := &upgradev1.OSInstanceList{}
 	if err := r.List(ctx, osInstanceList, client.MatchingLabelsSelector{Selector: labelSelector}); err != nil {
 		log.Error(err, "unable to list osInstances")
@@ -157,12 +157,23 @@ func assignUpgrade(ctx context.Context, r common.ReadStatusWriter, os upgradev1.
 		return false, err
 	}
 
-	nodes, err := getNodes(ctx, r, limit+1, *requirement, *reqMaster) // one more to see if all node updated
+	nodes, err := getNodes(ctx, r, limit+1, *requirement, *reqMaster) // one more to see if all nodes updated
 	if err != nil {
 		return false, err
 	}
 
-	var count = 0
+	// Upgrade OS for selected nodes
+	count, err := upgradeNodes(ctx, r, &os, nodes, limit)
+	if err != nil {
+		return false, err
+	}
+
+	return count >= limit, nil
+}
+
+func upgradeNodes(ctx context.Context, r common.ReadStatusWriter, os *upgradev1.OS,
+	nodes []corev1.Node, limit int) (int, error) {
+	var count int
 	for _, node := range nodes {
 		if count >= limit {
 			break
@@ -170,43 +181,45 @@ func assignUpgrade(ctx context.Context, r common.ReadStatusWriter, os upgradev1.
 		osVersionNode := node.Status.NodeInfo.OSImage
 		if os.Spec.OSVersion != osVersionNode {
 			var osInstance upgradev1.OSInstance
-			if err = r.Get(ctx, types.NamespacedName{Namespace: nameSpace, Name: node.Name}, &osInstance); err != nil {
+			if err := r.Get(ctx, types.NamespacedName{Namespace: os.GetObjectMeta().GetNamespace(), Name: node.Name}, &osInstance); err != nil {
 				if err = client.IgnoreNotFound(err); err != nil {
 					log.Error(err, "failed to get osInstance "+node.Name)
-					return false, err
+					return count, err
 				}
 				continue
 			}
+			updateNodeAndOSins(ctx, r, os, &node, &osInstance)
 			count++
-			node.Labels[values.LabelUpgrading] = ""
-			expUpVersion := os.Spec.UpgradeConfigs.Version
-			osiUpVersion := osInstance.Spec.UpgradeConfigs.Version
-			if osiUpVersion != expUpVersion {
-				osInstance.Spec.UpgradeConfigs = os.Spec.UpgradeConfigs
+		}
+	}
+	return count, nil
+}
+
+func updateNodeAndOSins(ctx context.Context, r common.ReadStatusWriter, os *upgradev1.OS,
+	node *corev1.Node, osInstance *upgradev1.OSInstance) {
+	if osInstance.Spec.UpgradeConfigs.Version != os.Spec.UpgradeConfigs.Version {
+		osInstance.Spec.UpgradeConfigs = os.Spec.UpgradeConfigs
+	}
+	if osInstance.Spec.SysConfigs.Version != os.Spec.SysConfigs.Version {
+		osInstance.Spec.SysConfigs = os.Spec.SysConfigs
+		// exchange "grub.cmdline.current" and "grub.cmdline.next"
+		for i, config := range osInstance.Spec.SysConfigs.Configs {
+			if config.Model == "grub.cmdline.current" {
+				osInstance.Spec.SysConfigs.Configs[i].Model = "grub.cmdline.next"
 			}
-			expSysVersion := os.Spec.SysConfigs.Version
-			osiSysVersion := osInstance.Spec.SysConfigs.Version
-			if osiSysVersion != expSysVersion {
-				osInstance.Spec.SysConfigs = os.Spec.SysConfigs
-				for i, config := range osInstance.Spec.SysConfigs.Configs {
-					if config.Model == "grub.cmdline.current" {
-						osInstance.Spec.SysConfigs.Configs[i].Model = "grub.cmdline.next"
-					}
-					if config.Model == "grub.cmdline.next" {
-						osInstance.Spec.SysConfigs.Configs[i].Model = "grub.cmdline.current"
-					}
-				}
-			}
-			osInstance.Spec.NodeStatus = values.NodeStatusUpgrade.String()
-			if err = r.Update(ctx, &osInstance); err != nil {
-				log.Error(err, "unable to update", "osInstance", osInstance.Name)
-			}
-			if err = r.Update(ctx, &node); err != nil {
-				log.Error(err, "unable to label", "node", node.Name)
+			if config.Model == "grub.cmdline.next" {
+				osInstance.Spec.SysConfigs.Configs[i].Model = "grub.cmdline.current"
 			}
 		}
 	}
-	return count >= limit, nil
+	osInstance.Spec.NodeStatus = values.NodeStatusUpgrade.String()
+	if err := r.Update(ctx, osInstance); err != nil {
+		log.Error(err, "unable to update", "osInstance", osInstance.Name)
+	}
+	node.Labels[values.LabelUpgrading] = ""
+	if err := r.Update(ctx, node); err != nil {
+		log.Error(err, "unable to label", "node", node.Name)
+	}
 }
 
 func assignConfig(ctx context.Context, r common.ReadStatusWriter, sysConfigs upgradev1.SysConfigs,

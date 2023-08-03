@@ -110,6 +110,9 @@ var _ = Describe("OsController", func() {
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      node1Name,
 					Namespace: testNamespace,
+					Labels: map[string]string{
+						values.LabelOSinstance: node1Name,
+					},
 				},
 				Spec: upgradev1.OSInstanceSpec{
 					NodeStatus: values.NodeStatusConfig.String(),
@@ -245,6 +248,9 @@ var _ = Describe("OsController", func() {
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      node1Name,
 					Namespace: testNamespace,
+					Labels: map[string]string{
+						values.LabelOSinstance: node1Name,
+					},
 				},
 				Spec: upgradev1.OSInstanceSpec{
 					NodeStatus: values.NodeStatusUpgrade.String(),
@@ -426,6 +432,9 @@ var _ = Describe("OsController", func() {
 				return err == nil
 			}, timeout, interval).Should(BeTrue())
 			Expect(createdOSIns.Spec.NodeStatus).Should(Equal(values.NodeStatusIdle.String()))
+			hostname, ok := createdOSIns.ObjectMeta.Labels[values.LabelOSinstance]
+			Expect(ok).Should(BeTrue())
+			Expect(hostname).Should(Equal(node1Name))
 		})
 	})
 
