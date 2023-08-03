@@ -20,7 +20,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/agiledragon/gomonkey"
+	"github.com/agiledragon/gomonkey/v2"
 
 	pb "openeuler.org/KubeOS/cmd/agent/api"
 )

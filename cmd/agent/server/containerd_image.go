@@ -42,15 +42,30 @@ func (c conImageHandler) downloadImage(req *pb.UpdateRequest) (string, error) {
 
 func (c conImageHandler) getRootfsArchive(req *pb.UpdateRequest, neededPath preparePath) (string, error) {
 	imageName := req.ContainerImage
+	if err := isValidImageName(imageName); err != nil {
+		return "", err
+	}
 	mountPath := neededPath.mountPath
+	var containerdCommand string
 	logrus.Infof("start pull %s", imageName)
 
-	if err := runCommand("crictl", "pull", imageName); err != nil {
+	if isCommandAvailable("crictl") {
+		containerdCommand = "crictl"
+		if err := runCommand("crictl", "pull", imageName); err != nil {
+			return "", err
+		}
+	} else {
+		containerdCommand = "ctr"
+		if err := runCommand("ctr", "-n", defaultNamespace, "images", "pull", "--host-dir",
+			"/etc/containerd/certs.d", imageName); err != nil {
+			return "", err
+		}
+	}
+
+	if err := checkOCIImageDigestMatch(containerdCommand, imageName, req.CheckSum); err != nil {
 		return "", err
 	}
-	if err := checkOCIImageDigestMatch("containerd", imageName, req.CheckSum); err != nil {
-		return "", err
-	}
+
 	if err := checkAndCleanMount(mountPath); err != nil {
 		logrus.Errorln("containerd clean environment error", err)
 		return "", err
@@ -65,8 +80,6 @@ func (c conImageHandler) getRootfsArchive(req *pb.UpdateRequest, neededPath prep
 		return "", err
 	}
 	return "", nil
-	return neededPath.tarPath, nil
-
 }
 
 func checkAndCleanMount(mountPath string) error {

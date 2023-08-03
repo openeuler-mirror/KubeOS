@@ -19,6 +19,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"syscall"
 
@@ -80,7 +81,15 @@ func install(imagePath string, side string, next string) error {
 		return err
 	}
 	defer os.Remove(imagePath)
-	return runCommand("grub2-editenv", grubenvPath, "set", "saved_entry="+next)
+	bootMode, err := getBootMode()
+	if err != nil {
+		return err
+	}
+	if bootMode == "uefi" {
+		return runCommand("grub2-editenv", grubenvPath, "set", "saved_entry="+next)
+	} else {
+		return runCommand("grub2-set-default", next)
+	}
 }
 
 func getNextPart(partA string, partB string) (string, string, error) {
@@ -89,13 +98,11 @@ func getNextPart(partA string, partB string) (string, string, error) {
 		return "", "", fmt.Errorf("fail to lsblk %s out:%s err:%s", partA, out, err)
 	}
 	mountPoint := strings.TrimSpace(string(out))
-	logrus.Infoln(partA + " mounted on " + mountPoint)
 
 	side := partA
 	if mountPoint == "/" {
 		side = partB
 	}
-	logrus.Infoln("side is " + side)
 	next := "B"
 	if side != partB {
 		next = "A"
@@ -133,6 +140,17 @@ func getRootfsDisks() (string, string, error) {
 	partA := curDisk + partAPartitionNum
 	partB := curDisk + partBartitionNum
 	return partA, partB, nil
+}
+
+func getBootMode() (string, error) {
+	_, err := os.Stat("/sys/firmware/efi")
+	if err == nil {
+		return "uefi", nil
+	} else if os.IsNotExist(err) {
+		return "legacy", nil
+	} else {
+		return "", err
+	}
 }
 
 func createOSImage(neededPath preparePath) (string, error) {
@@ -269,7 +287,7 @@ func checkOCIImageDigestMatch(containerRuntime string, imageName string, checkSu
 	var cmdOutput string
 	var err error
 	switch containerRuntime {
-	case "containerd":
+	case "crictl":
 		cmdOutput, err = runCommandWithOut("crictl", "inspecti", "--output", "go-template",
 			"--template", "{{.status.repoDigests}}", imageName)
 		if err != nil {
@@ -280,6 +298,19 @@ func checkOCIImageDigestMatch(containerRuntime string, imageName string, checkSu
 		if err != nil {
 			return err
 		}
+	case "ctr":
+		cmdOutput, err = runCommandWithOut("ctr", "-n", "k8s.io", "images", "ls", "name=="+imageName)
+		if err != nil {
+			return err
+		}
+		// after Fields, we get slice like [REF TYPE DIGEST SIZE PLATFORMS LABELS x x x x x x]
+		// the digest is the position 8 element
+		imageDigest := strings.Split(strings.Fields(cmdOutput)[8], ":")[1]
+		if imageDigest != checkSum {
+			logrus.Errorln("checkSumFailed ", imageDigest, " mismatch to ", checkSum)
+			return fmt.Errorf("checkSumFailed %s mismatch to %s", imageDigest, checkSum)
+		}
+		return nil
 	default:
 		logrus.Errorln("containerRuntime ", containerRuntime, " cannot be recognized")
 		return fmt.Errorf("containerRuntime %s cannot be recognized", containerRuntime)
@@ -305,6 +336,34 @@ func checkOCIImageDigestMatch(containerRuntime string, imageName string, checkSu
 	if imageDigests != checkSum {
 		logrus.Errorln("checkSumFailed ", imageDigests, " mismatch to ", checkSum)
 		return fmt.Errorf("checkSumFailed %s mismatch to %s", imageDigests, checkSum)
+	}
+	return nil
+}
+
+func deepCopyConfigMap(m map[string]*pb.KeyInfo) map[string]*pb.KeyInfo {
+	result := make(map[string]*pb.KeyInfo)
+	for key, val := range m {
+		result[key] = &pb.KeyInfo{
+			Value:     val.Value,
+			Operation: val.Operation,
+		}
+	}
+	return result
+}
+
+func isCommandAvailable(name string) bool {
+	_, err := exec.LookPath(name)
+	return err == nil
+}
+
+func isValidImageName(image string) error {
+	pattern := `^((?:[\w.-]+)(?::\d+)?\/)*(?:[\w.-]+)(?::[\w_.-]+)?(?:@sha256:[a-fA-F0-9]+)?$`
+	regEx, err := regexp.Compile(pattern)
+	if err != nil {
+		return err
+	}
+	if !regEx.MatchString(image) {
+		return fmt.Errorf("invalid image name %s", image)
 	}
 	return nil
 }

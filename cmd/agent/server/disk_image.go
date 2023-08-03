@@ -81,7 +81,7 @@ func download(req *pb.UpdateRequest) (string, error) {
 	}
 	logrus.Infoln("downloading to file " + out.Name())
 	if _, err = io.Copy(out, resp.Body); err != nil {
-		if errRemove := os.Remove(out.Name()); err != nil {
+		if errRemove := os.Remove(out.Name()); errRemove != nil {
 			logrus.Errorln("remove " + out.Name() + " error " + errRemove.Error())
 		}
 		return "", err

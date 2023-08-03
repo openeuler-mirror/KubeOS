@@ -16,6 +16,7 @@ package main
 import (
 	"os"
 	"strconv"
+	"strings"
 	"syscall"
 
 	"github.com/sirupsen/logrus"
@@ -31,8 +32,18 @@ func main() {
 	PPID := os.Getppid()
 	rootFsPath := "/proc/" + strconv.Itoa(PPID) + "/root"
 	bashPath := "/usr/bin/bash"
+	usrBin := "/usr/bin"
+	usrSbin := "/usr/sbin"
+	localBin := "/usr/local/bin"
+	localSbin := "/usr/local/sbin"
+	paths := []string{usrBin, usrSbin, localBin, localSbin}
+	for i, p := range paths {
+		paths[i] = rootFsPath + p
+	}
+	path := "PATH=$PATH:" + strings.Join(paths, ":")
+	lib := "LD_LIBRARY_PATH=/lib:/lib64:/usr/lib:/usr/lib64:$LD_LIBRARY_PATH"
 	if err := syscall.Exec("/usr/bin/nsenter", []string{"nsenter", "-t", "1", "-a",
-		rootFsPath + bashPath}, os.Environ()); err != nil {
+		"env", "-i", path, lib, rootFsPath + bashPath}, os.Environ()); err != nil {
 		logrus.Error("nsenter excute error", err)
 	}
 }

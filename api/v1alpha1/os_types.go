@@ -28,7 +28,7 @@ type OSSpec struct {
 	ContainerImage string `json:"containerimage"`
 	OpsType        string `json:"opstype"`
 	EvictPodForce  bool   `json:"evictpodforce"`
-	// +kubebuilder:validation:Optional`
+	// +kubebuilder:validation:Optional
 	CaCert string `json:"cacert"`
 	// +kubebuilder:validation:Optional
 	ClientCert string `json:"clientcert"`
@@ -84,6 +84,8 @@ type Content struct {
 	Key string `json:"key"`
 	// +kubebuilder:validation:Optional
 	Value string `json:"value"`
+	// +kubebuilder:validation:Optional
+	Operation string `json:"operation"`
 }
 
 // +kubebuilder:subresource:status

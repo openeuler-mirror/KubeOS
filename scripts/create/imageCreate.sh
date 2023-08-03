@@ -14,29 +14,46 @@ RPM_ROOT="${PWD}/rootfs"
 IMG_SIZE=20
 PWD="$(pwd)"
 function create_img() {
+  local BOOT_MODE=$1
   rm -f system.img update.img
   qemu-img create system.img ${IMG_SIZE}G
-  parted system.img -s mklabel gpt
-  parted system.img -s mkpart primary fat32 1MiB 60MiB
+  if [ "$BOOT_MODE" = "legacy" ]; then
+    local BOOT_PATH=${TMP_MOUNT_PATH}/boot/grub2
+    parted system.img -s mklabel msdos
+    parted system.img -s mkpart primary ext4 1MiB 60MiB
+  else
+    local BOOT_PATH=${TMP_MOUNT_PATH}/boot/efi
+    parted system.img -s mklabel gpt
+    parted system.img -s mkpart primary fat32 1MiB 60MiB
+  fi
   parted system.img -s mkpart primary ext4 60MiB 2160MiB
   parted system.img -s mkpart primary ext4 2160MiB 4260MiB
   parted system.img -s mkpart primary ext4 4260MiB 100%
-  parted system.img -s set 1 boot on
   local device=$(losetup -f)
   losetup "${device}" system.img
 
   mkdir -p "${TMP_MOUNT_PATH}"
 
   init_part system.img2 ROOT-A "${TMP_MOUNT_PATH}"
-  local BOOT_PATH=${TMP_MOUNT_PATH}/boot/efi
+  
   mkdir -p ${BOOT_PATH}
   chmod 755 ${BOOT_PATH}
-  init_part system.img1 BOOT "${BOOT_PATH}"
+  if [ "$BOOT_MODE" = "legacy" ]; then
+    init_part system.img1 GRUB2 "${BOOT_PATH}"
+  else
+    init_part system.img1 BOOT "${BOOT_PATH}"
+  fi
   tar -x -C ${TMP_MOUNT_PATH} -f os.tar
+  if [ "$BOOT_MODE" = "legacy" ]; then
+    sed -i "s/insmod part_gpt/insmod part_msdos/g; \
+s/set root='hd0,gpt2'/set root='hd0,msdos2'/g; \
+s/set root='hd0,gpt3'/set root='hd0,msdos3'/g" \
+"${TMP_MOUNT_PATH}"/boot/grub2/grub.cfg
+  fi
   sync
   cp bootloader.sh "${TMP_MOUNT_PATH}"
   mount_proc_dev_sys "${TMP_MOUNT_PATH}"
-  DEVICE="${device}" chroot "${TMP_MOUNT_PATH}" bash bootloader.sh
+  DEVICE="${device}" BOOT_MODE="${BOOT_MODE}" chroot "${TMP_MOUNT_PATH}" bash bootloader.sh
   rm -rf "${TMP_MOUNT_PATH}/bootloader.sh"
   sync
 
@@ -52,6 +69,7 @@ function create_img() {
   umount "${TMP_MOUNT_PATH}"
 
   losetup -D
+  parted system.img -- set 1 boot on
   qemu-img convert system.img -O qcow2 system.qcow2
 }
 
@@ -70,8 +88,9 @@ function create_pxe_img() {
   tar -xvf os.tar  ./initramfs.img
   mv os.tar kubeos.tar
 }
+
 function create_docker_image() {
-  local DOCKER_IMG="$5"
+  local DOCKER_IMG="$6"
   create_os_tar_from_repo "$@"
   docker build -t ${DOCKER_IMG} -f ./Dockerfile .
 }
@@ -79,14 +98,15 @@ function create_docker_image() {
 function create_vm_img() {
   local opt=$1
   shift
+  local BOOT_MODE=$5
     case $opt in
     "repo")
       create_os_tar_from_repo "$@"
-      create_img
+      create_img "${BOOT_MODE}"
       ;;
     "docker")
       create_os_tar_from_docker "$@"
-      create_img
+      create_img "${BOOT_MODE}"
       ;;
     esac
 

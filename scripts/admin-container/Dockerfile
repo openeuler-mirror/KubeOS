@@ -18,11 +18,11 @@ ADD ./sysmaster-0.2.3-1.oe2203.aarch64.rpm /home
 RUN rpm -ivh  /home/sysmaster-0.2.3-1.oe2203.aarch64.rpm
 
 COPY ./hostshell /usr/bin/
-COPY ./setPasswd.sh /usr/local/bin
-COPY ./setPasswd.service /usr/lib/sysmaster
+COPY ./set-ssh-pub-key.sh /usr/local/bin
+COPY ./set-ssh-pub-key.service /usr/lib/sysmaster
 
 EXPOSE 22
-# set sshd.service adn setPassed.service pulled up by default
-RUN sed -i 's/sysinit.target/sysinit.target;sshd.service;setPasswd.service/g' /usr/lib/sysmaster/basic.target
+# set sshd.service and set-ssh-pub-key.service pulled up by default
+RUN sed -i 's/sysinit.target/sysinit.target;sshd.service;set-ssh-pub-key.service/g' /usr/lib/sysmaster/basic.target
 
 CMD ["/usr/lib/sysmaster/init"]

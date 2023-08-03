@@ -14,334 +14,378 @@ package controllers
 
 import (
 	"context"
-	"fmt"
-	"reflect"
-	"testing"
+	"time"
 
-	corev1 "k8s.io/api/core/v1"
+	"github.com/google/uuid"
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/client-go/rest"
-	controllerruntime "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/manager"
 
-	"openeuler.org/KubeOS/api/v1alpha1"
-	"openeuler.org/KubeOS/pkg/common"
+	upgradev1 "openeuler.org/KubeOS/api/v1alpha1"
+	"openeuler.org/KubeOS/pkg/values"
 )
 
-var config *rest.Config
-var fakeClient client.Client
+var _ = Describe("OsController", func() {
+	const (
+		OSName = "test-os"
 
-type fakeReconciler struct {
-	needGetErr    bool
-	needListErr   bool
-	needUpdateErr bool
-}
+		timeout  = time.Second * 20
+		interval = time.Millisecond * 500
+	)
+	var testNamespace string
+	var node1Name string
 
-// Get is implement of client.Reader.Get
-func (f fakeReconciler) Get(ctx context.Context, key client.ObjectKey, obj client.Object) error {
-	if f.needGetErr {
-		return fmt.Errorf("Not Get")
-	}
-	return nil
-}
+	BeforeEach(func() {
+		var generatedTestNamespace = "test-namespace-" + uuid.New().String()
+		// Add any setup steps that needs to be executed before each test
+		desiredTestNamespace := &v1.Namespace{
+			TypeMeta: metav1.TypeMeta{
+				APIVersion: "v1",
+				Kind:       "Namespace",
+			},
+			ObjectMeta: metav1.ObjectMeta{
+				Name: generatedTestNamespace,
+			},
+		}
 
-// List is implement of client.Reader.List
-func (f fakeReconciler) List(_ context.Context, list client.ObjectList, _ ...client.ListOption) error {
-	if f.needListErr {
-		return fmt.Errorf("Not List")
-	}
-	nodeList := corev1.NodeList{
-		Items: []corev1.Node{{ObjectMeta: metav1.ObjectMeta{Name: "aa", Labels: map[string]string{
-			"saiyan.openeuler.org/images": "aaa",
-		}}}},
-	}
-	reflect.Indirect(reflect.ValueOf(list)).Set(reflect.ValueOf(nodeList))
-	return nil
-}
+		err := k8sClient.Create(context.Background(), desiredTestNamespace)
+		Expect(err).ToNot(HaveOccurred())
 
-// Update is implement of client.Writer.Update
-func (f fakeReconciler) Update(ctx context.Context, obj client.Object, opts ...client.UpdateOption) error {
-	if f.needUpdateErr {
-		return fmt.Errorf("Not update")
-	}
-	return nil
-}
+		existingNamespace := &v1.Namespace{}
+		Eventually(func() bool {
+			err := k8sClient.Get(context.Background(),
+				types.NamespacedName{Name: generatedTestNamespace}, existingNamespace)
+			return err == nil
+		}, timeout, interval).Should(BeTrue())
 
-// Patch is implement of client.Writer.Patch
-func (fakeReconciler) Patch(ctx context.Context, obj client.Object, patch client.Patch,
-	opts ...client.PatchOption) error {
-	return nil
-}
+		testNamespace = existingNamespace.Name
+	})
 
-// test getAndUpdateOS
-func Test_getAndUpdateOS(t *testing.T) {
-	type args struct {
-		ctx  context.Context
-		r    common.ReadStatusWriter
-		name types.NamespacedName
-	}
-	tests := []struct {
-		name        string
-		args        args
-		wantOs      v1alpha1.OS
-		wantNodeNum int
-		wantErr     bool
-	}{
-		{name: "normal", args: args{ctx: context.Background(), r: fakeReconciler{},
-			name: client.ObjectKey{Name: "aa"}}, wantOs: v1alpha1.OS{TypeMeta: metav1.TypeMeta{},
-			ObjectMeta: metav1.ObjectMeta{}, Spec: v1alpha1.OSSpec{}}, wantNodeNum: 1, wantErr: false},
-		{name: "getError", args: args{ctx: context.Background(), r: fakeReconciler{needGetErr: true,
-			needListErr: false, needUpdateErr: false}, name: client.ObjectKey{Name: "aa"}},
-			wantOs: v1alpha1.OS{TypeMeta: metav1.TypeMeta{}, ObjectMeta: metav1.ObjectMeta{},
-				Spec: v1alpha1.OSSpec{}}, wantNodeNum: 0, wantErr: true},
-		{name: "listError", args: args{ctx: context.Background(), r: fakeReconciler{needGetErr: false,
-			needListErr: true, needUpdateErr: false}, name: client.ObjectKey{Name: "aa"}},
-			wantOs: v1alpha1.OS{TypeMeta: metav1.TypeMeta{}, ObjectMeta: metav1.ObjectMeta{},
-				Spec: v1alpha1.OSSpec{}}, wantNodeNum: 0, wantErr: true},
-		{name: "updateError", args: args{ctx: context.Background(), r: fakeReconciler{needGetErr: false,
-			needListErr: false, needUpdateErr: true}, name: client.ObjectKey{Name: "aa"}},
-			wantOs: v1alpha1.OS{TypeMeta: metav1.TypeMeta{}, ObjectMeta: metav1.ObjectMeta{},
-				Spec: v1alpha1.OSSpec{}}, wantNodeNum: 1, wantErr: false},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			gotOs, gotNodeNum, err := getAndUpdateOS(tt.args.ctx, tt.args.r, tt.args.name)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("getAndUpdateOS() error = %v, wantErr %v", err, tt.wantErr)
-				return
+	AfterEach(func() {
+		desiredTestNamespace := &v1.Namespace{
+			TypeMeta: metav1.TypeMeta{
+				APIVersion: "v1",
+				Kind:       "Namespace",
+			},
+			ObjectMeta: metav1.ObjectMeta{
+				Name: testNamespace,
+			},
+		}
+		// Add any teardown steps that needs to be executed after each test
+		err := k8sClient.Delete(context.Background(), desiredTestNamespace,
+			client.PropagationPolicy(metav1.DeletePropagationForeground))
+
+		Expect(err).ToNot(HaveOccurred())
+
+		existingNamespace := &v1.Namespace{}
+		Eventually(func() bool {
+			err := k8sClient.Get(context.Background(), types.NamespacedName{Name: testNamespace},
+				existingNamespace)
+			if err != nil && errors.IsNotFound(err) {
+				return false
 			}
-			if !reflect.DeepEqual(gotOs, tt.wantOs) {
-				t.Errorf("getAndUpdateOS() gotOs = %v, want %v", gotOs, tt.wantOs)
+			return true
+		}, timeout, interval).Should(BeTrue())
+	})
+
+	Context("When we change the OSVersion to previous version and Opstype is rollback", func() {
+		It("Should label the osinstance's nodestatus to upgrading", func() {
+			ctx := context.Background()
+
+			// create Node
+			node1Name = "test-node-" + uuid.New().String()
+			node1 := &v1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      node1Name,
+					Namespace: testNamespace,
+					Labels: map[string]string{
+						"beta.kubernetes.io/os": "linux",
+					},
+				},
+				TypeMeta: metav1.TypeMeta{
+					APIVersion: "v1",
+					Kind:       "Node",
+				},
+				Status: v1.NodeStatus{
+					NodeInfo: v1.NodeSystemInfo{
+						OSImage: "KubeOS v2",
+					},
+				},
 			}
-			if gotNodeNum != tt.wantNodeNum {
-				t.Errorf("getAndUpdateOS() gotNodeNum = %v, want %v", gotNodeNum, tt.wantNodeNum)
+			err := k8sClient.Create(ctx, node1)
+			Expect(err).ToNot(HaveOccurred())
+			existingNode := &v1.Node{}
+			Eventually(func() bool {
+				err := k8sClient.Get(context.Background(),
+					types.NamespacedName{Name: node1Name, Namespace: testNamespace}, existingNode)
+				return err == nil
+			}, timeout, interval).Should(BeTrue())
+
+			// create OSInstance
+			OSIns := &upgradev1.OSInstance{
+				TypeMeta: metav1.TypeMeta{
+					Kind:       "OSInstance",
+					APIVersion: "upgrade.openeuler.org/v1alpha1",
+				},
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      node1Name,
+					Namespace: testNamespace,
+				},
+				Spec: upgradev1.OSInstanceSpec{
+					SysConfigs: upgradev1.SysConfigs{
+						Version: "v1",
+						Configs: []upgradev1.SysConfig{},
+					},
+					UpgradeConfigs: upgradev1.SysConfigs{Configs: []upgradev1.SysConfig{}},
+				},
 			}
+			Expect(k8sClient.Create(ctx, OSIns)).Should(Succeed())
+
+			// Check that the corresponding OSIns CR has been created
+			osInsCRLookupKey := types.NamespacedName{Name: node1Name, Namespace: testNamespace}
+			createdOSIns := &upgradev1.OSInstance{}
+			Eventually(func() bool {
+				err := k8sClient.Get(ctx, osInsCRLookupKey, createdOSIns)
+				return err == nil
+			}, timeout, interval).Should(BeTrue())
+			Expect(createdOSIns.ObjectMeta.Name).Should(Equal(node1Name))
+
+			// create OS CR
+			OS := &upgradev1.OS{
+				TypeMeta: metav1.TypeMeta{
+					APIVersion: "upgrade.openeuler.org/v1alpha1",
+					Kind:       "OS",
+				},
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      OSName,
+					Namespace: testNamespace,
+				},
+				Spec: upgradev1.OSSpec{
+					OpsType:        "rollback",
+					MaxUnavailable: 3,
+					OSVersion:      "KubeOS v1",
+					FlagSafe:       true,
+					MTLS:           false,
+					EvictPodForce:  true,
+					SysConfigs: upgradev1.SysConfigs{
+						Version: "v1",
+						Configs: []upgradev1.SysConfig{},
+					},
+					UpgradeConfigs: upgradev1.SysConfigs{Configs: []upgradev1.SysConfig{}},
+				},
+			}
+			Expect(k8sClient.Create(ctx, OS)).Should(Succeed())
+
+			// Check that the corresponding OS CR has been created
+			osCRLookupKey := types.NamespacedName{Name: OSName, Namespace: testNamespace}
+			createdOS := &upgradev1.OS{}
+			Eventually(func() bool {
+				err := k8sClient.Get(ctx, osCRLookupKey, createdOS)
+				return err == nil
+			}, timeout, interval).Should(BeTrue())
+			Expect(createdOS.Spec.OSVersion).Should(Equal("KubeOS v1"))
+
+			time.Sleep(2 * time.Second) // sleep a while to make sure Reconcile finished
+			osInsCRLookupKey = types.NamespacedName{Name: node1Name, Namespace: testNamespace}
+			createdOSIns = &upgradev1.OSInstance{}
+			Eventually(func() bool {
+				err := k8sClient.Get(ctx, osInsCRLookupKey, createdOSIns)
+				return err == nil
+			}, timeout, interval).Should(BeTrue())
+			Expect(createdOSIns.Spec.NodeStatus).Should(Equal(values.NodeStatusUpgrade.String()))
 		})
-	}
-}
+	})
 
-// test assignUpgrade
-func Test_assignUpgrade(t *testing.T) {
-	type args struct {
-		ctx       context.Context
-		r         common.ReadStatusWriter
-		osVersion string
-		limit     int
-	}
-	tests := []struct {
-		name    string
-		args    args
-		want    bool
-		wantErr bool
-	}{
-		{name: "normal", args: args{ctx: context.Background(), r: fakeReconciler{}, osVersion: "openEuler21.03",
-			limit: 3}, want: false, wantErr: false},
-		{name: "overLimit", args: args{ctx: context.Background(), r: fakeReconciler{}, osVersion: "openEuler21.03",
-			limit: 0}, want: true, wantErr: false},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got, err := assignUpgrade(tt.args.ctx, tt.args.r, tt.args.osVersion, tt.args.limit)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("assignUpgrade() error = %v, wantErr %v", err, tt.wantErr)
-				return
+	Context("When we want to configure node", func() {
+		It("Should update OSInstance spec and update NodeStatus to config", func() {
+			ctx := context.Background()
+			// create Node
+			node1Name = "test-node-" + uuid.New().String()
+			node1 := &v1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      node1Name,
+					Namespace: testNamespace,
+					Labels: map[string]string{
+						"beta.kubernetes.io/os": "linux",
+					},
+				},
+				TypeMeta: metav1.TypeMeta{
+					APIVersion: "v1",
+					Kind:       "Node",
+				},
+				Status: v1.NodeStatus{
+					NodeInfo: v1.NodeSystemInfo{
+						OSImage: "KubeOS v2",
+					},
+				},
 			}
-			if got != tt.want {
-				t.Errorf("assignUpgrade() got = %v, want %v", got, tt.want)
-			}
-		})
-	}
-}
+			err := k8sClient.Create(ctx, node1)
+			Expect(err).ToNot(HaveOccurred())
+			existingNode := &v1.Node{}
+			Eventually(func() bool {
+				err := k8sClient.Get(context.Background(),
+					types.NamespacedName{Name: node1Name, Namespace: testNamespace}, existingNode)
+				return err == nil
+			}, timeout, interval).Should(BeTrue())
 
-// test getNodes
-func Test_getNodes(t *testing.T) {
-	type args struct {
-		limit int
-		reqs  []labels.Requirement
-	}
-	tests := []struct {
-		name    string
-		args    args
-		want    []corev1.Node
-		wantErr bool
-	}{
-		{name: "normal", args: args{}, want: []corev1.Node{{ObjectMeta: metav1.ObjectMeta{Name: "aa",
-			Labels: map[string]string{"saiyan.openeuler.org/images": "aaa"}}}}, wantErr: false},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got, err := getNodes(context.Background(), fakeReconciler{}, tt.args.limit, tt.args.reqs...)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("getNodes() error = %v, wantErr %v", err, tt.wantErr)
-				return
+			OSIns := &upgradev1.OSInstance{
+				TypeMeta: metav1.TypeMeta{
+					Kind:       "OSInstance",
+					APIVersion: "upgrade.openeuler.org/v1alpha1",
+				},
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      node1Name,
+					Namespace: testNamespace,
+				},
+				Spec: upgradev1.OSInstanceSpec{
+					SysConfigs: upgradev1.SysConfigs{
+						Version: "v1",
+						Configs: []upgradev1.SysConfig{},
+					},
+					UpgradeConfigs: upgradev1.SysConfigs{Configs: []upgradev1.SysConfig{}},
+					NodeStatus:     values.NodeStatusIdle.String(),
+				},
 			}
-			if !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("getNodes() got = %v, want %v", got, tt.want)
-			}
-		})
-	}
-}
+			Expect(k8sClient.Create(ctx, OSIns)).Should(Succeed())
 
-// test checkUpgrading
-func Test_checkUpgrading(t *testing.T) {
-	type args struct {
-		ctx            context.Context
-		r              common.ReadStatusWriter
-		maxUnavailable int
-	}
-	tests := []struct {
-		name    string
-		args    args
-		want    int
-		wantErr bool
-	}{
-		{name: "normal", args: args{ctx: context.Background(), r: fakeReconciler{}, maxUnavailable: 3},
-			want: 2, wantErr: false},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got, err := checkUpgrading(tt.args.ctx, tt.args.r, tt.args.maxUnavailable)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("checkUpgrading() error = %v, wantErr %v", err, tt.wantErr)
-				return
-			}
-			if got != tt.want {
-				t.Errorf("checkUpgrading() got = %v, want %v", got, tt.want)
-			}
-		})
-	}
-}
+			osInsCRLookupKey := types.NamespacedName{Name: node1Name, Namespace: testNamespace}
+			createdOSIns := &upgradev1.OSInstance{}
+			Eventually(func() bool {
+				err := k8sClient.Get(ctx, osInsCRLookupKey, createdOSIns)
+				return err == nil
+			}, timeout, interval).Should(BeTrue())
+			Expect(createdOSIns.ObjectMeta.Name).Should(Equal(node1Name))
 
-// test SetupWithManager
-func TestOSReconciler_SetupWithManager(t *testing.T) {
-	type fields struct {
-		Scheme *runtime.Scheme
-		Client client.Client
-	}
-	fakeClient, _ = client.New(config, client.Options{Scheme: runtime.NewScheme()})
-	var mManager manager.Manager
-	mManager, _ = controllerruntime.NewManager(config, manager.Options{Scheme: runtime.NewScheme()})
-	type args struct {
-		mgr controllerruntime.Manager
-	}
-	tests := []struct {
-		name    string
-		fields  fields
-		args    args
-		wantErr bool
-	}{
-		{name: "normal", fields: fields{Scheme: runtime.NewScheme(), Client: fakeClient}, args: args{mManager},
-			wantErr: true},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			r := &OSReconciler{
-				Client: tt.fields.Client,
-				Scheme: tt.fields.Scheme,
+			OS := &upgradev1.OS{
+				TypeMeta: metav1.TypeMeta{
+					APIVersion: "upgrade.openeuler.org/v1alpha1",
+					Kind:       "OS",
+				},
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      OSName,
+					Namespace: testNamespace,
+				},
+				Spec: upgradev1.OSSpec{
+					OpsType:        "config",
+					MaxUnavailable: 3,
+					OSVersion:      "KubeOS v1",
+					FlagSafe:       true,
+					MTLS:           false,
+					EvictPodForce:  true,
+					SysConfigs: upgradev1.SysConfigs{
+						Version: "v2",
+						Configs: []upgradev1.SysConfig{
+							{
+								Model: "kernel.sysctl",
+								Contents: []upgradev1.Content{
+									{Key: "key1", Value: "a"},
+									{Key: "key2", Value: "b"},
+								},
+							},
+						},
+					},
+					UpgradeConfigs: upgradev1.SysConfigs{Configs: []upgradev1.SysConfig{}},
+				},
 			}
-			if err := r.SetupWithManager(tt.args.mgr); (err != nil) != tt.wantErr {
-				t.Errorf("SetupWithManager() error = %v, wantErr %v", err, tt.wantErr)
-			}
-		})
-	}
-}
+			Expect(k8sClient.Create(ctx, OS)).Should(Succeed())
 
-// test Reconcile
-func TestReconcile(t *testing.T) {
-	type args struct {
-		ctx context.Context
-		r   common.ReadStatusWriter
-		req controllerruntime.Request
-	}
-	tests := []struct {
-		name    string
-		args    args
-		want    controllerruntime.Result
-		wantErr bool
-	}{
-		{name: "normal", args: args{ctx: context.Background(), r: fakeReconciler{}, req: controllerruntime.Request{}},
-			want: controllerruntime.Result{Requeue: true, RequeueAfter: 15000000000}, wantErr: false},
-		{name: "getErr", args: args{ctx: context.Background(), r: fakeReconciler{needGetErr: true, needListErr: false,
-			needUpdateErr: false}, req: controllerruntime.Request{}},
-			want: controllerruntime.Result{Requeue: true, RequeueAfter: 0}, wantErr: true},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got, err := Reconcile(tt.args.ctx, tt.args.r, tt.args.req)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("Reconcile() error = %v, wantErr %v", err, tt.wantErr)
-				return
-			}
-			if !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("Reconcile() got = %v, want %v", got, tt.want)
-			}
-		})
-	}
-}
+			osCRLookupKey := types.NamespacedName{Name: OSName, Namespace: testNamespace}
+			createdOS := &upgradev1.OS{}
+			Eventually(func() bool {
+				err := k8sClient.Get(ctx, osCRLookupKey, createdOS)
+				return err == nil
+			}, timeout, interval).Should(BeTrue())
+			Expect(createdOS.Spec.OSVersion).Should(Equal("KubeOS v1"))
 
-// test Min
-func TestMin(t *testing.T) {
-	little, big := 3, 4
-	type args struct {
-		a int
-		b int
-	}
-	tests := []struct {
-		name string
-		args args
-		want int
-	}{
-		{name: "normal", args: args{a: little, b: big}, want: little},
-		{name: "equal", args: args{a: little, b: little}, want: little},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := min(tt.args.a, tt.args.b); got != tt.want {
-				t.Errorf("Min() = %v, want %v", got, tt.want)
-			}
+			time.Sleep(2 * time.Second) // sleep a while to make sure Reconcile finished
+			configedOSIns := &upgradev1.OSInstance{}
+			Eventually(func() bool {
+				err := k8sClient.Get(ctx, osInsCRLookupKey, configedOSIns)
+				return err == nil
+			}, timeout, interval).Should(BeTrue())
+			Expect(configedOSIns.Spec.NodeStatus).Should(Equal(values.NodeStatusConfig.String()))
+			Expect(configedOSIns.Spec.SysConfigs.Version).Should(Equal("v2"))
 		})
-	}
-}
+	})
 
-// test Reconcile
-func TestOSReconciler_Reconcile(t *testing.T) {
-	type fields struct {
-		Scheme *runtime.Scheme
-		Client client.Client
-	}
-	type args struct {
-		ctx context.Context
-		req controllerruntime.Request
-	}
-	tests := []struct {
-		name    string
-		fields  fields
-		args    args
-		want    controllerruntime.Result
-		wantErr bool
-	}{
-		{name: "normal", fields: fields{Scheme: runtime.NewScheme(), Client: fakeClient},
-			args: args{ctx: context.Background(), req: controllerruntime.Request{}}, want: controllerruntime.Result{},
-			wantErr: false},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			r := &OSReconciler{
-				Client: tt.fields.Client,
-				Scheme: tt.fields.Scheme,
+	Context("When we deploy OS, but there is a node without osinstance", func() {
+		It("Should not label upgrading and skip that node", func() {
+			ctx := context.Background()
+			// create Node
+			node1Name = "test-node-" + uuid.New().String()
+			node1 := &v1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      node1Name,
+					Namespace: testNamespace,
+					Labels: map[string]string{
+						"beta.kubernetes.io/os": "linux",
+					},
+				},
+				TypeMeta: metav1.TypeMeta{
+					APIVersion: "v1",
+					Kind:       "Node",
+				},
+				Status: v1.NodeStatus{
+					NodeInfo: v1.NodeSystemInfo{
+						OSImage: "KubeOS v1",
+					},
+				},
 			}
-			got, err := r.Reconcile(tt.args.ctx, tt.args.req)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("Reconcile() error = %v, wantErr %v", err, tt.wantErr)
-				return
+			err := k8sClient.Create(ctx, node1)
+			Expect(err).ToNot(HaveOccurred())
+			existingNode := &v1.Node{}
+			Eventually(func() bool {
+				err := k8sClient.Get(context.Background(),
+					types.NamespacedName{Name: node1Name, Namespace: testNamespace}, existingNode)
+				return err == nil
+			}, timeout, interval).Should(BeTrue())
+
+			OS := &upgradev1.OS{
+				TypeMeta: metav1.TypeMeta{
+					APIVersion: "upgrade.openeuler.org/v1alpha1",
+					Kind:       "OS",
+				},
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      OSName,
+					Namespace: testNamespace,
+				},
+				Spec: upgradev1.OSSpec{
+					OpsType:        "upgrade",
+					MaxUnavailable: 3,
+					OSVersion:      "KubeOS v2",
+					FlagSafe:       true,
+					MTLS:           false,
+					EvictPodForce:  true,
+					SysConfigs: upgradev1.SysConfigs{
+						Configs: []upgradev1.SysConfig{},
+					},
+					UpgradeConfigs: upgradev1.SysConfigs{Configs: []upgradev1.SysConfig{}},
+				},
 			}
-			if !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("Reconcile() got = %v, want %v", got, tt.want)
-			}
+			Expect(k8sClient.Create(ctx, OS)).Should(Succeed())
+
+			osCRLookupKey := types.NamespacedName{Name: OSName, Namespace: testNamespace}
+			createdOS := &upgradev1.OS{}
+			Eventually(func() bool {
+				err := k8sClient.Get(ctx, osCRLookupKey, createdOS)
+				return err == nil
+			}, timeout, interval).Should(BeTrue())
+			Expect(createdOS.Spec.OSVersion).Should(Equal("KubeOS v2"))
+
+			time.Sleep(1 * time.Second) // sleep a while to make sure Reconcile finished
+			existingNode = &v1.Node{}
+			Eventually(func() bool {
+				err := k8sClient.Get(context.Background(),
+					types.NamespacedName{Name: node1Name, Namespace: testNamespace}, existingNode)
+				return err == nil
+			}, timeout, interval).Should(BeTrue())
+			_, ok := existingNode.Labels[values.LabelUpgrading]
+			Expect(ok).Should(Equal(false))
 		})
-	}
-}
+	})
+
+})

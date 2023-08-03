@@ -60,5 +60,10 @@ message ConfigureResponse {
 message SysConfig {
    string model = 1;
    string configPath = 2;
-   map<string, string> contents = 3;
+   map<string, KeyInfo> contents = 3;
+}
+
+message KeyInfo {
+  string value = 1;
+  string operation = 2;
 }

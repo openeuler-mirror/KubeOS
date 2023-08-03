@@ -23,7 +23,8 @@ endif
 
 GO := go
 ifeq ($(shell go help mod >/dev/null 2>&1 && echo true), true)
-export GO_BUILD=GO111MODULE=on; $(GO) build -mod=vendor
+export GO111MODULE=on
+export GO_BUILD = $(GO) build -mod=vendor
 else
 export GO_BUILD=$(GO) build
 endif
@@ -31,32 +32,39 @@ endif
 VERSION_FILE := ./VERSION
 VERSION := $(shell cat $(VERSION_FILE))
 PACKAGE:=openeuler.org/KubeOS/pkg/version
-BUILDFLAGS = -buildmode=pie -trimpath
-LDFLAGS = -w -s -buildid=IdByKubeOS -linkmode=external -extldflags=-static -extldflags=-zrelro -extldflags=-Wl,-z,now -X ${PACKAGE}.Version=${VERSION}
-ENV = CGO_CFLAGS="-fstack-protector-all" CGO_CPPFLAGS="-D_FORTIFY_SOURCE=2 -O2"
 
-all: proxy operator agent
+EXTRALDFLAGS := -linkmode=external -extldflags=-ftrapv \
+	-extldflags=-Wl,-z,relro,-z,now
+
+LD_FLAGS := -ldflags '-buildid=IdByKubeOS \
+	-X ${PACKAGE}.Version=${VERSION} \
+	$(EXTRALDFLAGS)   '
+
+GO_BUILD_CGO = CGO_ENABLED=1 \
+	CGO_CFLAGS="-fstack-protector-strong -fPIE -fPIC -D_FORTIFY_SOURCE=2 -O2" \
+	CGO_LDFLAGS_ALLOW='-Wl,-z,relro,-z,now' \
+	CGO_LDFLAGS="-Wl,-z,relro,-z,now -Wl,-z,noexecstack" \
+	${GO_BUILD} -buildmode=pie -trimpath -tags "seccomp selinux static_build cgo netgo osusergo"
+
+all: proxy operator agent hostshell
 
 # Build binary
 proxy:
-	${ENV} ${GO_BUILD} -ldflags '$(LDFLAGS)' $(BUILDFLAGS) -o bin/proxy cmd/proxy/main.go
+	${GO_BUILD_CGO} ${LD_FLAGS} -o bin/proxy  cmd/proxy/main.go
 	strip bin/proxy
 
 operator:
-	${ENV} ${GO_BUILD} -ldflags '$(LDFLAGS)' $(BUILDFLAGS) -o bin/operator cmd/operator/main.go
+	${GO_BUILD_CGO} ${LD_FLAGS} -o bin/operator cmd/operator/main.go
 	strip bin/operator
 
 agent:
-	${ENV} ${GO_BUILD} -tags "osusergo netgo static_build" -ldflags '$(LDFLAGS)' $(BUILDFLAGS) -o bin/os-agent cmd/agent/main.go
+	${GO_BUILD_CGO} ${LD_FLAGS} -o bin/os-agent cmd/agent/main.go
 	strip bin/os-agent
 
 hostshell:
-	${ENV} ${GO_BUILD} -tags "osusergo netgo static_build" -ldflags '$(LDFLAGS)' $(BUILDFLAGS) -o bin/hostshell cmd/admin-container/main.go
+	${GO_BUILD_CGO} ${LD_FLAGS} -o bin/hostshell cmd/admin-container/main.go
 	strip bin/hostshell
 
-test:
-	$(GO) test $(shell go list ./... ) -race -cover -count=1 -timeout=300s
-	
 # Install CRDs into a cluster
 install: manifests
 	kubectl apply -f confg/crd
@@ -101,15 +109,44 @@ docker-push:
 	docker push ${IMG_OPERATOR}
 	docker push ${IMG_PROXY}
 
-# Download controller-gen locally if necessary
-CONTROLLER_GEN = $(shell pwd)/bin/controller-gen
-controller-gen:
-	$(call go-get-tool,$(CONTROLLER_GEN),sigs.k8s.io/controller-tools/cmd/controller-gen@v0.5.0)
+## Location to install dependencies to
+LOCALBIN = $(shell pwd)/bin
+$(LOCALBIN):
+	mkdir -p $(LOCALBIN)
+
+## Tool Binaries
+CONTROLLER_GEN = $(LOCALBIN)/controller-gen
+ENVTEST = $(LOCALBIN)/setup-envtest
+
+## Tool Versionsjk
+CONTROLLER_TOOLS_VERSION = v0.5.0
+ENVTEST_K8S_VERSION = 1.20.2 ## ENVTEST_K8S_VERSION refers to the version of kubebuilder assets to be downloaded by envtest binary.
+
+controller-gen: $(CONTROLLER_GEN) ## Download controller-gen locally if necessary. If wrong version is installed, it will be overwritten.
+$(CONTROLLER_GEN): $(LOCALBIN)
+	test -s $(LOCALBIN)/controller-gen && $(LOCALBIN)/controller-gen --version | grep -q $(CONTROLLER_TOOLS_VERSION) || \
+	GOBIN=$(LOCALBIN) go install sigs.k8s.io/controller-tools/cmd/controller-gen@$(CONTROLLER_TOOLS_VERSION)
 
 # Download kustomize locally if necessary
-KUSTOMIZE = $(shell pwd)/bin/kustomize
+KUSTOMIZE = $(LOCALBIN)/kustomize
 kustomize:
 	$(call go-get-tool,$(KUSTOMIZE),sigs.k8s.io/kustomize/kustomize/v3@v3.8.7)
+
+ARCH := $(shell uname -m)
+TEST_CMD := go test ./... -race -count=1 -timeout=300s -cover -gcflags=all=-l
+
+ifeq ($(ARCH), aarch64)
+	TEST_CMD := ETCD_UNSUPPORTED_ARCH=arm64 $(TEST_CMD)
+endif
+
+.PHONY: test
+test: manifests fmt vet envtest ## Run tests.
+	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" $(TEST_CMD)
+
+.PHONY: envtest
+envtest: $(ENVTEST) ## Download envtest-setup locally if necessary.
+$(ENVTEST): $(LOCALBIN)
+	test -s $(LOCALBIN)/setup-envtest || GOBIN=$(LOCALBIN) go install sigs.k8s.io/controller-runtime/tools/setup-envtest@latest
 
 # go-get-tool will 'go get' any package $2 and install it to $1.
 PROJECT_DIR := $(shell dirname $(abspath $(lastword $(MAKEFILE_LIST))))

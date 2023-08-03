@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 
@@ -27,9 +28,11 @@ import (
 )
 
 const (
-	defaultProcPath            = "/proc/sys/"
-	defaultKernelConPath       = "/etc/sysctl.conf"
 	defaultKernelConPermission = 0644
+	defaultGrubCfgPermission   = 0751
+	// Config has two format: key or key=value. Following variables stand for the length after splitting
+	onlyKey = 1
+	kvPair  = 2
 )
 
 // Configuration defines interface of configuring
@@ -43,11 +46,18 @@ type KernelSysctl struct{}
 // SetConfig sets kernel.sysctl configuration
 func (k KernelSysctl) SetConfig(config *agent.SysConfig) error {
 	logrus.Info("start set kernel.sysctl")
-	for key, value := range config.Contents {
+	for key, keyInfo := range config.Contents {
 		procPath := getProcPath(key)
-
-		if err := os.WriteFile(procPath, []byte(value), defaultKernelConPermission); err != nil {
-			return err
+		if keyInfo.Operation == "delete" {
+			logrus.Warnf("Failed to delete kernel.sysctl config with key %s", key)
+		} else if keyInfo.Operation == "" && keyInfo.Value != "" {
+			if err := os.WriteFile(procPath, []byte(keyInfo.Value), defaultKernelConPermission); err != nil {
+				logrus.Errorf("Failed to write kernel.sysctl with key %s: %v", key, err)
+				return err
+			}
+			logrus.Infof("Configured kernel.sysctl %s=%s", key, keyInfo.Value)
+		} else {
+			logrus.Errorf("Failed to parse kernel.sysctl config operation %s value %s", keyInfo.Operation, keyInfo.Value)
 		}
 	}
 	return nil
@@ -58,35 +68,149 @@ type KerSysctlPersist struct{}
 
 // SetConfig sets kernel.sysctl.persist configuration
 func (k KerSysctlPersist) SetConfig(config *agent.SysConfig) error {
-	logrus.Info("start set kernel.sysctl")
+	logrus.Info("start set kernel.sysctl.persist")
 	configPath := config.ConfigPath
 	if configPath == "" {
-		configPath = defaultKernelConPath
+		configPath = getKernelConPath()
 	}
-	fileExist, err := checkConfigPath(configPath)
-	if err != nil {
+	if err := createConfigPath(configPath); err != nil {
+		logrus.Errorf("Failed to find config path: %v", err)
 		return err
 	}
-	configs, err := getAndSetConfigsFromFile(config.Contents, configPath, fileExist)
+	configs, err := getAndSetConfigsFromFile(config.Contents, configPath)
 	if err != nil {
+		logrus.Errorf("Failed to set persist kernel configs: %v", err)
 		return err
 	}
 	if err = writeConfigToFile(configPath, configs); err != nil {
+		logrus.Errorf("Failed to write configs to file: %v", err)
 		return err
 	}
 	return nil
 }
 
 // GrubCmdline represents grub.cmdline configuration
-type GrubCmdline struct{}
+type GrubCmdline struct {
+	// it represents which partition the user want to configure
+	isCurPartition bool
+}
 
 // SetConfig sets grub.cmdline configuration
 func (g GrubCmdline) SetConfig(config *agent.SysConfig) error {
-	logrus.Info("start set kernel.sysctl")
-	for key, value := range config.Contents {
-		fmt.Println(key + "=" + value)
+	logrus.Info("start set grub.cmdline configuration")
+	fileExist, err := checkFileExist(getGrubCfgPath())
+	if err != nil {
+		logrus.Errorf("Failed to find config path: %v", err)
+		return err
+	}
+	if !fileExist {
+		return fmt.Errorf("failed to find grub.cfg %s", getGrubCfgPath())
+	}
+	configPartition, err := getConfigPartition(g.isCurPartition)
+	if err != nil {
+		logrus.Errorf("Failed to get config partition: %v", err)
+		return err
+	}
+	lines, err := getAndSetGrubCfg(config.Contents, configPartition)
+	if err != nil {
+		logrus.Errorf("Failed to set grub configs: %v", err)
+		return err
+	}
+	if err := writeConfigToFile(getGrubCfgPath(), lines); err != nil {
+		return err
 	}
 	return nil
+}
+
+// getConfigPartition return false if the user want to configure partition A,
+// return true if the user want to configure partition B
+func getConfigPartition(isCurPartition bool) (bool, error) {
+	partA, partB, err := getRootfsDisks()
+	if err != nil {
+		return false, err
+	}
+	_, next, err := getNextPart(partA, partB)
+	if err != nil {
+		return false, err
+	}
+	var flag bool
+	if next == "B" {
+		flag = true
+	}
+	return isCurPartition != flag, nil
+}
+
+func getAndSetGrubCfg(expectConfigs map[string]*agent.KeyInfo, configPartition bool) ([]string, error) {
+	file, err := os.OpenFile(getGrubCfgPath(), os.O_RDWR, defaultGrubCfgPermission)
+	if err != nil {
+		return []string{}, err
+	}
+	defer file.Close()
+
+	reFindCurLinux := `^\s*linux.*root=.*`
+	r, err := regexp.Compile(reFindCurLinux)
+	if err != nil {
+		return []string{}, err
+	}
+
+	var lines []string
+	var matchCount bool
+	configScanner := bufio.NewScanner(file)
+	for configScanner.Scan() {
+		line := configScanner.Text()
+		if r.MatchString(line) {
+			if matchCount == configPartition {
+				line, err = modifyLinuxCfg(expectConfigs, line)
+				if err != nil {
+					return []string{}, fmt.Errorf("error modify grub.cfg %v", err)
+				}
+			}
+			matchCount = true
+		}
+		lines = append(lines, line)
+	}
+	return lines, nil
+}
+
+func modifyLinuxCfg(m map[string]*agent.KeyInfo, line string) (string, error) {
+	expectConfigs := deepCopyConfigMap(m)
+	newConfigs := []string{"      "}
+	oldConfigs := strings.Split(line, " ")
+	for _, oldConfig := range oldConfigs {
+		if oldConfig == "" {
+			continue
+		}
+		// At most 2 substrings can be returned to satisfy the case like root=UUID=xxxx
+		config := strings.SplitN(oldConfig, "=", kvPair)
+		if len(config) != onlyKey && len(config) != kvPair {
+			return "", fmt.Errorf("cannot parse grub.cfg linux line %s", oldConfig)
+		}
+		newKeyInfo, ok := expectConfigs[config[0]]
+		var newConfig string
+		if ok && newKeyInfo.Operation == "delete" {
+			newConfig = handleDeleteKey(config, newKeyInfo)
+		} else {
+			newConfig = handleUpdateKey(config, newKeyInfo, ok)
+		}
+		newConfigs = append(newConfigs, newConfig)
+		delete(expectConfigs, config[0])
+	}
+	newConfig := handleAddKey(expectConfigs, true)
+	newConfigs = append(newConfigs, newConfig...)
+	return convertNewConfigsToString(newConfigs)
+}
+
+func convertNewConfigsToString(newConfigs []string) (string, error) {
+	var newLine strings.Builder
+	for _, newConfig := range newConfigs {
+		if newConfig == "" {
+			continue
+		}
+		if _, err := fmt.Fprintf(&newLine, " %s", newConfig); err != nil {
+			return "", err
+		}
+	}
+	return newLine.String(), nil
 }
 
 func startConfig(configs []*agent.SysConfig) error {
@@ -106,64 +230,60 @@ func ConfigFactoryTemplate(configType string, config *agent.SysConfig) error {
 	doConfig.Do(func() {
 		configTemplate[KernelSysctlName.String()] = new(KernelSysctl)
 		configTemplate[KerSysctlPersistName.String()] = new(KerSysctlPersist)
-		configTemplate[GrubCmdlineName.String()] = new(GrubCmdline)
+		configTemplate[GrubCmdlineCurName.String()] = &GrubCmdline{isCurPartition: true}
+		configTemplate[GrubCmdlineNextName.String()] = &GrubCmdline{isCurPartition: false}
 	})
-	if _,ok := configTemplate[configType];ok{
+	if _, ok := configTemplate[configType]; ok {
 		return configTemplate[configType].SetConfig(config)
 	}
-	return fmt.Errorf("get configTemplate error : cannot recoginze configType %s",configType)
+	return fmt.Errorf("get configTemplate error : cannot recoginze configType %s", configType)
 }
 
 func getProcPath(key string) string {
-	return filepath.Join(defaultProcPath, strings.Replace(key, ".", "/", -1))
+	return filepath.Join(getDefaultProcPath(), strings.Replace(key, ".", "/", -1))
 }
 
-func getAndSetConfigsFromFile(expectConfigs map[string]string, path string, fileExist bool) ([]string, error) {
+func getAndSetConfigsFromFile(expectConfigs map[string]*agent.KeyInfo, path string) ([]string, error) {
 	var configsWrite []string
-	if fileExist {
-		file, err := os.Open(path)
-		if err != nil {
-			return nil, err
-		}
-		defer file.Close()
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
 
-		configScanner := bufio.NewScanner(file)
-		for configScanner.Scan() {
-			line := configScanner.Text()
-			// if line is comment or blank
-			if strings.HasPrefix(line, "#") || strings.HasPrefix(line, ";") || line == "" {
-				configsWrite = append(configsWrite, line)
-				continue
-			}
-			configKV := strings.Split(line, "=")
-			requiredLen := 2 // If it is in the key=value format, the length after splitting is 2
-			if len(configKV) != requiredLen {
-				logrus.Errorln("could not parse systctl config %s", line)
-				return nil, fmt.Errorf("could not parse systctl config %s", line)
-			}
-			key := strings.TrimSpace(configKV[0])
-			if newValue, ok := expectConfigs[key]; ok {
-				config := key + " = " + newValue
-				configsWrite = append(configsWrite, config)
-				delete(expectConfigs, key)
-				continue
-			}
+	configScanner := bufio.NewScanner(file)
+	for configScanner.Scan() {
+		line := configScanner.Text()
+		// if line is comment or blank
+		if strings.HasPrefix(line, "#") || strings.HasPrefix(line, ";") || line == "" {
 			configsWrite = append(configsWrite, line)
+			continue
 		}
-		if err = configScanner.Err(); err != nil {
-			return nil, err
+		configKV := strings.Split(line, "=")
+		if len(configKV) != kvPair {
+			logrus.Errorf("could not parse systctl config %s", line)
+			return nil, fmt.Errorf("could not parse systctl config %s", line)
 		}
+		newKeyInfo, ok := expectConfigs[configKV[0]]
+		var newConfig string
+		if ok && newKeyInfo.Operation == "delete" {
+			newConfig = handleDeleteKey(configKV, newKeyInfo)
+		} else {
+			newConfig = handleUpdateKey(configKV, newKeyInfo, ok)
+		}
+		configsWrite = append(configsWrite, newConfig)
+		delete(expectConfigs, configKV[0])
 	}
-	for newKey, newValue := range expectConfigs {
-		config := newKey + " = " + newValue
-		configsWrite = append(configsWrite, config)
+	if err = configScanner.Err(); err != nil {
+		return nil, err
 	}
-
+	newConfig := handleAddKey(expectConfigs, false)
+	configsWrite = append(configsWrite, newConfig...)
 	return configsWrite, nil
 }
 
 func writeConfigToFile(path string, configs []string) error {
-	logrus.Info("write configuration to file", path)
+	logrus.Info("write configuration to file ", path)
 	f, err := os.OpenFile(path, os.O_RDWR|os.O_TRUNC, defaultKernelConPermission)
 	if err != nil {
 		return err
@@ -171,6 +291,9 @@ func writeConfigToFile(path string, configs []string) error {
 	defer f.Close()
 	w := bufio.NewWriter(f)
 	for _, line := range configs {
+		if line == "" {
+			continue
+		}
 		if _, err = w.WriteString(line + "\n"); err != nil {
 			return err
 		}
@@ -181,18 +304,90 @@ func writeConfigToFile(path string, configs []string) error {
 	return nil
 }
 
-func checkConfigPath(configPath string) (bool, error) {
+func createConfigPath(configPath string) error {
 	fileExist, err := checkFileExist(configPath)
 	if err != nil {
-		return false, err
+		return err
 	}
-	if !fileExist {
-		f, err := os.Create(configPath)
-		if err != nil {
-			return false, err
+	if fileExist {
+		return nil
+	}
+
+	f, err := os.Create(configPath)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	return nil
+}
+
+func getDefaultProcPath() string {
+	return "/proc/sys/"
+}
+
+func getKernelConPath() string {
+	return "/etc/sysctl.conf"
+}
+
+func getGrubCfgPath() string {
+	return "/boot/efi/EFI/openEuler/grub.cfg"
+}
+
+// handleDeleteKey deletes key if oldValue==newValue and returns "" string. Otherwier, it returns key=oldValue
+func handleDeleteKey(config []string, configInfo *agent.KeyInfo) string {
+	if len(config) == onlyKey {
+		logrus.Infoln("delete configuration ", config[0])
+		return ""
+	}
+	key, oldValue := config[0], config[1]
+	if oldValue != configInfo.Value {
+		logrus.Warnf("Failed to delete key %s with inconsistent values "+
+			"%s and %s", key, oldValue, configInfo.Value)
+		return strings.Join(config, "=")
+	}
+	logrus.Infof("delete configuration %s=%s", key, oldValue)
+	return ""
+}
+
+// handleUpdateKey updates key if key is found, otherwise it returns old config.
+func handleUpdateKey(config []string, configInfo *agent.KeyInfo, isFound bool) string {
+	if len(config) == onlyKey {
+		return config[0]
+	}
+	key, oldValue := config[0], config[1]
+	if !isFound {
+		return key + "=" + oldValue
+	}
+	if configInfo.Operation != "" {
+		logrus.Warnf("Unknown operation %s, updating key %s with value %s by default",
+			configInfo.Operation, key, configInfo.Value)
+	}
+	if configInfo.Value == "" {
+		logrus.Warnf("Failed to update key %s with null value", key)
+		return key + "=" + oldValue
+	}
+	newValue := strings.TrimSpace(configInfo.Value)
+	logrus.Infof("update configuration %s=%s", key, newValue)
+	return key + "=" + newValue
+}
+
+func handleAddKey(m map[string]*agent.KeyInfo, isOnlyKeyValid bool) []string {
+	var configs []string
+	for key, keyInfo := range m {
+		if keyInfo.Operation == "delete" {
+			logrus.Warnf("Failed to delete inexistent key %s", key)
+			continue
 		}
-		defer f.Close()
-		return false, nil
+		k, v := strings.TrimSpace(key), strings.TrimSpace(keyInfo.Value)
+		if keyInfo.Value == "" && isOnlyKeyValid {
+			logrus.Infoln("add configuration ", k)
+			configs = append(configs, k)
+		} else if keyInfo.Value == "" {
+			logrus.Warnf("Failed to add key %s with null value", k)
+		} else {
+			logrus.Infof("add configuration %s=%s", k, v)
+			configs = append(configs, fmt.Sprintf("%s=%s", k, v))
+		}
 	}
-	return true, nil
+	return configs
 }

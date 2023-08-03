@@ -1,43 +1,63 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: root-secret
+data:
+  ssh-pub-key: your-ssh-pub-key
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: admin-container
+  name: admin-container-sysmaster
   namespace: default
   labels:
-    control-plane: admin-container
+      control-plane: admin-container-sysmaster
 spec:
   selector:
     matchLabels:
-      control-plane: admin-container
+      control-plane: admin-container-sysmaster
   replicas: 1
   template:
     metadata:
       labels:
-        control-plane: admin-container
+        control-plane: admin-container-sysmaster
     spec:
       hostPID: true
       containers:
-        - name: admin-container
-          image: edit.your.admin-container.image
-          securityContext:
-            privileged: true
-          ports:
-            - containerPort: 22
-          env:
-            - name: container
-              value: containerd
-      nodeName: edit.your.target.node
+      - name: admin-container-sysmaster
+        image: your_imageRepository/admin_imageName:version
+        imagePullPolicy: Always
+        securityContext:
+          privileged: true
+        ports:
+          - containerPort: 22
+        # sysmaster要求
+        env:
+          - name: container
+            value: containerd
+        volumeMounts:
+        # name 必须与下面的卷名匹配
+        - name: secret-volume
+        # mountPath必须为/etc/secret-volume
+          mountPath: /etc/secret-volume
+          readOnly: true
+      nodeName: your-worker-node-name
+      volumes:
+        - name: secret-volume
+          secret:
+            # secretName必须与上面指定的Secret的name相同
+            secretName: root-secret
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: admin-container
+  name: admin-container-sysmaster
   namespace: default
 spec:
   type: NodePort
   ports:
     - port: 22
       targetPort: 22
-      nodePort: 32388
+      nodePort: your-exposed-port
   selector:
-    control-plane: admin-container
+      control-plane: admin-container-sysmaster

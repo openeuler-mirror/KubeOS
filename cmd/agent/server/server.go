@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/sirupsen/logrus"
+
 	pb "openeuler.org/KubeOS/cmd/agent/api"
 )
 
@@ -119,6 +120,7 @@ func (s *Server) update(req *pb.UpdateRequest) error {
 		return err
 	}
 	side, next, err := getNextPart(partA, partB)
+	logrus.Infoln("switching to " + side + " partition " + next)
 	if err != nil {
 		return err
 	}
@@ -137,8 +139,18 @@ func (s *Server) rollback() error {
 	if err != nil {
 		return err
 	}
-	if err = runCommand("grub2-editenv", grubenvPath, "set", "saved_entry="+next); err != nil {
+	bootMode, err := getBootMode()
+	if err != nil {
 		return err
+	}
+	if bootMode == "uefi" {
+		if err = runCommand("grub2-editenv", grubenvPath, "set", "saved_entry="+next); err != nil {
+			return err
+		}
+	} else {
+		if err = runCommand("grub2-set-default", next); err != nil {
+			return err
+		}
 	}
 	return s.reboot()
 }

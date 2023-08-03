@@ -21,7 +21,8 @@ function prepare_yum() {
 }
 
 function install_packages() {
-  local REPO=$1
+        local REPO=$1
+        local BOOT_MODE=$2
 	prepare_yum ${REPO}
 
 	echo "install package.."
@@ -35,9 +36,14 @@ function install_packages() {
 
 	local rpms=$(cat ./rpmlist | tr "\n" " ")
         if [ "${ARCH}" == "x86_64" ]; then
-                yum -y --installroot="${RPM_ROOT}" install --nogpgcheck --setopt install_weak_deps=False ${rpms} grub2 grub2-efi-x64-modules grub2-pc-modules
+                if [ "${BOOT_MODE}" = "legacy" ]; then
+                        rpms+=" grub2"
+                else
+                        rpms+=" grub2-efi grub2-tools grub2-efi-x64-modules grub2-pc-modules"
+                fi
+                yum -y --installroot="${RPM_ROOT}" install --nogpgcheck --setopt install_weak_deps=False ${rpms} 
         elif [ "${ARCH}" == "aarch64" ]; then
-                yum -y --installroot="${RPM_ROOT}" install --nogpgcheck --setopt install_weak_deps=False ${rpms} grub2-efi-aa64-modules
+                yum -y --installroot="${RPM_ROOT}" install --nogpgcheck --setopt install_weak_deps=False ${rpms} grub2-efi grub2-tools grub2-efi-aa64-modules
         fi
         yum -y --installroot="${RPM_ROOT}" clean all
 }
@@ -46,6 +52,7 @@ function install_misc() {
         local VERSION=$1
         local AGENT_PATH=$2
         local PASSWD=$3
+        local BOOT_MODE=$4
         local DNS_CONF="${PWD}/resolv.conf"
         cp ../files/*mount ../files/os-agent.service "${RPM_ROOT}/usr/lib/systemd/system/"
         cp ../files/os-release "${RPM_ROOT}/usr/lib/"
@@ -60,11 +67,18 @@ EOF
         echo "VERSION_ID=${VERSION}" >> "${RPM_ROOT}/usr/lib/os-release"
         mv "${RPM_ROOT}"/boot/vmlinuz* "${RPM_ROOT}/boot/vmlinuz"
         mv "${RPM_ROOT}"/boot/initramfs* "${RPM_ROOT}/boot/initramfs.img"
-        cp grub.cfg "${RPM_ROOT}"/boot/grub2
-        cp grub.cfg "${RPM_ROOT}"/boot/efi/EFI/openEuler
+        if [ "$BOOT_MODE" = "legacy" ]; then
+                cp grub.cfg "${RPM_ROOT}"/boot/grub2
+                sed -i "s/insmod part_gpt/insmod part_msdos/g; \
+s/set root='hd0,gpt2'/set root='hd0,msdos2'/g; \
+s/set root='hd0,gpt3'/set root='hd0,msdos3'/g" \
+"${RPM_ROOT}"/boot/grub2/grub.cfg
+        else
+                cp grub.cfg "${RPM_ROOT}"/boot/efi/EFI/openEuler
+        fi
 	cp -r ./00bootup ${RPM_ROOT}/usr/lib/dracut/modules.d/ 
         cp set_in_chroot.sh "${RPM_ROOT}"
-        ROOT_PWD="${PASSWD}" chroot "${RPM_ROOT}" bash /set_in_chroot.sh
+        ROOT_PWD="${PASSWD}" BOOT_MODE="${BOOT_MODE}" chroot "${RPM_ROOT}" bash /set_in_chroot.sh
         rm "${RPM_ROOT}/set_in_chroot.sh"
         if [  -e "${DNS_CONF}" ]; then
                 cp "${DNS_CONF}" "${RPM_ROOT}/etc/resolv.conf"
@@ -76,8 +90,9 @@ function create_os_tar_from_repo() {
         local VERSION=$2
         local AGENT_PATH=$3
         local PASSWD=$4
-        install_packages ${REPO}
-        install_misc ${VERSION} ${AGENT_PATH} ${PASSWD}
+        local BOOT_MODE=$5
+        install_packages ${REPO} ${BOOT_MODE}
+        install_misc ${VERSION} ${AGENT_PATH} ${PASSWD} ${BOOT_MODE}
         unmount_dir "${RPM_ROOT}"
         tar -C "$RPM_ROOT" -cf ./os.tar .
 }
