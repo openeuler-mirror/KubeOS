@@ -61,7 +61,7 @@ func (d dockerImageHandler) getRootfsArchive(req *pb.UpdateRequest, neededPath p
 	if err != nil {
 		return "", err
 	}
-	if err := runCommand("docker", "cp", containerId+":/"+rootfsArchive, neededPath.updatePath); err != nil {
+	if err := runCommand("docker", "cp", containerId+":/"+neededPath.rootfsFile, neededPath.updatePath); err != nil {
 		return "", err
 	}
 	defer func() {
