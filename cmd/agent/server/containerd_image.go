@@ -23,9 +23,7 @@ import (
 	pb "openeuler.org/KubeOS/cmd/agent/api"
 )
 
-var (
-	defaultNamespace = "k8s.io"
-)
+const defaultNamespace = "k8s.io"
 
 type conImageHandler struct{}
 
@@ -56,7 +54,7 @@ func (c conImageHandler) getRootfsArchive(req *pb.UpdateRequest, neededPath prep
 		}
 	} else {
 		containerdCommand = "ctr"
-		if err := runCommand("ctr", "-n", defaultNamespace, "images", "pull", "--host-dir",
+		if err := runCommand("ctr", "-n", defaultNamespace, "images", "pull", "--hosts-dir",
 			"/etc/containerd/certs.d", imageName); err != nil {
 			return "", err
 		}
@@ -76,7 +74,7 @@ func (c conImageHandler) getRootfsArchive(req *pb.UpdateRequest, neededPath prep
 		return "", err
 	}
 	defer checkAndCleanMount(mountPath)
-	if err := copyFile(neededPath.tarPath, mountPath+"/"+rootfsArchive); err != nil {
+	if err := copyFile(neededPath.tarPath, mountPath+"/"+neededPath.rootfsFile); err != nil {
 		return "", err
 	}
 	return "", nil
