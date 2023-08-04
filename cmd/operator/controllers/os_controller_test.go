@@ -14,16 +14,22 @@ package controllers
 
 import (
 	"context"
+	"testing"
 	"time"
 
+	"github.com/agiledragon/gomonkey/v2"
 	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/util/workqueue"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/event"
 
 	upgradev1 "openeuler.org/KubeOS/api/v1alpha1"
 	"openeuler.org/KubeOS/pkg/values"
@@ -506,3 +512,64 @@ var _ = Describe("OsController", func() {
 		})
 	})
 })
+
+func TestOSReconciler_DeleteOSInstance(t *testing.T) {
+	type fields struct {
+		Scheme *runtime.Scheme
+		Client client.Client
+	}
+	kClient, _ := client.New(cfg, client.Options{Scheme: scheme.Scheme})
+	type args struct {
+		e event.DeleteEvent
+		q workqueue.RateLimitingInterface
+	}
+	tests := []struct {
+		name   string
+		fields fields
+		args   args
+	}{
+		{
+			name: "delete osinstance",
+			fields: fields{
+				Scheme: nil,
+				Client: kClient,
+			},
+			args: args{
+				e: event.DeleteEvent{
+					Object: &upgradev1.OSInstance{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      "test-node1",
+							Namespace: "test",
+						},
+					},
+				},
+				q: nil,
+			},
+		},
+	}
+	var patchList *gomonkey.Patches
+	var patchDelete *gomonkey.Patches
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := &OSReconciler{
+				Scheme: tt.fields.Scheme,
+				Client: tt.fields.Client,
+			}
+			patchList = gomonkey.ApplyMethodFunc(r.Client, "List", func(ctx context.Context, list client.ObjectList, opts ...client.ListOption) error {
+				list.(*upgradev1.OSInstanceList).Items = []upgradev1.OSInstance{
+					{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      "test-node1",
+							Namespace: "test",
+						},
+					},
+				}
+				return nil
+			})
+			patchDelete = gomonkey.ApplyMethodReturn(r.Client, "Delete", nil)
+			r.DeleteOSInstance(tt.args.e, tt.args.q)
+		})
+	}
+	defer patchDelete.Reset()
+	defer patchList.Reset()
+}

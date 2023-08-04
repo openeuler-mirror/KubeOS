@@ -14,13 +14,17 @@
 package server
 
 import (
+	"archive/tar"
 	"os"
 	"os/exec"
-	"strings"
+	"reflect"
 	"testing"
+	"time"
+
+	"github.com/agiledragon/gomonkey/v2"
 )
 
-func TestrunCommand(t *testing.T) {
+func Test_runCommand(t *testing.T) {
 	type args struct {
 		name string
 		args []string
@@ -41,23 +45,21 @@ func TestrunCommand(t *testing.T) {
 	}
 }
 
-func Testinstall(t *testing.T) {
+func Test_install(t *testing.T) {
 	type args struct {
 		imagePath string
 		side      string
 		next      string
 	}
-	out, _ := exec.Command("bash", "-c", "df -h | grep '/$' | awk '{print $1}'").CombinedOutput()
-	mountPart := strings.TrimSpace(string(out))
 	tests := []struct {
 		name    string
 		args    args
 		wantErr bool
 	}{
-		{name: "normal", args: args{imagePath: "aa.txt", side: mountPart, next: ""}, wantErr: false},
+		{name: "normal", args: args{imagePath: "aa.txt", side: "/dev/sda3", next: "A"}, wantErr: false},
 	}
-	ff, _ := os.Create("aa.txt")
-	ff.Chmod(os.ModePerm)
+	patchRunCommand := gomonkey.ApplyFuncReturn(runCommand, nil)
+	defer patchRunCommand.Reset()
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			if err := install(tt.args.imagePath, tt.args.side, tt.args.next); (err != nil) != tt.wantErr {
@@ -65,17 +67,13 @@ func Testinstall(t *testing.T) {
 			}
 		})
 	}
-	ff.Close()
-	defer os.Remove("aa.txt")
 }
 
-func TestgetNextPart(t *testing.T) {
+func Test_getNextPart(t *testing.T) {
 	type args struct {
 		partA string
 		partB string
 	}
-	out, _ := exec.Command("bash", "-c", "df -h | grep '/$' | awk '{print $1}'").CombinedOutput()
-	mountPart := strings.TrimSpace(string(out))
 	tests := []struct {
 		name    string
 		args    args
@@ -83,8 +81,14 @@ func TestgetNextPart(t *testing.T) {
 		want1   string
 		wantErr bool
 	}{
-		{name: "normal", args: args{partA: mountPart, partB: "testB"}, want: "testB", want1: "B", wantErr: false},
+		{name: "switch to sda3", args: args{partA: "/dev/sda2", partB: "/dev/sda3"}, want: "/dev/sda3", want1: "B", wantErr: false},
+		{name: "switch to sda2", args: args{partA: "/dev/sda2", partB: "/dev/sda3"}, want: "/dev/sda2", want1: "A", wantErr: false},
 	}
+	patchExecCommand := gomonkey.ApplyMethodSeq(&exec.Cmd{}, "CombinedOutput", []gomonkey.OutputCell{
+		{Values: gomonkey.Params{[]byte("/"), nil}},
+		{Values: gomonkey.Params{[]byte(""), nil}},
+	})
+	defer patchExecCommand.Reset()
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got, got1, err := getNextPart(tt.args.partA, tt.args.partB)
@@ -100,4 +104,118 @@ func TestgetNextPart(t *testing.T) {
 			}
 		})
 	}
+}
+
+func Test_prepareEnv(t *testing.T) {
+	mountPath := "/persist/KubeOS-Update/kubeos-update"
+	if err := os.MkdirAll(mountPath, 0644); err != nil {
+		t.Fatalf("mkdir err %v", err)
+	}
+	defer os.RemoveAll("/persist")
+	tests := []struct {
+		name    string
+		want    preparePath
+		wantErr bool
+	}{
+		{
+			name: "success",
+			want: preparePath{
+				updatePath: "/persist/KubeOS-Update",
+				mountPath:  "/persist/KubeOS-Update/kubeos-update",
+				tarPath:    "/persist/KubeOS-Update/os.tar",
+				imagePath:  "/persist/update.img",
+				rootfsFile: "os.tar",
+			},
+			wantErr: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := prepareEnv()
+			if (err != nil) != tt.wantErr {
+				t.Errorf("prepareEnv() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("prepareEnv() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func Test_createOSImage(t *testing.T) {
+	mountPath := "/persist/KubeOS-Update/kubeos-update"
+	if err := os.MkdirAll(mountPath, 0644); err != nil {
+		t.Fatalf("mkdir err %v", err)
+	}
+	defer os.RemoveAll("/persist")
+	tarPath := "/persist/KubeOS-Update/os.tar"
+	path, err := createTmpTarFile(tarPath)
+	if path != tarPath && err != nil {
+		t.Fatalf("create temp zip file err %v", err)
+	}
+	type args struct {
+		neededPath preparePath
+	}
+	tests := []struct {
+		name    string
+		args    args
+		want    string
+		wantErr bool
+	}{
+		{
+			name: "normal",
+			args: args{
+				neededPath: preparePath{
+					updatePath: "/persist/KubeOS-Update",
+					mountPath:  "/persist/KubeOS-Update/kubeos-update",
+					tarPath:    "/persist/KubeOS-Update/os.tar",
+					imagePath:  "/persist/update.img",
+				},
+			},
+			want:    "/persist/update.img",
+			wantErr: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := createOSImage(tt.args.neededPath)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("createOSImage() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if got != tt.want {
+				t.Errorf("createOSImage() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func createTmpTarFile(tarPath string) (string, error) {
+	tempFile, err := os.Create(tarPath)
+	if err != nil {
+		return "", err
+	}
+	defer tempFile.Close()
+
+	tarWriter := tar.NewWriter(tempFile)
+	fakeData := []byte("This is a fake file")
+	fakeFile := "fakefile.txt"
+	header := &tar.Header{
+		Name:    fakeFile,
+		Size:    int64(len(fakeData)),
+		Mode:    0644,
+		ModTime: time.Now(),
+	}
+
+	if err = tarWriter.WriteHeader(header); err != nil {
+		return "", err
+	}
+	if _, err := tarWriter.Write(fakeData); err != nil {
+		return "", err
+	}
+	if err := tarWriter.Flush(); err != nil {
+		return "", err
+	}
+	return tempFile.Name(), nil
 }

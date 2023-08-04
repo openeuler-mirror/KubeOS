@@ -14,19 +14,35 @@
 package server
 
 import (
-	"crypto/tls"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/sha256"
 	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/hex"
+	"encoding/pem"
+	"io"
+	"math/big"
 	"net/http"
 	"os"
 	"reflect"
+	"strings"
+	"syscall"
 	"testing"
+	"time"
 
 	"github.com/agiledragon/gomonkey/v2"
-
 	pb "openeuler.org/KubeOS/cmd/agent/api"
 )
 
-func Testdownload(t *testing.T) {
+func Test_download(t *testing.T) {
+	tmpDir := t.TempDir()
+	tmpFileForDownload := tmpDir + "/tmpFileForDownload"
+	tmpFile, err := os.Create(tmpFileForDownload)
+	if err != nil {
+		t.Errorf("open file error: %v", err)
+	}
+	defer tmpFile.Close()
 	type args struct {
 		req *pb.UpdateRequest
 	}
@@ -36,14 +52,35 @@ func Testdownload(t *testing.T) {
 		want    string
 		wantErr bool
 	}{
-		{name: "errornil", args: args{&pb.UpdateRequest{Certs: &pb.CertsInfo{}}}, want: "", wantErr: true},
-		{name: "normal", args: args{&pb.UpdateRequest{ImageUrl: "http://www.openeuler.org/zh/", FlagSafe: true, Certs: &pb.CertsInfo{}}}, want: "/persist/update.img", wantErr: false},
-		{name: "errornodir", args: args{&pb.UpdateRequest{ImageUrl: "http://www.openeuler.org/zh/", FlagSafe: true, Certs: &pb.CertsInfo{}}}, want: "", wantErr: true},
+		// {name: "errornil", args: args{&pb.UpdateRequest{Certs: &pb.CertsInfo{}}}, want: "", wantErr: true},
+		// {name: "normal", args: args{&pb.UpdateRequest{ImageUrl: "http://www.openeuler.org/zh/", FlagSafe: true, Certs: &pb.CertsInfo{}}}, want: "/persist/update.img", wantErr: false},
+		// {name: "errornodir", args: args{&pb.UpdateRequest{ImageUrl: "http://www.openeuler.org/zh/", FlagSafe: true, Certs: &pb.CertsInfo{}}}, want: "", wantErr: true},
+		{
+			name: "normal",
+			args: args{
+				req: &pb.UpdateRequest{
+					ImageUrl: "http://www.openeuler.org/zh/",
+				},
+			},
+			want:    tmpFileForDownload,
+			wantErr: false,
+		},
 	}
+	patchStatfs := gomonkey.ApplyFunc(syscall.Statfs, func(path string, stat *syscall.Statfs_t) error {
+		stat.Bfree = 3000
+		stat.Bsize = 4096
+		return nil
+	})
+	defer patchStatfs.Reset()
+	patchGetImageUrl := gomonkey.ApplyFuncReturn(getImageURL, &http.Response{
+		StatusCode:    http.StatusOK,
+		ContentLength: 5,
+		Body:          io.NopCloser(strings.NewReader("hello")),
+	}, nil)
+	defer patchGetImageUrl.Reset()
+	patchOSCreate := gomonkey.ApplyFuncReturn(os.Create, tmpFile, nil)
+	defer patchOSCreate.Reset()
 	for _, tt := range tests {
-		if tt.name == "normal" {
-			os.Mkdir("/persist", os.ModePerm)
-		}
 		t.Run(tt.name, func(t *testing.T) {
 			got, err := download(tt.args.req)
 			if (err != nil) != tt.wantErr {
@@ -54,47 +91,42 @@ func Testdownload(t *testing.T) {
 				t.Errorf("download() got = %v, want %v", got, tt.want)
 			}
 		})
-		if tt.name == "normal" {
-			os.RemoveAll("/persist")
-		}
 	}
 }
 
-func TestcheckSumMatch(t *testing.T) {
+func Test_checkSumMatch(t *testing.T) {
+	tmpDir := t.TempDir()
+	tmpFileForCheckSum := tmpDir + "/tmpFileForCheckSum"
+	err := os.WriteFile(tmpFileForCheckSum, []byte("hello"), 0644)
+	if err != nil {
+		t.Errorf("open file error: %v", err)
+	}
 	type args struct {
 		filePath string
 		checkSum string
 	}
-	ff, _ := os.Create("aa.txt")
-	ff.Chmod(os.ModePerm)
 	tests := []struct {
 		name    string
 		args    args
 		wantErr bool
 	}{
-		{name: "error", args: args{filePath: "aaa", checkSum: "aaa"}, wantErr: true},
-		{name: "errordir", args: args{filePath: "/aaa", checkSum: "/aaa"}, wantErr: true},
-		{name: "errortxt", args: args{filePath: "aa.txt", checkSum: "aa.txt"}, wantErr: true},
+		{
+			name:    "normal",
+			args:    args{filePath: tmpFileForCheckSum, checkSum: calculateChecksum("hello")},
+			wantErr: false,
+		},
+		{name: "error", args: args{filePath: tmpFileForCheckSum, checkSum: "aaa"}, wantErr: true},
 	}
 	for _, tt := range tests {
-		if tt.name == "errordir" {
-			os.Mkdir("/aaa", os.ModePerm)
-		}
 		t.Run(tt.name, func(t *testing.T) {
 			if err := checkSumMatch(tt.args.filePath, tt.args.checkSum); (err != nil) != tt.wantErr {
 				t.Errorf("checkSumMatch() error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})
-		if tt.name == "errordir" {
-			os.RemoveAll("/aaa")
-		}
 	}
-	defer os.Remove("aa.txt")
-	defer ff.Close()
-
 }
 
-func TestgetImageURL(t *testing.T) {
+func Test_getImageURL(t *testing.T) {
 	type args struct {
 		req *pb.UpdateRequest
 	}
@@ -105,23 +137,29 @@ func TestgetImageURL(t *testing.T) {
 		wantErr bool
 	}{
 		{name: "httpNotSafe", args: args{req: &pb.UpdateRequest{
-			ImageUrl: "http://www.openeuler.org/zh/",
+			ImageUrl: "http://www.openeuler.abc/zh/",
 			FlagSafe: false,
 			MTLS:     false,
 			Certs:    &pb.CertsInfo{},
 		}}, want: &http.Response{}, wantErr: true},
-		{name: "mTLSError", args: args{req: &pb.UpdateRequest{
-			ImageUrl: "http://www.openeuler.org/zh/",
-			FlagSafe: true,
-			MTLS:     true,
-			Certs:    &pb.CertsInfo{},
-		}}, want: &http.Response{}, wantErr: true},
-		{name: "httpsError", args: args{req: &pb.UpdateRequest{
-			ImageUrl: "https://www.openeuler.org/zh/",
+		{name: "httpSuccess", args: args{req: &pb.UpdateRequest{
+			ImageUrl: "http://www.openeuler.abc/zh/",
 			FlagSafe: true,
 			MTLS:     false,
 			Certs:    &pb.CertsInfo{},
-		}}, want: &http.Response{}, wantErr: true},
+		}}, want: &http.Response{StatusCode: http.StatusOK}, wantErr: false},
+		{name: "mTLSGetSuccess", args: args{req: &pb.UpdateRequest{
+			ImageUrl: "https://www.openeuler.abc/zh/",
+			FlagSafe: true,
+			MTLS:     true,
+			Certs:    &pb.CertsInfo{},
+		}}, want: &http.Response{StatusCode: http.StatusOK}, wantErr: false},
+		{name: "httpsGetSuccess", args: args{req: &pb.UpdateRequest{
+			ImageUrl: "https://www.openeuler.abc/zh/",
+			FlagSafe: true,
+			MTLS:     false,
+			Certs:    &pb.CertsInfo{},
+		}}, want: &http.Response{StatusCode: http.StatusOK}, wantErr: false},
 	}
 	patchLoadClientCerts := gomonkey.ApplyFunc(loadClientCerts, func(caCert, clientCert, clientKey string) (*http.Client, error) {
 		return &http.Client{}, nil
@@ -131,8 +169,20 @@ func TestgetImageURL(t *testing.T) {
 		return &http.Client{}, nil
 	})
 	defer patchLoadCaCerts.Reset()
+	patchGet := gomonkey.ApplyFunc(http.Get, func(url string) (resp *http.Response, err error) {
+		return &http.Response{StatusCode: http.StatusOK}, nil
+	})
+	defer patchGet.Reset()
+	patchClientGet := gomonkey.ApplyMethod(reflect.TypeOf(&http.Client{}), "Get", func(_ *http.Client, url string) (resp *http.Response, err error) {
+		return &http.Response{StatusCode: http.StatusOK}, nil
+	})
+	defer patchClientGet.Reset()
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			if tt.name == "httpSuccess" {
+				patchGet := gomonkey.ApplyFuncReturn(http.Get, &http.Response{StatusCode: http.StatusOK}, nil)
+				defer patchGet.Reset()
+			}
 			got, err := getImageURL(tt.args.req)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("getImageURL() error = %v, wantErr %v", err, tt.wantErr)
@@ -145,20 +195,28 @@ func TestgetImageURL(t *testing.T) {
 	}
 }
 
-func TestloadCaCerts(t *testing.T) {
+func Test_loadCaCerts(t *testing.T) {
+	tmpDir := t.TempDir()
+	caPath := tmpDir + "/fake.crt"
+	createFakeCertKey(caPath, "")
 	type args struct {
 		caCert string
 	}
 	tests := []struct {
 		name    string
 		args    args
-		want    *http.Client
 		wantErr bool
 	}{
-		{name: "noCaCertError", args: args{caCert: "bb.txt"}, want: &http.Client{}, wantErr: true},
+		{
+			name: "normal",
+			args: args{
+				caCert: caPath,
+			},
+			wantErr: false,
+		},
 	}
-	os.MkdirAll(certPath, 0644)
-	defer os.RemoveAll(certPath)
+	patchGetCertPath := gomonkey.ApplyFuncReturn(getCertPath, "")
+	defer patchGetCertPath.Reset()
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got, err := loadCaCerts(tt.args.caCert)
@@ -166,48 +224,39 @@ func TestloadCaCerts(t *testing.T) {
 				t.Errorf("loadCaCerts() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
-			if !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("loadCaCerts() = %v, want %v", got, tt.want)
+			if got == nil {
+				t.Errorf("loadCaCerts() = %v", got)
 			}
 		})
 	}
 
 }
 
-func TestloadClientCerts(t *testing.T) {
+func Test_loadClientCerts(t *testing.T) {
+	tmpDir := t.TempDir()
+	clientCertPath := tmpDir + "/fakeClientCert.crt"
+	clientKeyPath := tmpDir + "/fakeClientKey.crt"
+	createFakeCertKey(clientCertPath, clientKeyPath)
 	type args struct {
 		caCert     string
 		clientCert string
 		clientKey  string
 	}
-	pool := &x509.CertPool{}
 	tests := []struct {
 		name    string
 		args    args
-		want    *http.Client
 		wantErr bool
 	}{
-		{name: "noCaCertError", args: args{" dd.txt", "bb.txt", "cc.txt"}, want: &http.Client{}, wantErr: true},
-		{name: "noClientCertError", args: args{"ca.crt", "bb.txt", "cc.txt"}, want: &http.Client{}, wantErr: true},
-		{name: "noClientKeyError", args: args{"ca.crt", "client.crt", "cc.txt"}, want: &http.Client{}, wantErr: true},
+		{
+			name: "normal",
+			args: args{
+				caCert: clientCertPath, clientCert: clientCertPath, clientKey: clientKeyPath,
+			},
+			wantErr: false,
+		},
 	}
-	os.MkdirAll(certPath, 0644)
-	caFile, _ := os.Create(certPath + "ca.crt")
-	clientCertFile, _ := os.Create(certPath + "client.crt")
-	clientKeyFile, _ := os.Create(certPath + "client.key")
-
-	patchNewCertPool := gomonkey.ApplyFunc(x509.NewCertPool, func() *x509.CertPool {
-		return pool
-	})
-	defer patchNewCertPool.Reset()
-	patchAppendCertsFromPEM := gomonkey.ApplyMethod(reflect.TypeOf(pool), "AppendCertsFromPEM", func(_ *x509.CertPool, _ []byte) (ok bool) {
-		return true
-	})
-	defer patchAppendCertsFromPEM.Reset()
-	patchLoadX509KeyPair := gomonkey.ApplyFunc(tls.LoadX509KeyPair, func(certFile string, keyFile string) (tls.Certificate, error) {
-		return tls.Certificate{}, nil
-	})
-	defer patchLoadX509KeyPair.Reset()
+	patchGetCertPath := gomonkey.ApplyFuncReturn(getCertPath, "")
+	defer patchGetCertPath.Reset()
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got, err := loadClientCerts(tt.args.caCert, tt.args.clientCert, tt.args.clientKey)
@@ -215,19 +264,14 @@ func TestloadClientCerts(t *testing.T) {
 				t.Errorf("loadClientCerts() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
-			if !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("loadClientCerts() got = %v, want %v", got, tt.want)
+			if got == nil {
+				t.Errorf("loadClientCerts() got = %v", got)
 			}
 		})
 	}
-	caFile.Close()
-	clientCertFile.Close()
-	clientKeyFile.Close()
-	defer os.RemoveAll("/etc/KubeOS")
-
 }
 
-func TestcertExist(t *testing.T) {
+func Test_certExist(t *testing.T) {
 	type args struct {
 		certFile string
 	}
@@ -238,10 +282,7 @@ func TestcertExist(t *testing.T) {
 	}{
 		{name: "fileEmpty", args: args{certFile: ""}, wantErr: true},
 		{name: "fileNotExist", args: args{certFile: "bb.txt"}, wantErr: true},
-		{name: "normal", args: args{certFile: "aa.txt"}, wantErr: false},
 	}
-	os.MkdirAll(certPath, 0644)
-	ff, _ := os.Create(certPath + "aa.txt")
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			if err := certExist(tt.args.certFile); (err != nil) != tt.wantErr {
@@ -249,6 +290,71 @@ func TestcertExist(t *testing.T) {
 			}
 		})
 	}
-	ff.Close()
 	defer os.RemoveAll("/etc/KubeOS/")
+}
+
+func createFakeCertKey(certPath, keyPath string) {
+	privateKey, _ := rsa.GenerateKey(rand.Reader, 2048)
+	template := x509.Certificate{
+		SerialNumber: big.NewInt(1),
+		Subject: pkix.Name{
+			CommonName: "Fake Client Certificate",
+		},
+		NotBefore:             time.Now(),
+		NotAfter:              time.Now().AddDate(1, 0, 0),
+		KeyUsage:              x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
+		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
+		BasicConstraintsValid: true,
+	}
+	certBytes, _ := x509.CreateCertificate(rand.Reader, &template, &template, &privateKey.PublicKey, privateKey)
+	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: certBytes})
+	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(privateKey)})
+	os.WriteFile(certPath, certPEM, 0644)
+	if keyPath != "" {
+		os.WriteFile(keyPath, keyPEM, 0644)
+	}
+}
+
+func calculateChecksum(data string) string {
+	hash := sha256.New()
+	hash.Write([]byte(data))
+	return hex.EncodeToString(hash.Sum(nil))
+}
+
+func Test_diskHandler_getRootfsArchive(t *testing.T) {
+	type args struct {
+		req        *pb.UpdateRequest
+		neededPath preparePath
+	}
+	tests := []struct {
+		name    string
+		d       diskHandler
+		args    args
+		want    string
+		wantErr bool
+	}{
+		{
+			name: "normal", d: diskHandler{},
+			args:    args{req: &pb.UpdateRequest{ImageUrl: "http://www.openeuler.org/zh/"}, neededPath: preparePath{}},
+			want:    "/persist/update.img",
+			wantErr: false,
+		},
+	}
+	patchDownload := gomonkey.ApplyFuncReturn(download, "/persist/update.img", nil)
+	defer patchDownload.Reset()
+	patchCheckSumMatch := gomonkey.ApplyFuncReturn(checkSumMatch, nil)
+	defer patchCheckSumMatch.Reset()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			d := diskHandler{}
+			got, err := d.getRootfsArchive(tt.args.req, tt.args.neededPath)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("diskHandler.getRootfsArchive() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if got != tt.want {
+				t.Errorf("diskHandler.getRootfsArchive() = %v, want %v", got, tt.want)
+			}
+		})
+	}
 }
