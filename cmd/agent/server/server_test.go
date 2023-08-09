@@ -179,9 +179,9 @@ func TestServerupdate(t *testing.T) {
 		}},
 			wantErr: true},
 		{name: "errordocker", args: args{&pb.UpdateRequest{
-			DockerImage: "",
-			ImageType:   "docker",
-			Certs:       &pb.CertsInfo{},
+			ContainerImage: "",
+			ImageType:      "docker",
+			Certs:          &pb.CertsInfo{},
 		}},
 			wantErr: true},
 	}
