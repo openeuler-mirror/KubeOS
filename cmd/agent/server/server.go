@@ -171,3 +171,7 @@ func (s *Server) reboot() error {
 	}
 	return syscall.Reboot(syscall.LINUX_REBOOT_CMD_RESTART)
 }
+
+func getCertPath() string {
+	return certPath
+}

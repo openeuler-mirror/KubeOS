@@ -133,14 +133,14 @@ kustomize:
 	$(call go-get-tool,$(KUSTOMIZE),sigs.k8s.io/kustomize/kustomize/v3@v3.8.7)
 
 ARCH := $(shell uname -m)
-TEST_CMD := go test ./... -race -count=1 -timeout=300s -cover -gcflags=all=-l
+TEST_CMD := go test ./... -race -count=1 -timeout=300s -cover -gcflags=all=-l -p 1
 
 ifeq ($(ARCH), aarch64)
 	TEST_CMD := ETCD_UNSUPPORTED_ARCH=arm64 $(TEST_CMD)
 endif
 
 .PHONY: test
-test: manifests fmt vet envtest ## Run tests.
+test: fmt vet envtest ## Run tests.
 	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" $(TEST_CMD)
 
 .PHONY: envtest

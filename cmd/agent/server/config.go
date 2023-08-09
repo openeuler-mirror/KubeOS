@@ -374,6 +374,10 @@ func handleUpdateKey(config []string, configInfo *agent.KeyInfo, isFound bool) s
 func handleAddKey(m map[string]*agent.KeyInfo, isOnlyKeyValid bool) []string {
 	var configs []string
 	for key, keyInfo := range m {
+		if key == "" {
+			logrus.Warnln("Failed to add nil key")
+			continue
+		}
 		if keyInfo.Operation == "delete" {
 			logrus.Warnf("Failed to delete inexistent key %s", key)
 			continue

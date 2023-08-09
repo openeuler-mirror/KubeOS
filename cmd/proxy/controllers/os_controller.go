@@ -87,6 +87,9 @@ func (r *OSReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Re
 	sameOSVersion := checkVersion(osCr.Spec.OSVersion, node.Status.NodeInfo.OSImage)
 	if sameOSVersion {
 		configOps, err := checkConfigVersion(osCr, osInstance, values.SysConfigName)
+		if err != nil {
+			return values.RequeueNow, err
+		}
 		if configOps == values.Reassign {
 			if err = r.refreshNode(ctx, &node, osInstance, osCr.Spec.SysConfigs.Version, values.SysConfigName); err != nil {
 				return values.RequeueNow, err
@@ -113,6 +116,9 @@ func (r *OSReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Re
 			return values.RequeueNow, err
 		}
 		configOps, err := checkConfigVersion(osCr, osInstance, values.UpgradeConfigName)
+		if err != nil {
+			return values.RequeueNow, err
+		}
 		if configOps == values.Reassign {
 			if err = r.refreshNode(ctx, &node, osInstance, osCr.Spec.UpgradeConfigs.Version,
 				values.UpgradeConfigName); err != nil {
@@ -261,7 +267,7 @@ func checkOsiExist(ctx context.Context, r common.ReadStatusWriter, nameSpace str
 					Namespace: nameSpace,
 					Name:      nodeName,
 					Labels: map[string]string{
-						"upgrade.openeuler.org/osinstance-node": nodeName,
+						values.LabelOSinstance: nodeName,
 					},
 				},
 			}

@@ -153,7 +153,7 @@ func loadCaCerts(caCert string) (*http.Client, error) {
 	if err != nil {
 		return &http.Client{}, err
 	}
-	ca, err := ioutil.ReadFile(certPath + caCert)
+	ca, err := ioutil.ReadFile(getCertPath() + caCert)
 	if err != nil {
 		return &http.Client{}, fmt.Errorf("read the ca certificate error %s", err)
 	}
@@ -173,7 +173,7 @@ func loadClientCerts(caCert, clientCert, clientKey string) (*http.Client, error)
 	if err != nil {
 		return &http.Client{}, err
 	}
-	ca, err := ioutil.ReadFile(certPath + caCert)
+	ca, err := ioutil.ReadFile(getCertPath() + caCert)
 	if err != nil {
 		return &http.Client{}, err
 	}
@@ -186,7 +186,7 @@ func loadClientCerts(caCert, clientCert, clientKey string) (*http.Client, error)
 	if err != nil {
 		return &http.Client{}, err
 	}
-	cliCrt, err := tls.LoadX509KeyPair(certPath+clientCert, certPath+clientKey)
+	cliCrt, err := tls.LoadX509KeyPair(getCertPath()+clientCert, getCertPath()+clientKey)
 	if err != nil {
 		return &http.Client{}, err
 	}
@@ -206,7 +206,7 @@ func certExist(certFile string) error {
 	if certFile == "" {
 		return fmt.Errorf("please provide the certificate")
 	}
-	_, err := os.Stat(certPath + certFile)
+	_, err := os.Stat(getCertPath() + certFile)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return fmt.Errorf("certificate is not exist %s ", err)
