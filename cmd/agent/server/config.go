@@ -57,7 +57,7 @@ func (k KernelSysctl) SetConfig(config *agent.SysConfig) error {
 			}
 			logrus.Infof("Configured kernel.sysctl %s=%s", key, keyInfo.Value)
 		} else {
-			logrus.Errorf("Failed to parse kernel.sysctl config operation %s value %s", keyInfo.Operation, keyInfo.Value)
+			logrus.Warnf("Failed to parse kernel.sysctl key %s value %s operation %s", key, keyInfo.Value, keyInfo.Operation)
 		}
 	}
 	return nil
