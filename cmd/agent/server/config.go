@@ -382,6 +382,10 @@ func handleAddKey(m map[string]*agent.KeyInfo, isOnlyKeyValid bool) []string {
 			logrus.Warnf("Failed to delete inexistent key %s", key)
 			continue
 		}
+		if keyInfo.Operation != "" {
+			logrus.Warnf("Unknown operation %s, adding key %s with value %s by default",
+				keyInfo.Operation, key, keyInfo.Value)
+		}
 		k, v := strings.TrimSpace(key), strings.TrimSpace(keyInfo.Value)
 		if keyInfo.Value == "" && isOnlyKeyValid {
 			logrus.Infoln("add configuration ", k)

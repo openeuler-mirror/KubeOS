@@ -122,7 +122,7 @@ func TestKerSysctlPersist_SetConfig(t *testing.T) {
 						"b":   {Value: "2"},
 						"c":   {Value: ""},
 						"":    {Value: "4"},
-						"e":   {Value: "5"},
+						"e":   {Value: "5", Operation: "xxx"},
 						"y=1": {Value: "26"},
 						"z":   {Value: "x=1"},
 					},
@@ -144,7 +144,7 @@ func TestKerSysctlPersist_SetConfig(t *testing.T) {
 					Contents: map[string]*agent.KeyInfo{
 						"a": {Value: "2"},
 						"b": {Value: ""},
-						"z": {Value: "x=2"},
+						"z": {Value: "x=2", Operation: "zzz"},
 					},
 				},
 			},
