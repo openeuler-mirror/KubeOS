@@ -259,7 +259,7 @@ func getAndSetConfigsFromFile(expectConfigs map[string]*agent.KeyInfo, path stri
 			configsWrite = append(configsWrite, line)
 			continue
 		}
-		configKV := strings.Split(line, "=")
+		configKV := strings.SplitN(line, "=", kvPair)
 		if len(configKV) != kvPair {
 			logrus.Errorf("could not parse systctl config %s", line)
 			return nil, fmt.Errorf("could not parse systctl config %s", line)
@@ -374,8 +374,8 @@ func handleUpdateKey(config []string, configInfo *agent.KeyInfo, isFound bool) s
 func handleAddKey(m map[string]*agent.KeyInfo, isOnlyKeyValid bool) []string {
 	var configs []string
 	for key, keyInfo := range m {
-		if key == "" {
-			logrus.Warnln("Failed to add nil key")
+		if key == "" || strings.Contains(key, "=") {
+			logrus.Warnf("Failed to add nil key or key containing =, key: %s", key)
 			continue
 		}
 		if keyInfo.Operation == "delete" {
