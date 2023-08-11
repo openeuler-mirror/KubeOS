@@ -262,10 +262,11 @@ menuentry 'B' --class KubeOS --class gnu-linux --class gnu --class os --unrestri
 						"":                 {Value: "test"},                     // warning, skip, failed to add kv with empty key
 						"selinux":          {Value: "1", Operation: "delete"},   // failed to delete inconsistent kv
 						"acpi":             {Value: "off", Operation: "delete"}, // failed to delete inexistent kv
+						"ro":               {Value: "1"},                        // update key to kv
 					},
 				},
 			},
-			pattern: `(?m)^\s+linux\s+\/boot\/vmlinuz\s+root=UUID=[0-1]\s+ro\s+rootfstype=ext4\s+nomodeset\s+oops=panic\s+softlockup_panic=0\s+nmi_watchdog=1\s+rd\.shell=0\s+selinux=0\s+crashkernel=256M\s+panic=5\s+(debug\spci=nomis|pci=nomis\sdebug)$`,
+			pattern: `(?m)^\s+linux\s+\/boot\/vmlinuz\s+root=UUID=[0-1]\s+ro=1\s+rootfstype=ext4\s+nomodeset\s+oops=panic\s+softlockup_panic=0\s+nmi_watchdog=1\s+rd\.shell=0\s+selinux=0\s+crashkernel=256M\s+panic=5\s+(debug\spci=nomis|pci=nomis\sdebug)$`,
 			wantErr: false,
 		},
 		{
@@ -274,14 +275,15 @@ menuentry 'B' --class KubeOS --class gnu-linux --class gnu --class os --unrestri
 			args: args{
 				config: &agent.SysConfig{
 					Contents: map[string]*agent.KeyInfo{
-						"debug":    {Operation: "delete"},                 // delete key
-						"pci":      {Value: "nomis", Operation: "delete"}, // delete kv
-						"debugpat": {Value: "", Operation: "add"},         // passed key, operation is invalid, default to add key
-						"audit":    {Value: "1", Operation: "add"},        // passed kv, key is inexistent, operation is invalid, default to add kv
+						"debug":     {Operation: "delete"},                 // delete key
+						"pci":       {Value: "nomis", Operation: "delete"}, // delete kv
+						"debugpat":  {Value: "", Operation: "add"},         // passed key, operation is invalid, default to add key
+						"audit":     {Value: "1", Operation: "add"},        // passed kv, key is inexistent, operation is invalid, default to add kv
+						"nomodeset": {Value: "1", Operation: "delete"},     // delete key with inconsistent value
 					},
 				},
 			},
-			pattern: `(?m)^\s+linux\s+\/boot\/vmlinuz\s+root=UUID=[0-1]\s+ro\s+rootfstype=ext4\s+nomodeset\s+oops=panic\s+softlockup_panic=0\s+nmi_watchdog=1\s+rd\.shell=0\s+selinux=0\s+crashkernel=256M\s+panic=5\s+(debugpat\saudit=1|audit=1\sdebugpat)$`,
+			pattern: `(?m)^\s+linux\s+\/boot\/vmlinuz\s+root=UUID=[0-1]\s+ro=1\s+rootfstype=ext4\s+nomodeset\s+oops=panic\s+softlockup_panic=0\s+nmi_watchdog=1\s+rd\.shell=0\s+selinux=0\s+crashkernel=256M\s+panic=5\s+(debugpat\saudit=1|audit=1\sdebugpat)$`,
 			wantErr: false,
 		},
 		{
@@ -300,6 +302,7 @@ menuentry 'B' --class KubeOS --class gnu-linux --class gnu --class os --unrestri
 						"":                 {Value: "test"},                   // warning, skip, failed to add kv with empty key
 						"selinux":          {Value: "1", Operation: "delete"},
 						"acpi":             {Value: "off", Operation: "delete"},
+						"ro":               {Value: ""},
 					},
 				},
 			},
