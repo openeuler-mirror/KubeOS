@@ -32,7 +32,6 @@ func Test_conImageHandler_downloadImage(t *testing.T) {
 		want    string
 		wantErr bool
 	}{
-
 		{
 			name: "pullImageError",
 			c:    conImageHandler{},
@@ -61,6 +60,15 @@ func Test_conImageHandler_downloadImage(t *testing.T) {
 			},
 			want:    "update-test1/upadte.img",
 			wantErr: false,
+		},
+		{
+			name: "invalid image name",
+			c:    conImageHandler{},
+			args: args{
+				req: &pb.UpdateRequest{ContainerImage: "nginx;v1"},
+			},
+			want:    "",
+			wantErr: true,
 		},
 	}
 	patchPrepareEnv := gomonkey.ApplyFunc(prepareEnv, func() (preparePath, error) {
