@@ -15,6 +15,8 @@ package controllers
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -188,7 +190,9 @@ func upgradeNodes(ctx context.Context, r common.ReadStatusWriter, os *upgradev1.
 				}
 				continue
 			}
-			updateNodeAndOSins(ctx, r, os, &node, &osInstance)
+			if err := updateNodeAndOSins(ctx, r, os, &node, &osInstance); err != nil {
+				continue
+			}
 			count++
 		}
 	}
@@ -196,12 +200,16 @@ func upgradeNodes(ctx context.Context, r common.ReadStatusWriter, os *upgradev1.
 }
 
 func updateNodeAndOSins(ctx context.Context, r common.ReadStatusWriter, os *upgradev1.OS,
-	node *corev1.Node, osInstance *upgradev1.OSInstance) {
+	node *corev1.Node, osInstance *upgradev1.OSInstance) error {
 	if osInstance.Spec.UpgradeConfigs.Version != os.Spec.UpgradeConfigs.Version {
-		osInstance.Spec.UpgradeConfigs = os.Spec.UpgradeConfigs
+		if err := deepCopySpecConfigs(os, osInstance, values.UpgradeConfigName); err != nil {
+			return err
+		}
 	}
 	if osInstance.Spec.SysConfigs.Version != os.Spec.SysConfigs.Version {
-		osInstance.Spec.SysConfigs = os.Spec.SysConfigs
+		if err := deepCopySpecConfigs(os, osInstance, values.SysConfigName); err != nil {
+			return err
+		}
 		// exchange "grub.cmdline.current" and "grub.cmdline.next"
 		for i, config := range osInstance.Spec.SysConfigs.Configs {
 			if config.Model == "grub.cmdline.current" {
@@ -215,11 +223,14 @@ func updateNodeAndOSins(ctx context.Context, r common.ReadStatusWriter, os *upgr
 	osInstance.Spec.NodeStatus = values.NodeStatusUpgrade.String()
 	if err := r.Update(ctx, osInstance); err != nil {
 		log.Error(err, "unable to update", "osInstance", osInstance.Name)
+		return err
 	}
 	node.Labels[values.LabelUpgrading] = ""
 	if err := r.Update(ctx, node); err != nil {
 		log.Error(err, "unable to label", "node", node.Name)
+		return err
 	}
+	return nil
 }
 
 func assignConfig(ctx context.Context, r common.ReadStatusWriter, sysConfigs upgradev1.SysConfigs,
@@ -306,4 +317,29 @@ func min(a, b int) int {
 		return a
 	}
 	return b
+}
+
+func deepCopySpecConfigs(os *upgradev1.OS, osinstance *upgradev1.OSInstance, configType string) error {
+	switch configType {
+	case values.UpgradeConfigName:
+		data, err := json.Marshal(os.Spec.UpgradeConfigs)
+		if err != nil {
+			return err
+		}
+		if err = json.Unmarshal(data, &osinstance.Spec.UpgradeConfigs); err != nil {
+			return err
+		}
+	case values.SysConfigName:
+		data, err := json.Marshal(os.Spec.SysConfigs)
+		if err != nil {
+			return err
+		}
+		if err = json.Unmarshal(data, &osinstance.Spec.SysConfigs); err != nil {
+			return err
+		}
+	default:
+		log.Error(nil, "configType "+configType+" cannot be recognized")
+		return fmt.Errorf("configType %s cannot be recognized", configType)
+	}
+	return nil
 }

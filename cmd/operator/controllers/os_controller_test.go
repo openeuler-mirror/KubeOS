@@ -17,19 +17,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agiledragon/gomonkey/v2"
 	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	v1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/client-go/kubernetes/scheme"
-	"k8s.io/client-go/util/workqueue"
-	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/event"
 
 	upgradev1 "openeuler.org/KubeOS/api/v1alpha1"
 	"openeuler.org/KubeOS/pkg/values"
@@ -37,8 +30,7 @@ import (
 
 var _ = Describe("OsController", func() {
 	const (
-		OSName = "test-os"
-
+		OSName   = "test-os"
 		timeout  = time.Second * 20
 		interval = time.Millisecond * 500
 	)
@@ -72,26 +64,33 @@ var _ = Describe("OsController", func() {
 	})
 
 	AfterEach(func() {
-		desiredTestNamespace := &v1.Namespace{
-			TypeMeta: metav1.TypeMeta{
-				APIVersion: "v1",
-				Kind:       "Namespace",
-			},
-			ObjectMeta: metav1.ObjectMeta{
-				Name: testNamespace,
-			},
-		}
-		// Add any teardown steps that needs to be executed after each test
-		err := k8sClient.Delete(context.Background(), desiredTestNamespace,
-			client.PropagationPolicy(metav1.DeletePropagationForeground))
-
+		// delete all nodes
+		nodeList := &v1.NodeList{}
+		err := k8sClient.List(context.Background(), nodeList)
 		Expect(err).ToNot(HaveOccurred())
-
-		existingNamespace := &v1.Namespace{}
+		for _, node := range nodeList.Items {
+			k8sClient.Delete(context.Background(), &node)
+		}
+		nodeList = &v1.NodeList{}
 		Eventually(func() bool {
-			err := k8sClient.Get(context.Background(), types.NamespacedName{Name: testNamespace},
-				existingNamespace)
-			if err != nil && errors.IsNotFound(err) {
+			err = k8sClient.List(context.Background(), nodeList)
+			if err != nil || len(nodeList.Items) != 0 {
+				return false
+			}
+			return true
+		}, timeout, interval).Should(BeTrue())
+
+		// delete all OS CRs
+		osList := &upgradev1.OSList{}
+		err = k8sClient.List(context.Background(), osList)
+		Expect(err).ToNot(HaveOccurred())
+		for _, os := range osList.Items {
+			k8sClient.Delete(context.Background(), &os)
+		}
+		osList = &upgradev1.OSList{}
+		Eventually(func() bool {
+			err = k8sClient.List(context.Background(), osList)
+			if err != nil || len(osList.Items) != 0 {
 				return false
 			}
 			return true
@@ -102,7 +101,7 @@ var _ = Describe("OsController", func() {
 		It("Should label the osinstance's nodestatus to upgrading", func() {
 			ctx := context.Background()
 
-			// create Node
+			// create Node1
 			node1Name = "test-node-" + uuid.New().String()
 			node1 := &v1.Node{
 				ObjectMeta: metav1.ObjectMeta{
@@ -131,7 +130,7 @@ var _ = Describe("OsController", func() {
 				return err == nil
 			}, timeout, interval).Should(BeTrue())
 
-			// create OSInstance
+			// create OSInstance1
 			OSIns := &upgradev1.OSInstance{
 				TypeMeta: metav1.TypeMeta{
 					Kind:       "OSInstance",
@@ -162,6 +161,67 @@ var _ = Describe("OsController", func() {
 				return err == nil
 			}, timeout, interval).Should(BeTrue())
 			Expect(createdOSIns.ObjectMeta.Name).Should(Equal(node1Name))
+
+			// create Node2
+			node2Name := "test-node-" + uuid.New().String()
+			node2 := &v1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      node2Name,
+					Namespace: testNamespace,
+					Labels: map[string]string{
+						"beta.kubernetes.io/os": "linux",
+					},
+				},
+				TypeMeta: metav1.TypeMeta{
+					APIVersion: "v1",
+					Kind:       "Node",
+				},
+				Status: v1.NodeStatus{
+					NodeInfo: v1.NodeSystemInfo{
+						OSImage: "KubeOS v2",
+					},
+				},
+			}
+			err = k8sClient.Create(ctx, node2)
+			Expect(err).ToNot(HaveOccurred())
+			existingNode = &v1.Node{}
+			Eventually(func() bool {
+				err := k8sClient.Get(context.Background(),
+					types.NamespacedName{Name: node2Name, Namespace: testNamespace}, existingNode)
+				return err == nil
+			}, timeout, interval).Should(BeTrue())
+
+			// create OSInstance2
+			OSIns = &upgradev1.OSInstance{
+				TypeMeta: metav1.TypeMeta{
+					Kind:       "OSInstance",
+					APIVersion: "upgrade.openeuler.org/v1alpha1",
+				},
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      node2Name,
+					Namespace: testNamespace,
+					Labels: map[string]string{
+						values.LabelOSinstance: node2Name,
+					},
+				},
+				Spec: upgradev1.OSInstanceSpec{
+					SysConfigs: upgradev1.SysConfigs{
+						Version: "v1",
+						Configs: []upgradev1.SysConfig{},
+					},
+					UpgradeConfigs: upgradev1.SysConfigs{Configs: []upgradev1.SysConfig{}, Version: "v1"},
+				},
+			}
+			Expect(k8sClient.Create(ctx, OSIns)).Should(Succeed())
+
+			// Check that the corresponding OSIns CR has been created
+			osInsCRLookupKey2 := types.NamespacedName{Name: node2Name, Namespace: testNamespace}
+			createdOSIns = &upgradev1.OSInstance{}
+			Eventually(func() bool {
+				err := k8sClient.Get(ctx, osInsCRLookupKey2, createdOSIns)
+				return err == nil
+			}, timeout, interval).Should(BeTrue())
+			Expect(createdOSIns.ObjectMeta.Name).Should(Equal(node2Name))
 
 			// create OS CR
 			OS := &upgradev1.OS{
@@ -206,13 +266,20 @@ var _ = Describe("OsController", func() {
 				return err == nil
 			}, timeout, interval).Should(BeTrue())
 			Expect(createdOSIns.Spec.NodeStatus).Should(Equal(values.NodeStatusUpgrade.String()))
+
+			createdOSIns2 := &upgradev1.OSInstance{}
+			Eventually(func() bool {
+				err := k8sClient.Get(ctx, osInsCRLookupKey2, createdOSIns2)
+				return err == nil
+			}, timeout, interval).Should(BeTrue())
+			Expect(createdOSIns2.Spec.NodeStatus).Should(Equal(values.NodeStatusUpgrade.String()))
 		})
 	})
 
 	Context("When we want to configure node", func() {
 		It("Should update OSInstance spec and update NodeStatus to config", func() {
 			ctx := context.Background()
-			// create Node
+			// create Node1
 			node1Name = "test-node-" + uuid.New().String()
 			node1 := &v1.Node{
 				ObjectMeta: metav1.ObjectMeta{
@@ -228,7 +295,7 @@ var _ = Describe("OsController", func() {
 				},
 				Status: v1.NodeStatus{
 					NodeInfo: v1.NodeSystemInfo{
-						OSImage: "KubeOS v2",
+						OSImage: "KubeOS v1",
 					},
 				},
 			}
@@ -241,6 +308,7 @@ var _ = Describe("OsController", func() {
 				return err == nil
 			}, timeout, interval).Should(BeTrue())
 
+			// create OSInstance1
 			OSIns := &upgradev1.OSInstance{
 				TypeMeta: metav1.TypeMeta{
 					Kind:       "OSInstance",
@@ -249,6 +317,9 @@ var _ = Describe("OsController", func() {
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      node1Name,
 					Namespace: testNamespace,
+					Labels: map[string]string{
+						values.LabelOSinstance: node1Name,
+					},
 				},
 				Spec: upgradev1.OSInstanceSpec{
 					SysConfigs: upgradev1.SysConfigs{
@@ -261,13 +332,75 @@ var _ = Describe("OsController", func() {
 			}
 			Expect(k8sClient.Create(ctx, OSIns)).Should(Succeed())
 
-			osInsCRLookupKey := types.NamespacedName{Name: node1Name, Namespace: testNamespace}
+			osInsCRLookupKey1 := types.NamespacedName{Name: node1Name, Namespace: testNamespace}
 			createdOSIns := &upgradev1.OSInstance{}
 			Eventually(func() bool {
-				err := k8sClient.Get(ctx, osInsCRLookupKey, createdOSIns)
+				err := k8sClient.Get(ctx, osInsCRLookupKey1, createdOSIns)
 				return err == nil
 			}, timeout, interval).Should(BeTrue())
 			Expect(createdOSIns.ObjectMeta.Name).Should(Equal(node1Name))
+
+			// create Node2
+			node2Name := "test-node-" + uuid.New().String()
+			node2 := &v1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      node2Name,
+					Namespace: testNamespace,
+					Labels: map[string]string{
+						"beta.kubernetes.io/os": "linux",
+					},
+				},
+				TypeMeta: metav1.TypeMeta{
+					APIVersion: "v1",
+					Kind:       "Node",
+				},
+				Status: v1.NodeStatus{
+					NodeInfo: v1.NodeSystemInfo{
+						OSImage: "KubeOS v1",
+					},
+				},
+			}
+			err = k8sClient.Create(ctx, node2)
+			Expect(err).ToNot(HaveOccurred())
+			existingNode = &v1.Node{}
+			Eventually(func() bool {
+				err := k8sClient.Get(context.Background(),
+					types.NamespacedName{Name: node2Name, Namespace: testNamespace}, existingNode)
+				return err == nil
+			}, timeout, interval).Should(BeTrue())
+
+			// create OSInstance2
+			OSIns = &upgradev1.OSInstance{
+				TypeMeta: metav1.TypeMeta{
+					Kind:       "OSInstance",
+					APIVersion: "upgrade.openeuler.org/v1alpha1",
+				},
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      node2Name,
+					Namespace: testNamespace,
+					Labels: map[string]string{
+						values.LabelOSinstance: node2Name,
+					},
+				},
+				Spec: upgradev1.OSInstanceSpec{
+					SysConfigs: upgradev1.SysConfigs{
+						Version: "v1",
+						Configs: []upgradev1.SysConfig{},
+					},
+					UpgradeConfigs: upgradev1.SysConfigs{Configs: []upgradev1.SysConfig{}, Version: "v1"},
+					NodeStatus:     values.NodeStatusIdle.String(),
+				},
+			}
+			Expect(k8sClient.Create(ctx, OSIns)).Should(Succeed())
+
+			// Check that the corresponding OSIns CR has been created
+			osInsCRLookupKey2 := types.NamespacedName{Name: node2Name, Namespace: testNamespace}
+			createdOSIns = &upgradev1.OSInstance{}
+			Eventually(func() bool {
+				err := k8sClient.Get(ctx, osInsCRLookupKey2, createdOSIns)
+				return err == nil
+			}, timeout, interval).Should(BeTrue())
+			Expect(createdOSIns.ObjectMeta.Name).Should(Equal(node2Name))
 
 			OS := &upgradev1.OS{
 				TypeMeta: metav1.TypeMeta{
@@ -311,13 +444,21 @@ var _ = Describe("OsController", func() {
 			Expect(createdOS.Spec.OSVersion).Should(Equal("KubeOS v1"))
 
 			time.Sleep(1 * time.Second) // sleep a while to make sure Reconcile finished
-			configedOSIns := &upgradev1.OSInstance{}
+			configedOSIns1 := &upgradev1.OSInstance{}
 			Eventually(func() bool {
-				err := k8sClient.Get(ctx, osInsCRLookupKey, configedOSIns)
+				err := k8sClient.Get(ctx, osInsCRLookupKey1, configedOSIns1)
 				return err == nil
 			}, timeout, interval).Should(BeTrue())
-			Expect(configedOSIns.Spec.NodeStatus).Should(Equal(values.NodeStatusConfig.String()))
-			Expect(configedOSIns.Spec.SysConfigs.Version).Should(Equal("v2"))
+			Expect(configedOSIns1.Spec.NodeStatus).Should(Equal(values.NodeStatusConfig.String()))
+			Expect(configedOSIns1.Spec.SysConfigs.Version).Should(Equal("v2"))
+
+			configedOSIns2 := &upgradev1.OSInstance{}
+			Eventually(func() bool {
+				err := k8sClient.Get(ctx, osInsCRLookupKey2, configedOSIns2)
+				return err == nil
+			}, timeout, interval).Should(BeTrue())
+			Expect(configedOSIns2.Spec.NodeStatus).Should(Equal(values.NodeStatusConfig.String()))
+			Expect(configedOSIns2.Spec.SysConfigs.Version).Should(Equal("v2"))
 		})
 	})
 
@@ -394,6 +535,9 @@ var _ = Describe("OsController", func() {
 			}, timeout, interval).Should(BeTrue())
 			_, ok := existingNode.Labels[values.LabelUpgrading]
 			Expect(ok).Should(Equal(false))
+
+			createdOS.Spec.OpsType = "test"
+			Expect(k8sClient.Update(ctx, createdOS)).Should(Succeed())
 		})
 	})
 
@@ -401,7 +545,7 @@ var _ = Describe("OsController", func() {
 		It("Should exchange .current and .next", func() {
 			ctx := context.Background()
 
-			// create Node
+			// create Node1
 			node1Name = "test-node-" + uuid.New().String()
 			node1 := &v1.Node{
 				ObjectMeta: metav1.ObjectMeta{
@@ -430,7 +574,7 @@ var _ = Describe("OsController", func() {
 				return err == nil
 			}, timeout, interval).Should(BeTrue())
 
-			// create OSInstance
+			// create OSInstance1
 			OSIns := &upgradev1.OSInstance{
 				TypeMeta: metav1.TypeMeta{
 					Kind:       "OSInstance",
@@ -454,13 +598,74 @@ var _ = Describe("OsController", func() {
 			Expect(k8sClient.Create(ctx, OSIns)).Should(Succeed())
 
 			// Check that the corresponding OSIns CR has been created
-			osInsCRLookupKey := types.NamespacedName{Name: node1Name, Namespace: testNamespace}
+			osInsCRLookupKey1 := types.NamespacedName{Name: node1Name, Namespace: testNamespace}
 			createdOSIns := &upgradev1.OSInstance{}
 			Eventually(func() bool {
-				err := k8sClient.Get(ctx, osInsCRLookupKey, createdOSIns)
+				err := k8sClient.Get(ctx, osInsCRLookupKey1, createdOSIns)
 				return err == nil
 			}, timeout, interval).Should(BeTrue())
 			Expect(createdOSIns.ObjectMeta.Name).Should(Equal(node1Name))
+
+			// create Node2
+			node2Name := "test-node-" + uuid.New().String()
+			node2 := &v1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      node2Name,
+					Namespace: testNamespace,
+					Labels: map[string]string{
+						"beta.kubernetes.io/os": "linux",
+					},
+				},
+				TypeMeta: metav1.TypeMeta{
+					APIVersion: "v1",
+					Kind:       "Node",
+				},
+				Status: v1.NodeStatus{
+					NodeInfo: v1.NodeSystemInfo{
+						OSImage: "KubeOS v1",
+					},
+				},
+			}
+			err = k8sClient.Create(ctx, node2)
+			Expect(err).ToNot(HaveOccurred())
+			existingNode = &v1.Node{}
+			Eventually(func() bool {
+				err := k8sClient.Get(context.Background(),
+					types.NamespacedName{Name: node2Name, Namespace: testNamespace}, existingNode)
+				return err == nil
+			}, timeout, interval).Should(BeTrue())
+
+			// create OSInstance2
+			OSIns = &upgradev1.OSInstance{
+				TypeMeta: metav1.TypeMeta{
+					Kind:       "OSInstance",
+					APIVersion: "upgrade.openeuler.org/v1alpha1",
+				},
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      node2Name,
+					Namespace: testNamespace,
+					Labels: map[string]string{
+						values.LabelOSinstance: node2Name,
+					},
+				},
+				Spec: upgradev1.OSInstanceSpec{
+					SysConfigs: upgradev1.SysConfigs{
+						Version: "v1",
+						Configs: []upgradev1.SysConfig{},
+					},
+					UpgradeConfigs: upgradev1.SysConfigs{Configs: []upgradev1.SysConfig{}, Version: "v1"},
+				},
+			}
+			Expect(k8sClient.Create(ctx, OSIns)).Should(Succeed())
+
+			// Check that the corresponding OSIns CR has been created
+			osInsCRLookupKey2 := types.NamespacedName{Name: node2Name, Namespace: testNamespace}
+			createdOSIns = &upgradev1.OSInstance{}
+			Eventually(func() bool {
+				err := k8sClient.Get(ctx, osInsCRLookupKey2, createdOSIns)
+				return err == nil
+			}, timeout, interval).Should(BeTrue())
+			Expect(createdOSIns.ObjectMeta.Name).Should(Equal(node2Name))
 
 			// create OS CR
 			OS := &upgradev1.OS{
@@ -486,7 +691,13 @@ var _ = Describe("OsController", func() {
 							{Model: "grub.cmdline.next", Contents: []upgradev1.Content{{Key: "b", Value: "2"}}},
 						},
 					},
-					UpgradeConfigs: upgradev1.SysConfigs{Configs: []upgradev1.SysConfig{}},
+					UpgradeConfigs: upgradev1.SysConfigs{
+						Version: "v2",
+						Configs: []upgradev1.SysConfig{
+							{Model: "grub.cmdline.current", Contents: []upgradev1.Content{{Key: "a", Value: "1"}}},
+							{Model: "grub.cmdline.next", Contents: []upgradev1.Content{{Key: "b", Value: "2"}}},
+						},
+					},
 				},
 			}
 			Expect(k8sClient.Create(ctx, OS)).Should(Succeed())
@@ -501,75 +712,66 @@ var _ = Describe("OsController", func() {
 			Expect(createdOS.Spec.OSVersion).Should(Equal("KubeOS v2"))
 
 			time.Sleep(1 * time.Second) // sleep a while to make sure Reconcile finished
-			osInsCRLookupKey = types.NamespacedName{Name: node1Name, Namespace: testNamespace}
+			// check node1 osinstance
 			createdOSIns = &upgradev1.OSInstance{}
 			Eventually(func() bool {
-				err := k8sClient.Get(ctx, osInsCRLookupKey, createdOSIns)
+				err := k8sClient.Get(ctx, osInsCRLookupKey1, createdOSIns)
 				return err == nil
 			}, timeout, interval).Should(BeTrue())
 			Expect(createdOSIns.Spec.SysConfigs.Configs[0]).Should(Equal(upgradev1.SysConfig{Model: "grub.cmdline.next", Contents: []upgradev1.Content{{Key: "a", Value: "1"}}}))
 			Expect(createdOSIns.Spec.SysConfigs.Configs[1]).Should(Equal(upgradev1.SysConfig{Model: "grub.cmdline.current", Contents: []upgradev1.Content{{Key: "b", Value: "2"}}}))
+			Expect(createdOSIns.Spec.UpgradeConfigs.Configs[0]).Should(Equal(upgradev1.SysConfig{Model: "grub.cmdline.current", Contents: []upgradev1.Content{{Key: "a", Value: "1"}}}))
+			Expect(createdOSIns.Spec.NodeStatus).Should(Equal(values.NodeStatusUpgrade.String()))
+
+			// check node2 osinstance
+			createdOSIns2 := &upgradev1.OSInstance{}
+			Eventually(func() bool {
+				err := k8sClient.Get(ctx, osInsCRLookupKey2, createdOSIns2)
+				return err == nil
+			}, timeout, interval).Should(BeTrue())
+			Expect(createdOSIns2.Spec.NodeStatus).Should(Equal(values.NodeStatusUpgrade.String()))
+			Expect(createdOSIns2.Spec.SysConfigs.Configs[0]).Should(Equal(upgradev1.SysConfig{Model: "grub.cmdline.next", Contents: []upgradev1.Content{{Key: "a", Value: "1"}}}))
+			Expect(createdOSIns2.Spec.SysConfigs.Configs[1]).Should(Equal(upgradev1.SysConfig{Model: "grub.cmdline.current", Contents: []upgradev1.Content{{Key: "b", Value: "2"}}}))
+			Expect(createdOSIns2.Spec.UpgradeConfigs.Configs[0]).Should(Equal(upgradev1.SysConfig{Model: "grub.cmdline.current", Contents: []upgradev1.Content{{Key: "a", Value: "1"}}}))
+
+			// check os cr spec
+			osCRLookupKey = types.NamespacedName{Name: OSName, Namespace: testNamespace}
+			createdOS = &upgradev1.OS{}
+			Eventually(func() bool {
+				err := k8sClient.Get(ctx, osCRLookupKey, createdOS)
+				return err == nil
+			}, timeout, interval).Should(BeTrue())
+			Expect(createdOS.Spec.SysConfigs.Configs[0]).Should(Equal(upgradev1.SysConfig{Model: "grub.cmdline.current", Contents: []upgradev1.Content{{Key: "a", Value: "1"}}}))
+			Expect(createdOS.Spec.SysConfigs.Configs[1]).Should(Equal(upgradev1.SysConfig{Model: "grub.cmdline.next", Contents: []upgradev1.Content{{Key: "b", Value: "2"}}}))
 		})
 	})
 })
 
-func TestOSReconciler_DeleteOSInstance(t *testing.T) {
-	type fields struct {
-		Scheme *runtime.Scheme
-		Client client.Client
-	}
-	kClient, _ := client.New(cfg, client.Options{Scheme: scheme.Scheme})
+func Test_deepCopySpecConfigs(t *testing.T) {
 	type args struct {
-		e event.DeleteEvent
-		q workqueue.RateLimitingInterface
+		os         *upgradev1.OS
+		osinstance *upgradev1.OSInstance
+		configType string
 	}
 	tests := []struct {
-		name   string
-		fields fields
-		args   args
+		name    string
+		args    args
+		wantErr bool
 	}{
 		{
-			name: "delete osinstance",
-			fields: fields{
-				Scheme: nil,
-				Client: kClient,
-			},
+			name: "error",
 			args: args{
-				e: event.DeleteEvent{
-					Object: &upgradev1.OSInstance{
-						ObjectMeta: metav1.ObjectMeta{
-							Name:      "test-node1",
-							Namespace: "test",
-						},
-					},
-				},
-				q: nil,
-			},
+				os:         &upgradev1.OS{},
+				osinstance: &upgradev1.OSInstance{},
+				configType: "test"},
+			wantErr: true,
 		},
 	}
-	var patchList *gomonkey.Patches
-	var patchDelete *gomonkey.Patches
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			r := &OSReconciler{
-				Scheme: tt.fields.Scheme,
-				Client: tt.fields.Client,
+			if err := deepCopySpecConfigs(tt.args.os, tt.args.osinstance, tt.args.configType); (err != nil) != tt.wantErr {
+				t.Errorf("deepCopySpecConfigs() error = %v, wantErr %v", err, tt.wantErr)
 			}
-			patchList = gomonkey.ApplyMethodFunc(r.Client, "List", func(ctx context.Context, list client.ObjectList, opts ...client.ListOption) error {
-				list.(*upgradev1.OSInstanceList).Items = []upgradev1.OSInstance{
-					{
-						ObjectMeta: metav1.ObjectMeta{
-							Name:      "test-node1",
-							Namespace: "test",
-						},
-					},
-				}
-				return nil
-			})
-			patchDelete = gomonkey.ApplyMethodReturn(r.Client, "Delete", nil)
-			r.DeleteOSInstance(tt.args.e, tt.args.q)
 		})
 	}
-	defer patchDelete.Reset()
-	defer patchList.Reset()
 }
