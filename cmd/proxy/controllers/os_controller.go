@@ -94,7 +94,7 @@ func (r *OSReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Re
 			if err = r.refreshNode(ctx, &node, osInstance, osCr.Spec.SysConfigs.Version, values.SysConfigName); err != nil {
 				return values.RequeueNow, err
 			}
-			return values.RequeueNow, nil
+			return values.Requeue, nil
 		}
 		if configOps == values.UpdateConfig {
 			osInstance.Spec.SysConfigs = osCr.Spec.SysConfigs
@@ -124,7 +124,7 @@ func (r *OSReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Re
 				values.UpgradeConfigName); err != nil {
 				return values.RequeueNow, err
 			}
-			return values.RequeueNow, nil
+			return values.Requeue, nil
 		}
 		if err := r.setConfig(ctx, osInstance, values.UpgradeConfigName); err != nil {
 			return values.RequeueNow, err
