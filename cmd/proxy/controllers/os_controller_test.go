@@ -1098,4 +1098,130 @@ var _ = Describe("OsController", func() {
 			Expect(ok).Should(Equal(false))
 		})
 	})
+
+	Context("When node has upgrade label but osinstance.spec.nodestatus is idle", func() {
+		It("Should be able to refresh node and wait operator reassgin upgrade", func() {
+			ctx := context.Background()
+			By("Creating a worker node")
+			node1Name = "test-node-" + uuid.New().String()
+			node1 := &v1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      node1Name,
+					Namespace: testNamespace,
+					Labels: map[string]string{
+						"beta.kubernetes.io/os": "linux",
+						values.LabelUpgrading:   "",
+					},
+				},
+				TypeMeta: metav1.TypeMeta{
+					APIVersion: "v1",
+					Kind:       "Node",
+				},
+				Status: v1.NodeStatus{
+					NodeInfo: v1.NodeSystemInfo{
+						OSImage: "KubeOS v2",
+					},
+				},
+			}
+			err := k8sClient.Create(ctx, node1)
+			Expect(err).ToNot(HaveOccurred())
+			existingNode := &v1.Node{}
+			Eventually(func() bool {
+				err := k8sClient.Get(context.Background(),
+					types.NamespacedName{Name: node1Name, Namespace: testNamespace}, existingNode)
+				return err == nil
+			}, timeout, interval).Should(BeTrue())
+			reconciler.hostName = node1Name
+
+			By("Creating the corresponding OSInstance")
+			OSIns := &upgradev1.OSInstance{
+				TypeMeta: metav1.TypeMeta{
+					Kind:       "OSInstance",
+					APIVersion: "upgrade.openeuler.org/v1alpha1",
+				},
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      node1Name,
+					Namespace: testNamespace,
+					Labels: map[string]string{
+						values.LabelOSinstance: node1Name,
+					},
+				},
+				Spec: upgradev1.OSInstanceSpec{
+					NodeStatus: values.NodeStatusIdle.String(),
+				},
+				Status: upgradev1.OSInstanceStatus{},
+			}
+			Expect(k8sClient.Create(ctx, OSIns)).Should(Succeed())
+
+			// Check that the corresponding OSIns CR has been created
+			osInsCRLookupKey := types.NamespacedName{Name: node1Name, Namespace: testNamespace}
+			createdOSIns := &upgradev1.OSInstance{}
+			Eventually(func() bool {
+				err := k8sClient.Get(ctx, osInsCRLookupKey, createdOSIns)
+				return err == nil
+			}, timeout, interval).Should(BeTrue())
+			Expect(createdOSIns.ObjectMeta.Name).Should(Equal(node1Name))
+			By("Creating a OS custom resource")
+			OS := &upgradev1.OS{
+				TypeMeta: metav1.TypeMeta{
+					APIVersion: "upgrade.openeuler.org/v1alpha1",
+					Kind:       "OS",
+				},
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      OSName,
+					Namespace: testNamespace,
+				},
+				Spec: upgradev1.OSSpec{
+					OpsType:        "upgrade",
+					MaxUnavailable: 3,
+					OSVersion:      "KubeOS v2",
+					FlagSafe:       true,
+					MTLS:           false,
+					EvictPodForce:  true,
+					SysConfigs: upgradev1.SysConfigs{
+						Version: "v2",
+						Configs: []upgradev1.SysConfig{
+							{
+								Model: "kernel.sysctl",
+								Contents: []upgradev1.Content{
+									{Key: "key1", Value: "c"},
+									{Key: "key2", Value: "d"},
+								},
+							},
+						},
+					},
+					UpgradeConfigs: upgradev1.SysConfigs{
+						Version: "v2",
+						Configs: []upgradev1.SysConfig{
+							{
+								Model: "kernel.sysctl",
+								Contents: []upgradev1.Content{
+									{Key: "key1", Value: "a"},
+									{Key: "key2", Value: "b"},
+								},
+							},
+						},
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, OS)).Should(Succeed())
+			osCRLookupKey := types.NamespacedName{Name: OSName, Namespace: testNamespace}
+			createdOS := &upgradev1.OS{}
+			Eventually(func() bool {
+				err := k8sClient.Get(ctx, osCRLookupKey, createdOS)
+				return err == nil
+			}, timeout, interval).Should(BeTrue())
+			Expect(createdOS.Spec.OSVersion).Should(Equal("KubeOS v2"))
+
+			time.Sleep(2 * time.Second) // sleep a while to make sure Reconcile finished
+			existingNode = &v1.Node{}
+			Eventually(func() bool {
+				err := k8sClient.Get(context.Background(),
+					types.NamespacedName{Name: node1Name, Namespace: testNamespace}, existingNode)
+				return err == nil
+			}, timeout, interval).Should(BeTrue())
+			_, ok := existingNode.Labels[values.LabelUpgrading]
+			Expect(ok).Should(Equal(false))
+		})
+	})
 })

@@ -126,6 +126,17 @@ func (r *OSReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Re
 			}
 			return values.Requeue, nil
 		}
+		if _, ok := node.Labels[values.LabelUpgrading]; ok &&
+			osInstance.Spec.NodeStatus == values.NodeStatusIdle.String() {
+			log.Info("node has upgrade label, but osInstance.spec.nodestaus idle ",
+				"operation:", "refesh node and wait opetaot reassgin")
+			if err = r.refreshNode(ctx, &node, osInstance, osCr.Spec.UpgradeConfigs.Version,
+				values.UpgradeConfigName); err != nil {
+				return values.RequeueNow, err
+			}
+			return values.Requeue, nil
+		}
+
 		if err := r.setConfig(ctx, osInstance, values.UpgradeConfigName); err != nil {
 			return values.RequeueNow, err
 		}
