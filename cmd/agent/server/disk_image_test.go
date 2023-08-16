@@ -23,6 +23,7 @@ import (
 	"encoding/pem"
 	"fmt"
 	"io"
+	"io/fs"
 	"math/big"
 	"net/http"
 	"os"
@@ -159,6 +160,7 @@ func Test_checkSumMatch(t *testing.T) {
 			wantErr: false,
 		},
 		{name: "error", args: args{filePath: tmpFileForCheckSum, checkSum: "aaa"}, wantErr: true},
+		{name: "unfound error", args: args{filePath: "", checkSum: "aaa"}, wantErr: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -271,6 +273,7 @@ func Test_loadCaCerts(t *testing.T) {
 			},
 			wantErr: false,
 		},
+		{name: "no cert", args: args{caCert: ""}, wantErr: true},
 	}
 	patchGetCertPath := gomonkey.ApplyFuncReturn(getCertPath, "")
 	defer patchGetCertPath.Reset()
@@ -339,11 +342,21 @@ func Test_certExist(t *testing.T) {
 	}{
 		{name: "fileEmpty", args: args{certFile: ""}, wantErr: true},
 		{name: "fileNotExist", args: args{certFile: "bb.txt"}, wantErr: true},
+		{name: "unknow error", args: args{certFile: "cc.txt"}, wantErr: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			var patchStat *gomonkey.Patches
+			if tt.name == "unknow error" {
+				patchStat = gomonkey.ApplyFunc(os.Stat, func(name string) (fs.FileInfo, error) {
+					return fs.FileInfo(nil), fmt.Errorf("error")
+				})
+			}
 			if err := certExist(tt.args.certFile); (err != nil) != tt.wantErr {
 				t.Errorf("certExist() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			if tt.name == "unknow error" {
+				patchStat.Reset()
 			}
 		})
 	}
@@ -396,8 +409,17 @@ func Test_diskHandler_getRootfsArchive(t *testing.T) {
 			want:    "/persist/update.img",
 			wantErr: false,
 		},
+		{
+			name: "error", d: diskHandler{},
+			args:    args{req: &pb.UpdateRequest{ImageUrl: "http://www.openeuler.org/zh/"}, neededPath: preparePath{}},
+			want:    "",
+			wantErr: true,
+		},
 	}
-	patchDownload := gomonkey.ApplyFuncReturn(download, "/persist/update.img", nil)
+	patchDownload := gomonkey.ApplyFuncSeq(download, []gomonkey.OutputCell{
+		{Values: gomonkey.Params{"/persist/update.img", nil}},
+		{Values: gomonkey.Params{"", fmt.Errorf("error")}},
+	})
 	defer patchDownload.Reset()
 	patchCheckSumMatch := gomonkey.ApplyFuncReturn(checkSumMatch, nil)
 	defer patchCheckSumMatch.Reset()
@@ -412,6 +434,38 @@ func Test_diskHandler_getRootfsArchive(t *testing.T) {
 			if got != tt.want {
 				t.Errorf("diskHandler.getRootfsArchive() = %v, want %v", got, tt.want)
 			}
+		})
+	}
+}
+
+func Test_diskHandler_downloadImage(t *testing.T) {
+	type args struct {
+		req *pb.UpdateRequest
+	}
+	tests := []struct {
+		name    string
+		d       diskHandler
+		args    args
+		want    string
+		wantErr bool
+	}{
+		{name: "normal", d: diskHandler{}, args: args{req: &pb.UpdateRequest{ImageUrl: "http://www.openeuler.org/zh/"}}, want: "/persist/update.img", wantErr: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			d := diskHandler{}
+			patchGetRootfsArchive := gomonkey.ApplyPrivateMethod(reflect.TypeOf(d), "getRootfsArchive", func(_ *diskHandler, _ *pb.UpdateRequest, _ preparePath) (string, error) {
+				return "/persist/update.img", nil
+			})
+			got, err := d.downloadImage(tt.args.req)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("diskHandler.downloadImage() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if got != tt.want {
+				t.Errorf("diskHandler.downloadImage() = %v, want %v", got, tt.want)
+			}
+			patchGetRootfsArchive.Reset()
 		})
 	}
 }

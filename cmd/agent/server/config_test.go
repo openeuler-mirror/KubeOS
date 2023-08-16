@@ -75,6 +75,16 @@ func TestKernelSysctl_SetConfig(t *testing.T) {
 				},
 			}},
 		},
+		{
+			name: "nil key",
+			k:    KernelSysctl{},
+			args: args{config: &agent.SysConfig{
+				Contents: map[string]*agent.KeyInfo{
+					"": {Value: "1"},
+				},
+			}},
+			wantErr: true,
+		},
 	}
 	tmpDir := t.TempDir()
 	patchGetProcPath := gomonkey.ApplyFuncReturn(getDefaultProcPath, tmpDir+"/")
@@ -320,8 +330,7 @@ menuentry 'B' --class KubeOS --class gnu-linux --class gnu --class os --unrestri
 	defer patchGetConfigPartition.Reset()
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			g := GrubCmdline{}
-			if err := g.SetConfig(tt.args.config); (err != nil) != tt.wantErr {
+			if err := tt.g.SetConfig(tt.args.config); (err != nil) != tt.wantErr {
 				t.Errorf("GrubCmdline.SetConfig() error = %v, wantErr %v", err, tt.wantErr)
 			}
 			contents, err := os.ReadFile(grubCfgPath)
@@ -509,6 +518,34 @@ func Test_ConfigFactoryTemplate(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if err := ConfigFactoryTemplate(tt.args.configType, tt.args.config); (err != nil) != tt.wantErr {
 				t.Errorf("ConfigFactoryTemplate() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func Test_convertNewConfigsToString(t *testing.T) {
+	type args struct {
+		newConfigs []string
+	}
+	tests := []struct {
+		name    string
+		args    args
+		want    string
+		wantErr bool
+	}{
+		{name: "error", args: args{newConfigs: []string{"a"}}, want: "", wantErr: true},
+	}
+	patchFprintf := gomonkey.ApplyFuncReturn(fmt.Fprintf, 0, fmt.Errorf("error"))
+	defer patchFprintf.Reset()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := convertNewConfigsToString(tt.args.newConfigs)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("convertNewConfigsToString() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if got != tt.want {
+				t.Errorf("convertNewConfigsToString() = %v, want %v", got, tt.want)
 			}
 		})
 	}

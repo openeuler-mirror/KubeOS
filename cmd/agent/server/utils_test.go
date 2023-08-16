@@ -15,6 +15,7 @@ package server
 
 import (
 	"archive/tar"
+	"fmt"
 	"os"
 	"os/exec"
 	"reflect"
@@ -58,12 +59,14 @@ func Test_install(t *testing.T) {
 	}{
 		{name: "normal uefi", args: args{imagePath: "aa.txt", side: "/dev/sda3", next: "A"}, wantErr: false},
 		{name: "normal legacy", args: args{imagePath: "aa.txt", side: "/dev/sda3", next: "A"}, wantErr: false},
+		{name: "get boot mode error", args: args{imagePath: "aa.txt", side: "/dev/sda3", next: "A"}, wantErr: true},
 	}
 	patchRunCommand := gomonkey.ApplyFuncReturn(runCommand, nil)
 	defer patchRunCommand.Reset()
 	patchGetBootMode := gomonkey.ApplyFuncSeq(getBootMode, []gomonkey.OutputCell{
 		{Values: gomonkey.Params{"uefi", nil}},
 		{Values: gomonkey.Params{"legacy", nil}},
+		{Values: gomonkey.Params{"", fmt.Errorf("error")}},
 	})
 	defer patchGetBootMode.Reset()
 	for _, tt := range tests {
@@ -89,10 +92,12 @@ func Test_getNextPart(t *testing.T) {
 	}{
 		{name: "switch to sda3", args: args{partA: "/dev/sda2", partB: "/dev/sda3"}, want: "/dev/sda3", want1: "B", wantErr: false},
 		{name: "switch to sda2", args: args{partA: "/dev/sda2", partB: "/dev/sda3"}, want: "/dev/sda2", want1: "A", wantErr: false},
+		{name: "error", args: args{partA: "/dev/sda2", partB: "/dev/sda3"}, want: "", want1: "", wantErr: true},
 	}
 	patchExecCommand := gomonkey.ApplyMethodSeq(&exec.Cmd{}, "CombinedOutput", []gomonkey.OutputCell{
 		{Values: gomonkey.Params{[]byte("/"), nil}},
 		{Values: gomonkey.Params{[]byte(""), nil}},
+		{Values: gomonkey.Params{[]byte(""), fmt.Errorf("error")}},
 	})
 	defer patchExecCommand.Reset()
 	for _, tt := range tests {
@@ -242,10 +247,16 @@ func Test_getBootMode(t *testing.T) {
 			want:    "legacy",
 			wantErr: false,
 		},
+		{
+			name:    "error",
+			want:    "",
+			wantErr: true,
+		},
 	}
 	patchOSStat := gomonkey.ApplyFuncSeq(os.Stat, []gomonkey.OutputCell{
 		{Values: gomonkey.Params{nil, nil}},
 		{Values: gomonkey.Params{nil, os.ErrNotExist}},
+		{Values: gomonkey.Params{nil, fmt.Errorf("fake error")}},
 	})
 	defer patchOSStat.Reset()
 	for _, tt := range tests {
@@ -322,6 +333,107 @@ func Test_checkOCIImageDigestMatch(t *testing.T) {
 			}
 			if err := checkOCIImageDigestMatch(tt.args.containerRuntime, tt.args.imageName, tt.args.checkSum); (err != nil) != tt.wantErr {
 				t.Errorf("checkOCIImageDigestMatch() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func Test_runCommandWithOut(t *testing.T) {
+	type args struct {
+		name string
+		args []string
+	}
+	tests := []struct {
+		name    string
+		args    args
+		want    string
+		wantErr bool
+	}{
+		{name: "error", args: args{name: "/mmm", args: []string{"", ""}}, wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := runCommandWithOut(tt.args.name, tt.args.args...)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("runCommandWithOut() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if got != tt.want {
+				t.Errorf("runCommandWithOut() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func Test_getRootfsDisks(t *testing.T) {
+	tests := []struct {
+		name    string
+		want    string
+		want1   string
+		wantErr bool
+	}{
+		{name: "error", want: "", want1: "", wantErr: true},
+	}
+	patchRunCommandWithOut := gomonkey.ApplyFuncSeq(runCommandWithOut, []gomonkey.OutputCell{
+		{Values: gomonkey.Params{"", fmt.Errorf("fake error")}},
+	})
+	defer patchRunCommandWithOut.Reset()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, got1, err := getRootfsDisks()
+			if (err != nil) != tt.wantErr {
+				t.Errorf("getRootfsDisks() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if got != tt.want {
+				t.Errorf("getRootfsDisks() got = %v, want %v", got, tt.want)
+			}
+			if got1 != tt.want1 {
+				t.Errorf("getRootfsDisks() got1 = %v, want %v", got1, tt.want1)
+			}
+		})
+	}
+}
+
+func Test_checkDiskSize(t *testing.T) {
+	type args struct {
+		needGBSize int
+		path       string
+	}
+	tests := []struct {
+		name    string
+		args    args
+		wantErr bool
+	}{
+		{name: "zero GB need", args: args{needGBSize: 0, path: "/dev/sda"}, wantErr: false},
+		{name: "disk not enough", args: args{needGBSize: 100000, path: "/dev/sda"}, wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if err := checkDiskSize(tt.args.needGBSize, tt.args.path); (err != nil) != tt.wantErr {
+				t.Errorf("checkDiskSize() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func Test_deleteFile(t *testing.T) {
+	type args struct {
+		path string
+	}
+	tests := []struct {
+		name    string
+		args    args
+		wantErr bool
+	}{
+		{name: "error", args: args{path: "/mmm"}, wantErr: true},
+	}
+	patchStat := gomonkey.ApplyFuncReturn(os.Stat, nil, fmt.Errorf("fake error"))
+	defer patchStat.Reset()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if err := deleteFile(tt.args.path); (err != nil) != tt.wantErr {
+				t.Errorf("deleteFile() error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})
 	}

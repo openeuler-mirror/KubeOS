@@ -14,17 +14,22 @@ package controllers
 
 import (
 	"context"
+	"fmt"
+	"reflect"
 	"testing"
 	"time"
 
+	"github.com/agiledragon/gomonkey/v2"
 	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	corev1 "k8s.io/api/core/v1"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
-
 	upgradev1 "openeuler.org/KubeOS/api/v1alpha1"
+	"openeuler.org/KubeOS/pkg/common"
 	"openeuler.org/KubeOS/pkg/values"
 )
 
@@ -771,6 +776,231 @@ func Test_deepCopySpecConfigs(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if err := deepCopySpecConfigs(tt.args.os, tt.args.osinstance, tt.args.configType); (err != nil) != tt.wantErr {
 				t.Errorf("deepCopySpecConfigs() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func Test_getConfigOSInstances(t *testing.T) {
+	type args struct {
+		ctx context.Context
+		r   common.ReadStatusWriter
+	}
+	tests := []struct {
+		name    string
+		args    args
+		want    []upgradev1.OSInstance
+		wantErr bool
+	}{
+		{
+			name: "list error",
+			args: args{
+				ctx: context.Background(),
+				r:   &OSReconciler{},
+			},
+			want:    nil,
+			wantErr: true,
+		},
+	}
+	patchList := gomonkey.ApplyMethodSeq(&OSReconciler{}, "List", []gomonkey.OutputCell{
+		{Values: gomonkey.Params{fmt.Errorf("list error")}},
+	})
+	defer patchList.Reset()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := getConfigOSInstances(tt.args.ctx, tt.args.r)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("getConfigOSInstances() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("getConfigOSInstances() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func Test_checkUpgrading(t *testing.T) {
+	type args struct {
+		ctx            context.Context
+		r              common.ReadStatusWriter
+		maxUnavailable int
+	}
+	tests := []struct {
+		name    string
+		args    args
+		want    int
+		wantErr bool
+	}{
+		{
+			name: "label error",
+			args: args{
+				ctx: context.Background(),
+				r:   &OSReconciler{},
+			},
+			want:    0,
+			wantErr: true,
+		},
+	}
+	patchNewRequirement := gomonkey.ApplyFuncSeq(labels.NewRequirement, []gomonkey.OutputCell{
+		{Values: gomonkey.Params{nil, fmt.Errorf("label error")}},
+		{Values: gomonkey.Params{nil, nil}},
+	})
+	defer patchNewRequirement.Reset()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := checkUpgrading(tt.args.ctx, tt.args.r, tt.args.maxUnavailable)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("checkUpgrading() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if got != tt.want {
+				t.Errorf("checkUpgrading() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func Test_getIdleOSInstances(t *testing.T) {
+	type args struct {
+		ctx   context.Context
+		r     common.ReadStatusWriter
+		limit int
+	}
+	tests := []struct {
+		name    string
+		args    args
+		want    []upgradev1.OSInstance
+		wantErr bool
+	}{
+		{
+			name: "list error",
+			args: args{
+				ctx:   context.Background(),
+				r:     &OSReconciler{},
+				limit: 1,
+			},
+			want:    nil,
+			wantErr: true,
+		},
+	}
+	patchList := gomonkey.ApplyMethodSeq(&OSReconciler{}, "List", []gomonkey.OutputCell{
+		{Values: gomonkey.Params{fmt.Errorf("list error")}},
+	})
+	defer patchList.Reset()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := getIdleOSInstances(tt.args.ctx, tt.args.r, tt.args.limit)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("getIdleOSInstances() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("getIdleOSInstances() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func Test_getNodes(t *testing.T) {
+	type args struct {
+		ctx   context.Context
+		r     common.ReadStatusWriter
+		limit int
+		reqs  []labels.Requirement
+	}
+	tests := []struct {
+		name    string
+		args    args
+		want    []corev1.Node
+		wantErr bool
+	}{
+		{
+			name: "list error",
+			args: args{
+				ctx:   context.Background(),
+				r:     &OSReconciler{},
+				limit: 1,
+			},
+			want:    nil,
+			wantErr: true,
+		},
+	}
+	patchList := gomonkey.ApplyMethodSeq(&OSReconciler{}, "List", []gomonkey.OutputCell{
+		{Values: gomonkey.Params{fmt.Errorf("list error")}},
+	})
+	defer patchList.Reset()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := getNodes(tt.args.ctx, tt.args.r, tt.args.limit, tt.args.reqs...)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("getNodes() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("getNodes() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func Test_getAndUpdateOS(t *testing.T) {
+	type args struct {
+		ctx  context.Context
+		r    common.ReadStatusWriter
+		name types.NamespacedName
+	}
+	tests := []struct {
+		name        string
+		args        args
+		wantOs      upgradev1.OS
+		wantNodeNum int
+		wantErr     bool
+	}{
+		{
+			name: "label error",
+			args: args{
+				ctx:  context.Background(),
+				r:    &OSReconciler{},
+				name: types.NamespacedName{Namespace: "test_ns", Name: "test"},
+			},
+			wantOs:      upgradev1.OS{},
+			wantNodeNum: 0,
+			wantErr:     true,
+		},
+		{
+			name: "get nodes error",
+			args: args{
+				ctx:  context.Background(),
+				r:    &OSReconciler{},
+				name: types.NamespacedName{Namespace: "test_ns", Name: "test"},
+			},
+			wantOs:      upgradev1.OS{},
+			wantNodeNum: 0,
+			wantErr:     true,
+		},
+	}
+	patchGet := gomonkey.ApplyMethodReturn(&OSReconciler{}, "Get", nil)
+	defer patchGet.Reset()
+	patchNewRequirement := gomonkey.ApplyFuncSeq(labels.NewRequirement, []gomonkey.OutputCell{
+		{Values: gomonkey.Params{nil, fmt.Errorf("label error")}},
+		{Values: gomonkey.Params{&labels.Requirement{}, nil}},
+	})
+	defer patchNewRequirement.Reset()
+	patchGetNodes := gomonkey.ApplyFuncReturn(getNodes, nil, fmt.Errorf("get nodes error"))
+	defer patchGetNodes.Reset()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotOs, gotNodeNum, err := getAndUpdateOS(tt.args.ctx, tt.args.r, tt.args.name)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("getAndUpdateOS() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if !reflect.DeepEqual(gotOs, tt.wantOs) {
+				t.Errorf("getAndUpdateOS() gotOs = %v, want %v", gotOs, tt.wantOs)
+			}
+			if gotNodeNum != tt.wantNodeNum {
+				t.Errorf("getAndUpdateOS() gotNodeNum = %v, want %v", gotNodeNum, tt.wantNodeNum)
 			}
 		})
 	}
