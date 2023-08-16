@@ -317,6 +317,10 @@ func createConfigPath(configPath string) error {
 	if err != nil {
 		return err
 	}
+	err = f.Chmod(defaultKernelConPermission)
+	if err != nil {
+		return err
+	}
 	f.Close()
 	return nil
 }
