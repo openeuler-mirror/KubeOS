@@ -23,7 +23,6 @@ import (
 	"testing"
 
 	"github.com/agiledragon/gomonkey/v2"
-
 	agent "openeuler.org/KubeOS/cmd/agent/api"
 )
 
@@ -106,16 +105,26 @@ func TestKerSysctlPersist_SetConfig(t *testing.T) {
 	}{
 		{name: "create file", args: args{config: &agent.SysConfig{ConfigPath: persistPath}}, want: []string{comment}, wantErr: false},
 		{
+			name: "nil path",
+			args: args{
+				config: &agent.SysConfig{},
+			},
+			want:    []string{},
+			wantErr: false,
+		},
+		{
 			name: "add configs",
 			args: args{
 				config: &agent.SysConfig{
 					ConfigPath: persistPath,
 					Contents: map[string]*agent.KeyInfo{
-						"a": {Value: "1"},
-						"b": {Value: "2"},
-						"c": {Value: ""},
-						"":  {Value: "4"},
-						"e": {Value: "5"},
+						"a":   {Value: "1"},
+						"b":   {Value: "2"},
+						"c":   {Value: ""},
+						"":    {Value: "4"},
+						"e":   {Value: "5", Operation: "xxx"},
+						"y=1": {Value: "26"},
+						"z":   {Value: "x=1"},
 					},
 				},
 			},
@@ -123,6 +132,7 @@ func TestKerSysctlPersist_SetConfig(t *testing.T) {
 				"a=1",
 				"b=2",
 				"e=5",
+				"z=x=1",
 			},
 			wantErr: false,
 		},
@@ -134,6 +144,7 @@ func TestKerSysctlPersist_SetConfig(t *testing.T) {
 					Contents: map[string]*agent.KeyInfo{
 						"a": {Value: "2"},
 						"b": {Value: ""},
+						"z": {Value: "x=2", Operation: "zzz"},
 					},
 				},
 			},
@@ -141,6 +152,7 @@ func TestKerSysctlPersist_SetConfig(t *testing.T) {
 				"a=2",
 				"b=2",
 				"e=5",
+				"z=x=2",
 			},
 			wantErr: false,
 		},
@@ -155,6 +167,7 @@ func TestKerSysctlPersist_SetConfig(t *testing.T) {
 						"c": {Value: "3", Operation: "delete"},
 						"e": {Value: "5", Operation: "remove"},
 						"f": {Value: "6", Operation: "remove"},
+						"z": {Value: "x=2", Operation: "delete"},
 					},
 				},
 			},
@@ -166,6 +179,8 @@ func TestKerSysctlPersist_SetConfig(t *testing.T) {
 			wantErr: false,
 		},
 	}
+	patchGetKernelConPath := gomonkey.ApplyFuncReturn(getKernelConPath, persistPath)
+	defer patchGetKernelConPath.Reset()
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			k := KerSysctlPersist{}
@@ -247,10 +262,11 @@ menuentry 'B' --class KubeOS --class gnu-linux --class gnu --class os --unrestri
 						"":                 {Value: "test"},                     // warning, skip, failed to add kv with empty key
 						"selinux":          {Value: "1", Operation: "delete"},   // failed to delete inconsistent kv
 						"acpi":             {Value: "off", Operation: "delete"}, // failed to delete inexistent kv
+						"ro":               {Value: "1"},                        // update key to kv
 					},
 				},
 			},
-			pattern: `(?m)^\s+linux\s+\/boot\/vmlinuz\s+root=UUID=[0-1]\s+ro\s+rootfstype=ext4\s+nomodeset\s+oops=panic\s+softlockup_panic=0\s+nmi_watchdog=1\s+rd\.shell=0\s+selinux=0\s+crashkernel=256M\s+panic=5\s+(debug\spci=nomis|pci=nomis\sdebug)$`,
+			pattern: `(?m)^\s+linux\s+\/boot\/vmlinuz\s+root=UUID=[0-1]\s+ro=1\s+rootfstype=ext4\s+nomodeset\s+oops=panic\s+softlockup_panic=0\s+nmi_watchdog=1\s+rd\.shell=0\s+selinux=0\s+crashkernel=256M\s+panic=5\s+(debug\spci=nomis|pci=nomis\sdebug)$`,
 			wantErr: false,
 		},
 		{
@@ -259,14 +275,15 @@ menuentry 'B' --class KubeOS --class gnu-linux --class gnu --class os --unrestri
 			args: args{
 				config: &agent.SysConfig{
 					Contents: map[string]*agent.KeyInfo{
-						"debug":    {Operation: "delete"},                 // delete key
-						"pci":      {Value: "nomis", Operation: "delete"}, // delete kv
-						"debugpat": {Value: "", Operation: "add"},         // passed key, operation is invalid, default to add key
-						"audit":    {Value: "1", Operation: "add"},        // passed kv, key is inexistent, operation is invalid, default to add kv
+						"debug":     {Operation: "delete"},                 // delete key
+						"pci":       {Value: "nomis", Operation: "delete"}, // delete kv
+						"debugpat":  {Value: "", Operation: "add"},         // passed key, operation is invalid, default to add key
+						"audit":     {Value: "1", Operation: "add"},        // passed kv, key is inexistent, operation is invalid, default to add kv
+						"nomodeset": {Value: "1", Operation: "delete"},     // delete key with inconsistent value
 					},
 				},
 			},
-			pattern: `(?m)^\s+linux\s+\/boot\/vmlinuz\s+root=UUID=[0-1]\s+ro\s+rootfstype=ext4\s+nomodeset\s+oops=panic\s+softlockup_panic=0\s+nmi_watchdog=1\s+rd\.shell=0\s+selinux=0\s+crashkernel=256M\s+panic=5\s+(debugpat\saudit=1|audit=1\sdebugpat)$`,
+			pattern: `(?m)^\s+linux\s+\/boot\/vmlinuz\s+root=UUID=[0-1]\s+ro=1\s+rootfstype=ext4\s+nomodeset\s+oops=panic\s+softlockup_panic=0\s+nmi_watchdog=1\s+rd\.shell=0\s+selinux=0\s+crashkernel=256M\s+panic=5\s+(debugpat\saudit=1|audit=1\sdebugpat)$`,
 			wantErr: false,
 		},
 		{
@@ -285,6 +302,7 @@ menuentry 'B' --class KubeOS --class gnu-linux --class gnu --class os --unrestri
 						"":                 {Value: "test"},                   // warning, skip, failed to add kv with empty key
 						"selinux":          {Value: "1", Operation: "delete"},
 						"acpi":             {Value: "off", Operation: "delete"},
+						"ro":               {Value: ""},
 					},
 				},
 			},
@@ -463,6 +481,34 @@ func Test_getConfigPartition(t *testing.T) {
 			}
 			if got != tt.want {
 				t.Errorf("getConfigPartition() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func Test_ConfigFactoryTemplate(t *testing.T) {
+	type args struct {
+		configType string
+		config     *agent.SysConfig
+	}
+	tests := []struct {
+		name    string
+		args    args
+		wantErr bool
+	}{
+		{
+			name: "error",
+			args: args{
+				configType: "test",
+				config:     &agent.SysConfig{},
+			},
+			wantErr: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if err := ConfigFactoryTemplate(tt.args.configType, tt.args.config); (err != nil) != tt.wantErr {
+				t.Errorf("ConfigFactoryTemplate() error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})
 	}

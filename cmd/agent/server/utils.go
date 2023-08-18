@@ -316,7 +316,7 @@ func isCommandAvailable(name string) bool {
 }
 
 func isValidImageName(image string) error {
-	pattern := `^((?:[\w.-]+)(?::\d+)?\/)*(?:[\w.-]+)(?::[\w_.-]+)?(?:@sha256:[a-fA-F0-9]+)?$`
+	pattern := `^((?:[\w.-]+)(?::\d+)?\/)*(?:[\w.-]+)((?::[\w_.-]+)?|(?:@sha256:[a-fA-F0-9]+)?)$`
 	regEx, err := regexp.Compile(pattern)
 	if err != nil {
 		return err
