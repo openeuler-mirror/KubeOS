@@ -190,26 +190,25 @@ func prepareEnv() (preparePath, error) {
 	if err := checkDiskSize(needGBSize, PersistDir); err != nil {
 		return preparePath{}, err
 	}
-	rootfsFile := rootfsArchive
-	updatePath := splicePath(PersistDir, updateDir)
-	mountPath := splicePath(updatePath, mountDir)
-	tarPath := splicePath(updatePath, rootfsFile)
-	imagePath := splicePath(PersistDir, osImageName)
-
-	if err := cleanSpace(updatePath, mountPath, imagePath); err != nil {
+	upgradePath := newPreparePath()
+	if err := cleanSpace(upgradePath.updatePath, upgradePath.mountPath, upgradePath.imagePath); err != nil {
 		return preparePath{}, err
 	}
-	if err := os.MkdirAll(mountPath, imgPermission); err != nil {
+	if err := os.MkdirAll(upgradePath.mountPath, imgPermission); err != nil {
 		return preparePath{}, err
-	}
-	upgradePath := preparePath{
-		updatePath: updatePath,
-		mountPath:  mountPath,
-		tarPath:    tarPath,
-		imagePath:  imagePath,
-		rootfsFile: rootfsFile,
 	}
 	return upgradePath, nil
+}
+
+func newPreparePath() preparePath {
+	updatePath := splicePath(PersistDir, updateDir)
+	return preparePath{
+		updatePath: updatePath,
+		mountPath:  splicePath(updatePath, mountDir),
+		tarPath:    splicePath(updatePath, rootfsArchive),
+		imagePath:  splicePath(PersistDir, osImageName),
+		rootfsFile: rootfsArchive,
+	}
 }
 
 func checkDiskSize(needGBSize int, path string) error {
