@@ -96,7 +96,11 @@ func Reconcile(ctx context.Context, r common.ReadStatusWriter, req ctrl.Request)
 func (r *OSReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	if err := mgr.GetFieldIndexer().IndexField(context.Background(), &upgradev1.OSInstance{}, values.OsiStatusName,
 		func(rawObj client.Object) []string {
-			osi := rawObj.(*upgradev1.OSInstance)
+			osi, ok := rawObj.(*upgradev1.OSInstance)
+			if !ok {
+				log.Error(nil, "failed to convert to osInstance")
+				return []string{}
+			}
 			return []string{osi.Spec.NodeStatus}
 		}); err != nil {
 		return err
