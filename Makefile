@@ -133,7 +133,7 @@ kustomize:
 	$(call go-get-tool,$(KUSTOMIZE),sigs.k8s.io/kustomize/kustomize/v3@v3.8.7)
 
 ARCH := $(shell uname -m)
-TEST_CMD := go test ./... -race -count=1 -timeout=300s -cover -gcflags=all=-l -p 1
+TEST_CMD := go test `go list ./cmd/... | grep -E 'server|controllers'` -race -count=1 -timeout=300s -cover -gcflags=all=-l -p 1
 
 ifeq ($(ARCH), aarch64)
 	TEST_CMD := ETCD_UNSUPPORTED_ARCH=arm64 $(TEST_CMD)

@@ -21,6 +21,7 @@ import (
 	"crypto/x509/pkix"
 	"encoding/hex"
 	"encoding/pem"
+	"fmt"
 	"io"
 	"math/big"
 	"net/http"
@@ -52,36 +53,78 @@ func Test_download(t *testing.T) {
 		want    string
 		wantErr bool
 	}{
-		// {name: "errornil", args: args{&pb.UpdateRequest{Certs: &pb.CertsInfo{}}}, want: "", wantErr: true},
-		// {name: "normal", args: args{&pb.UpdateRequest{ImageUrl: "http://www.openeuler.org/zh/", FlagSafe: true, Certs: &pb.CertsInfo{}}}, want: "/persist/update.img", wantErr: false},
-		// {name: "errornodir", args: args{&pb.UpdateRequest{ImageUrl: "http://www.openeuler.org/zh/", FlagSafe: true, Certs: &pb.CertsInfo{}}}, want: "", wantErr: true},
+		{name: "errornil", args: args{&pb.UpdateRequest{Certs: &pb.CertsInfo{}}}, want: "", wantErr: true},
+		{name: "error response", args: args{&pb.UpdateRequest{ImageUrl: "http://www.openeuler.abc", FlagSafe: true, Certs: &pb.CertsInfo{}}}, want: "", wantErr: true},
 		{
 			name: "normal",
 			args: args{
 				req: &pb.UpdateRequest{
 					ImageUrl: "http://www.openeuler.org/zh/",
+					FlagSafe: true,
+					Certs:    &pb.CertsInfo{},
 				},
 			},
 			want:    tmpFileForDownload,
 			wantErr: false,
 		},
+		{
+			name: "disk space not enough",
+			args: args{
+				req: &pb.UpdateRequest{
+					ImageUrl: "http://www.openeuler.org/zh/",
+					FlagSafe: true,
+					Certs:    &pb.CertsInfo{},
+				},
+			},
+			want:    "",
+			wantErr: true,
+		},
 	}
-	patchStatfs := gomonkey.ApplyFunc(syscall.Statfs, func(path string, stat *syscall.Statfs_t) error {
+	var patchStatfs *gomonkey.Patches
+	patchStatfs = gomonkey.ApplyFunc(syscall.Statfs, func(path string, stat *syscall.Statfs_t) error {
 		stat.Bfree = 3000
 		stat.Bsize = 4096
 		return nil
 	})
 	defer patchStatfs.Reset()
-	patchGetImageUrl := gomonkey.ApplyFuncReturn(getImageURL, &http.Response{
-		StatusCode:    http.StatusOK,
-		ContentLength: 5,
-		Body:          io.NopCloser(strings.NewReader("hello")),
-	}, nil)
+	patchGetImageUrl := gomonkey.ApplyFuncSeq(getImageURL,
+		[]gomonkey.OutputCell{
+			{Values: gomonkey.Params{&http.Response{}, fmt.Errorf("error")}},
+			{Values: gomonkey.Params{&http.Response{StatusCode: http.StatusBadRequest, Body: io.NopCloser(strings.NewReader(""))}, nil}},
+			{
+				Values: gomonkey.Params{
+					&http.Response{
+						StatusCode:    http.StatusOK,
+						ContentLength: 5,
+						Body:          io.NopCloser(strings.NewReader("hello")),
+					},
+					nil,
+				},
+			},
+			{
+				Values: gomonkey.Params{
+					&http.Response{
+						StatusCode:    http.StatusOK,
+						ContentLength: 5,
+						Body:          io.NopCloser(strings.NewReader("hello")),
+					},
+					nil,
+				},
+			},
+		},
+	)
 	defer patchGetImageUrl.Reset()
 	patchOSCreate := gomonkey.ApplyFuncReturn(os.Create, tmpFile, nil)
 	defer patchOSCreate.Reset()
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			if tt.name == "disk space not enough" {
+				patchStatfs = gomonkey.ApplyFunc(syscall.Statfs, func(path string, stat *syscall.Statfs_t) error {
+					stat.Bfree = 1
+					stat.Bsize = 4096
+					return nil
+				})
+			}
 			got, err := download(tt.args.req)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("download() error = %v, wantErr %v", err, tt.wantErr)
@@ -160,13 +203,27 @@ func Test_getImageURL(t *testing.T) {
 			MTLS:     false,
 			Certs:    &pb.CertsInfo{},
 		}}, want: &http.Response{StatusCode: http.StatusOK}, wantErr: false},
+		{name: "httpsLoadCertsError", args: args{req: &pb.UpdateRequest{
+			ImageUrl: "https://www.openeuler.abc/zh/",
+			FlagSafe: true,
+			MTLS:     false,
+			Certs:    &pb.CertsInfo{},
+		}}, want: &http.Response{}, wantErr: true},
+		{name: "httpsMLTSLoadCertsError", args: args{req: &pb.UpdateRequest{
+			ImageUrl: "https://www.openeuler.abc/zh/",
+			FlagSafe: true,
+			MTLS:     true,
+			Certs:    &pb.CertsInfo{},
+		}}, want: &http.Response{}, wantErr: true},
 	}
-	patchLoadClientCerts := gomonkey.ApplyFunc(loadClientCerts, func(caCert, clientCert, clientKey string) (*http.Client, error) {
-		return &http.Client{}, nil
+	patchLoadClientCerts := gomonkey.ApplyFuncSeq(loadClientCerts, []gomonkey.OutputCell{
+		{Values: gomonkey.Params{&http.Client{}, nil}},
+		{Values: gomonkey.Params{&http.Client{}, fmt.Errorf("error")}},
 	})
 	defer patchLoadClientCerts.Reset()
-	patchLoadCaCerts := gomonkey.ApplyFunc(loadCaCerts, func(caCert string) (*http.Client, error) {
-		return &http.Client{}, nil
+	patchLoadCaCerts := gomonkey.ApplyFuncSeq(loadCaCerts, []gomonkey.OutputCell{
+		{Values: gomonkey.Params{&http.Client{}, nil}},
+		{Values: gomonkey.Params{&http.Client{}, fmt.Errorf("error")}},
 	})
 	defer patchLoadCaCerts.Reset()
 	patchGet := gomonkey.ApplyFunc(http.Get, func(url string) (resp *http.Response, err error) {
