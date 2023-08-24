@@ -41,7 +41,11 @@ func init() {
 }
 
 func main() {
-	mgr := common.NewControllerManager(setupLog, scheme)
+	mgr, err := common.NewControllerManager(setupLog, scheme)
+	if err != nil {
+		setupLog.Error(err, "unable to start manager")
+		os.Exit(1)
+	}
 
 	if err := (&controllers.OSReconciler{
 		Client: mgr.GetClient(),
