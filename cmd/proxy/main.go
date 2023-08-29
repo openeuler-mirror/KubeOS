@@ -44,10 +44,14 @@ func init() {
 }
 
 func main() {
-	mgr := common.NewControllerManager(setupLog, scheme)
+	var err error
+	mgr, err := common.NewControllerManager(setupLog, scheme)
+	if err != nil {
+		setupLog.Error(err, "unable to start manager")
+		os.Exit(1)
+	}
 
 	reconciler := controllers.NewOSReconciler(mgr)
-	var err error
 	if reconciler.Connection, err = agentclient.New("unix://" + filepath.Join(server.SockDir, server.SockName)); err != nil {
 		setupLog.Error(err, "Error running proxy")
 	}

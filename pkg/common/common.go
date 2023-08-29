@@ -15,7 +15,6 @@ package common
 
 import (
 	"flag"
-	"os"
 
 	"github.com/go-logr/logr"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -33,7 +32,7 @@ type ReadStatusWriter interface {
 }
 
 // NewControllerManager configure and return a manager
-func NewControllerManager(setupLog logr.Logger, scheme *runtime.Scheme) manager.Manager {
+func NewControllerManager(setupLog logr.Logger, scheme *runtime.Scheme) (manager.Manager, error) {
 	opts := zap.Options{}
 	opts.BindFlags(flag.CommandLine)
 
@@ -46,7 +45,7 @@ func NewControllerManager(setupLog logr.Logger, scheme *runtime.Scheme) manager.
 	})
 	if err != nil {
 		setupLog.Error(err, "unable to start manager")
-		os.Exit(1)
+		return nil, err
 	}
-	return mgr
+	return mgr, nil
 }
