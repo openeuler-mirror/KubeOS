@@ -57,7 +57,7 @@ func (k KernelSysctl) SetConfig(config *agent.SysConfig) error {
 			}
 			logrus.Infof("Configured kernel.sysctl %s=%s", key, keyInfo.Value)
 		} else {
-			logrus.Warnf("Failed to parse kernel.sysctl key: %s value: %s operation: %s", key, keyInfo.Value, keyInfo.Operation)
+			logrus.Warnf("Failed to parse kernel.sysctl, key: %s, value: %s, operation: %s", key, keyInfo.Value, keyInfo.Operation)
 		}
 	}
 	return nil
@@ -97,7 +97,11 @@ type GrubCmdline struct {
 
 // SetConfig sets grub.cmdline configuration
 func (g GrubCmdline) SetConfig(config *agent.SysConfig) error {
-	logrus.Info("start set grub.cmdline configuration")
+	if g.isCurPartition {
+		logrus.Info("start set grub.cmdline.current configuration")
+	} else {
+		logrus.Info("start set grub.cmdline.next configuration")
+	}
 	fileExist, err := checkFileExist(getGrubCfgPath())
 	if err != nil {
 		logrus.Errorf("Failed to find config path: %v", err)
