@@ -311,7 +311,6 @@ func TestServer_Configure(t *testing.T) {
 		want    *pb.ConfigureResponse
 		wantErr bool
 	}{
-		// TODO: Add test cases.
 		{
 			name:    "nil",
 			fields:  fields{UnimplementedOSServer: pb.UnimplementedOSServer{}, disableReboot: true},
