@@ -101,7 +101,7 @@ func (r *OSReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Re
 			if err = r.Update(ctx, osInstance); err != nil {
 				return values.RequeueNow, err
 			}
-			return values.RequeueNow, nil
+			return values.Requeue, nil
 		}
 		if err := r.setConfig(ctx, osInstance, values.SysConfigName); err != nil {
 			return values.RequeueNow, err
