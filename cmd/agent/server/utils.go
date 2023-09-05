@@ -75,6 +75,9 @@ func deleteNewline(out string) string {
 }
 
 func install(imagePath string, side string, next string) error {
+	if err := modifyImageLabel(imagePath, side, next); err != nil {
+		return err
+	}
 	if err := runCommand("dd", "if="+imagePath, "of="+side, "bs=8M"); err != nil {
 		return err
 	}
@@ -369,4 +372,11 @@ func getOCIImageDigest(containerRuntime string, imageName string) (string, error
 		}
 	}
 	return imageDigests, nil
+}
+
+func modifyImageLabel(imagePath, side, next string) error {
+	if err := runCommand("e2label", imagePath, "ROOT-"+next); err != nil {
+		return err
+	}
+	return nil
 }
