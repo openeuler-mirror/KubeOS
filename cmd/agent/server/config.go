@@ -305,6 +305,9 @@ func writeConfigToFile(path string, configs []string) error {
 	if err = w.Flush(); err != nil {
 		return err
 	}
+	if err := f.Sync(); err != nil {
+		return err
+	}
 	return nil
 }
 
