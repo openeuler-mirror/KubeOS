@@ -305,6 +305,9 @@ func writeConfigToFile(path string, configs []string) error {
 	if err = w.Flush(); err != nil {
 		return err
 	}
+	if err := f.Sync(); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -345,7 +348,7 @@ func getGrubCfgPath() string {
 func handleDeleteKey(config []string, configInfo *agent.KeyInfo) string {
 	key := config[0]
 	if len(config) == onlyKey && configInfo.Value == "" {
-		logrus.Infoln("delete configuration ", key)
+		logrus.Infoln("delete configuration", key)
 		return ""
 	} else if len(config) == onlyKey && configInfo.Value != "" {
 		logrus.Warnf("Failed to delete key %s with inconsistent values "+
@@ -395,12 +398,12 @@ func handleUpdateKey(config []string, configInfo *agent.KeyInfo, isFound bool) s
 func handleAddKey(m map[string]*agent.KeyInfo, isOnlyKeyValid bool) []string {
 	var configs []string
 	for key, keyInfo := range m {
-		if key == "" || strings.Contains(key, "=") {
-			logrus.Warnf("Failed to add nil key or key containing =, key: %s", key)
-			continue
-		}
 		if keyInfo.Operation == "delete" {
 			logrus.Warnf("Failed to delete inexistent key %s", key)
+			continue
+		}
+		if key == "" || strings.Contains(key, "=") {
+			logrus.Warnf("Failed to add nil key or key containing =, key: %s", key)
 			continue
 		}
 		if keyInfo.Operation != "" {
