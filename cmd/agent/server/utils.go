@@ -101,12 +101,10 @@ func getNextPart(partA string, partB string) (string, string, error) {
 	mountPoint := strings.TrimSpace(string(out))
 
 	side := partA
+	next := "A"
 	if mountPoint == "/" {
 		side = partB
-	}
-	next := "B"
-	if side != partB {
-		next = "A"
+		next = "B"
 	}
 	return side, next, nil
 }
