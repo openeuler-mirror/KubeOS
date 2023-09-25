@@ -22,28 +22,42 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+const (
+	bashPath              = "/usr/bin/bash"
+	usrBin                = "/usr/bin"
+	usrSbin               = "/usr/sbin"
+	localBin              = "/usr/local/bin"
+	localSbin             = "/usr/local/sbin"
+	usrLib                = "/usr/lib"
+	usrLib64              = "/usr/lib64"
+	lib                   = "/lib"
+	lib64                 = "/lib64"
+	envPathPrefix         = "PATH=$PATH:"
+	envLdLibrarPathPrefix = "LD_LIBRARY_PATH=$LD_LIBRARY_PATH:"
+)
+
 func main() {
 	EUID := os.Geteuid()
 	rootEUID := 0 // 0 indicates that the process has the permission of the root user.
 	if EUID != rootEUID {
 		logrus.Error("please use root to run hostshell")
-		return
+
 	}
 	PPID := os.Getppid()
 	rootFsPath := "/proc/" + strconv.Itoa(PPID) + "/root"
-	bashPath := "/usr/bin/bash"
-	usrBin := "/usr/bin"
-	usrSbin := "/usr/sbin"
-	localBin := "/usr/local/bin"
-	localSbin := "/usr/local/sbin"
-	paths := []string{usrBin, usrSbin, localBin, localSbin}
-	for i, p := range paths {
-		paths[i] = rootFsPath + p
-	}
-	path := "PATH=$PATH:" + strings.Join(paths, ":")
-	lib := "LD_LIBRARY_PATH=/lib:/lib64:/usr/lib:/usr/lib64:$LD_LIBRARY_PATH"
+	path := concatenateEnvPath(rootFsPath, envPathPrefix, []string{usrBin, usrSbin, localBin, localSbin})
+	libPath := concatenateEnvPath(rootFsPath, envLdLibrarPathPrefix, []string{usrLib, usrLib64, lib, lib64})
 	if err := syscall.Exec("/usr/bin/nsenter", []string{"nsenter", "-t", "1", "-a",
-		"env", "-i", path, lib, rootFsPath + bashPath}, os.Environ()); err != nil {
+		"env", "-i", path, libPath, rootFsPath + bashPath}, os.Environ()); err != nil {
 		logrus.Error("nsenter excute error", err)
 	}
+}
+
+func concatenateEnvPath(prefix string, envVarPrefix string, paths []string) string {
+	for i, p := range paths {
+		paths[i] = prefix + p
+	}
+	pathLine := envVarPrefix + strings.Join(paths, ":")
+	pathEnv := os.ExpandEnv(pathLine)
+	return pathEnv
 }

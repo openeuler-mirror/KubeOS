@@ -23,8 +23,14 @@ const (
 	// LabelUpgrading is the key of the upgrading label for nodes
 	LabelUpgrading = "upgrade.openeuler.org/upgrading"
 	// LabelMaster is the key of the master-node label for nodes
-	LabelMaster   = "node-role.kubernetes.io/control-plane"
-	defaultPeriod = 15 * time.Second
+	LabelMaster = "node-role.kubernetes.io/control-plane"
+	// LabelOSinstance is used to select the osinstance with the nodeName by label
+	LabelOSinstance = "upgrade.openeuler.org/osinstance-node"
+	// LabelNodeSelector is used to filter the nodes that need to be upgraded or configured.
+	LabelNodeSelector = "upgrade.openeuler.org/node-selector"
+	// LabelConfiguring is the key of the configuring label for nodes
+	LabelConfiguring = "upgrade.openeuler.org/configuring"
+	defaultPeriod    = 15 * time.Second
 	// OsiStatusName is param name of nodeStatus in osInstance
 	OsiStatusName = "nodestatus"
 	// UpgradeConfigName is param name of UpgradeConfig

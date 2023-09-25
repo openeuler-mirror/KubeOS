@@ -112,6 +112,15 @@ func (s *Server) update(req *pb.UpdateRequest) error {
 		return fmt.Errorf("image type %s cannot be recognized", action)
 	}
 	imagePath, err := handler.downloadImage(req)
+	defer func() {
+		if err != nil {
+			path := newPreparePath()
+			if err := cleanSpace(path.updatePath, path.mountPath, path.imagePath); err != nil {
+				logrus.Errorln("clean space error " + err.Error())
+			}
+			logrus.Infoln("clean space success")
+		}
+	}()
 	if err != nil {
 		return err
 	}
@@ -170,4 +179,8 @@ func (s *Server) reboot() error {
 		return nil
 	}
 	return syscall.Reboot(syscall.LINUX_REBOOT_CMD_RESTART)
+}
+
+func getCertPath() string {
+	return certPath
 }

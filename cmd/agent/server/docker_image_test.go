@@ -17,38 +17,102 @@ import (
 	"os"
 	"testing"
 
+	"github.com/agiledragon/gomonkey/v2"
 	pb "openeuler.org/KubeOS/cmd/agent/api"
 )
 
-func TestpullOSImage(t *testing.T) {
+func Test_dockerImageHandler_downloadImage(t *testing.T) {
 	type args struct {
 		req *pb.UpdateRequest
 	}
-	os.Mkdir("/persist", os.ModePerm)
 	tests := []struct {
 		name    string
+		d       dockerImageHandler
 		args    args
 		want    string
 		wantErr bool
 	}{
-		{name: "pull image error", args: args{req: &pb.UpdateRequest{
-			DockerImage: "test",
-		}}, want: "", wantErr: true},
-		{name: "normal", args: args{req: &pb.UpdateRequest{
-			DockerImage: "centos",
-		}}, want: "/persist/update.img", wantErr: false},
+		{
+			name: "pullImageError",
+			d:    dockerImageHandler{},
+			args: args{
+				req: &pb.UpdateRequest{ContainerImage: "testError"},
+			},
+			want:    "",
+			wantErr: true,
+		},
+
+		{
+			name: "checkSumError",
+			d:    dockerImageHandler{},
+			args: args{
+				req: &pb.UpdateRequest{ContainerImage: "hello-world", CheckSum: "aaaaaa"},
+			},
+			want:    "",
+			wantErr: true,
+		},
+
+		{
+			name: "normal",
+			d:    dockerImageHandler{},
+			args: args{
+				req: &pb.UpdateRequest{ContainerImage: "hello-world"},
+			},
+			want:    "update-test/upadte.img",
+			wantErr: false,
+		},
 	}
+	patchPrepareEnv := gomonkey.ApplyFunc(prepareEnv, func() (preparePath, error) {
+		return preparePath{updatePath: "update-test/",
+			mountPath:  "update-test/mountPath",
+			tarPath:    "update-test/mountPath/hello",
+			imagePath:  "update-test/upadte.img",
+			rootfsFile: "hello"}, nil
+	})
+	defer patchPrepareEnv.Reset()
+
+	patchCreateOSImage := gomonkey.ApplyFunc(createOSImage, func(neededPath preparePath) (string, error) {
+		return "update-test/upadte.img", nil
+	})
+	defer patchCreateOSImage.Reset()
+
+	if err := os.MkdirAll("update-test/mountPath", os.ModePerm); err != nil {
+		t.Errorf("create test dir error = %v", err)
+		return
+	}
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := pullOSImage(tt.args.req)
+			if tt.name == "normal" {
+				_, err := runCommandWithOut("docker", "create", "--name", "kubeos-temp", "hello-world")
+				if err != nil {
+					t.Errorf("Test_dockerImageHandler_getRootfsArchive create container error = %v", err)
+					return
+				}
+				imageDigests, err := getOCIImageDigest("docker", "hello-world")
+
+				if err != nil {
+					t.Errorf("Test_dockerImageHandler_getRootfsArchive get oci image digests error = %v", err)
+				}
+				tt.args.req.CheckSum = imageDigests
+			}
+			d := dockerImageHandler{}
+			got, err := d.downloadImage(tt.args.req)
 			if (err != nil) != tt.wantErr {
-				t.Errorf("pullOSImage() error = %v, wantErr %v", err, tt.wantErr)
+				t.Errorf("dockerImageHandler.downloadImage() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
 			if got != tt.want {
-				t.Errorf("pullOSImage() = %v, want %v", got, tt.want)
+				t.Errorf("dockerImageHandler.downloadImage() = %v, want %v", got, tt.want)
 			}
 		})
 	}
-	defer os.RemoveAll("/persist")
+	defer func() {
+		if err := runCommand("docker", "rmi", "hello-world"); err != nil {
+			t.Errorf("remove kubeos-temp container error = %v", err)
+		}
+		if err := os.RemoveAll("update-test"); err != nil {
+			t.Errorf("remove update-test error = %v", err)
+		}
+	}()
 }

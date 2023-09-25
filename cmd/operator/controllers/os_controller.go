@@ -15,6 +15,9 @@ package controllers
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
+	"reflect"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -63,29 +66,24 @@ func Reconcile(ctx context.Context, r common.ReadStatusWriter, req ctrl.Request)
 	}
 
 	ops := os.Spec.OpsType
+	var opsInsatnce operation
 	switch ops {
 	case "upgrade", "rollback":
-		limit, err := checkUpgrading(ctx, r, min(os.Spec.MaxUnavailable, nodeNum)) // adjust maxUnavailable if need
-		if err != nil {
-			return values.RequeueNow, err
-		}
-		if needRequeue, err := assignUpgrade(ctx, r, os, limit, req.Namespace); err != nil {
-			return values.RequeueNow, err
-		} else if needRequeue {
-			return values.Requeue, nil
-		}
+		opsInsatnce = upgradeOps{}
 	case "config":
-		limit, err := checkConfig(ctx, r, min(os.Spec.MaxUnavailable, nodeNum))
-		if err != nil {
-			return values.RequeueNow, err
-		}
-		if needRequeue, err := assignConfig(ctx, r, os.Spec.SysConfigs, os.Spec.SysConfigs.Version, limit); err != nil {
-			return values.RequeueNow, err
-		} else if needRequeue {
-			return values.Requeue, nil
-		}
+		opsInsatnce = configOps{}
 	default:
 		log.Error(nil, "operation "+ops+" cannot be recognized")
+		return values.Requeue, nil
+	}
+	limit, err := calNodeLimit(ctx, r, opsInsatnce, min(os.Spec.MaxUnavailable, nodeNum), os.Spec.NodeSelector) // adjust maxUnavailable if need
+	if err != nil {
+		return values.RequeueNow, err
+	}
+	if needRequeue, err := assignOperation(ctx, r, os, limit, opsInsatnce); err != nil {
+		return values.RequeueNow, err
+	} else if needRequeue {
+		return values.Requeue, nil
 	}
 	return values.Requeue, nil
 }
@@ -94,7 +92,11 @@ func Reconcile(ctx context.Context, r common.ReadStatusWriter, req ctrl.Request)
 func (r *OSReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	if err := mgr.GetFieldIndexer().IndexField(context.Background(), &upgradev1.OSInstance{}, values.OsiStatusName,
 		func(rawObj client.Object) []string {
-			osi := rawObj.(*upgradev1.OSInstance)
+			osi, ok := rawObj.(*upgradev1.OSInstance)
+			if !ok {
+				log.Error(nil, "failed to convert to osInstance")
+				return []string{}
+			}
 			return []string{osi.Spec.NodeStatus}
 		}); err != nil {
 		return err
@@ -109,7 +111,7 @@ func (r *OSReconciler) SetupWithManager(mgr ctrl.Manager) error {
 func (r *OSReconciler) DeleteOSInstance(e event.DeleteEvent, q workqueue.RateLimitingInterface) {
 	ctx := context.Background()
 	hostname := e.Object.GetName()
-	labelSelector := labels.SelectorFromSet(labels.Set{"upgrade.openeuler.org/osinstance-node": hostname})
+	labelSelector := labels.SelectorFromSet(labels.Set{values.LabelOSinstance: hostname})
 	osInstanceList := &upgradev1.OSInstanceList{}
 	if err := r.List(ctx, osInstanceList, client.MatchingLabelsSelector{Selector: labelSelector}); err != nil {
 		log.Error(err, "unable to list osInstances")
@@ -123,30 +125,44 @@ func (r *OSReconciler) DeleteOSInstance(e event.DeleteEvent, q workqueue.RateLim
 	}
 }
 
-func getAndUpdateOS(ctx context.Context, r common.ReadStatusWriter, name types.NamespacedName) (os upgradev1.OS,
-	nodeNum int, err error) {
-	if err = r.Get(ctx, name, &os); err != nil {
+func getAndUpdateOS(ctx context.Context, r common.ReadStatusWriter, name types.NamespacedName) (upgradev1.OS,
+	int, error) {
+	var os upgradev1.OS
+	if err := r.Get(ctx, name, &os); err != nil {
 		log.Error(err, "unable to fetch OS")
-		return
+		return upgradev1.OS{}, 0, err
 	}
 
 	requirement, err := labels.NewRequirement(values.LabelMaster, selection.DoesNotExist, nil)
 	if err != nil {
 		log.Error(err, "unable to create requirement "+values.LabelMaster)
-		return
+		return upgradev1.OS{}, 0, err
 	}
-	nodesItems, err := getNodes(ctx, r, 0, *requirement)
+	var requirements []labels.Requirement
+	requirements = append(requirements, *requirement)
+	if os.Spec.NodeSelector != "" {
+		reqSelector, err := labels.NewRequirement(values.LabelNodeSelector, selection.Exists, nil)
+		if err != nil {
+			log.Error(err, "unable to create requirement "+values.LabelNodeSelector)
+			return upgradev1.OS{}, 0, err
+		}
+		requirements = append(requirements, *requirement, *reqSelector)
+	}
+	nodesItems, err := getNodes(ctx, r, 0, requirements...)
 	if err != nil {
 		log.Error(err, "get slave nodes fail")
-		return
+		return upgradev1.OS{}, 0, err
 	}
-	nodeNum = len(nodesItems)
-	return
+	nodeNum := len(nodesItems)
+	return os, nodeNum, nil
 }
 
-func assignUpgrade(ctx context.Context, r common.ReadStatusWriter, os upgradev1.OS, limit int,
-	nameSpace string) (bool, error) {
-	requirement, err := labels.NewRequirement(values.LabelUpgrading, selection.DoesNotExist, nil)
+func assignOperation(ctx context.Context, r common.ReadStatusWriter, os upgradev1.OS, limit int,
+	ops operation) (bool, error) {
+	fmt.Println("start assignOperation")
+	fmt.Println("ops is ", reflect.TypeOf(ops))
+	requirement, err := ops.newNotExistRequirement()
+	fmt.Println("requirement is ", requirement.String())
 	if err != nil {
 		log.Error(err, "unable to create requirement "+values.LabelUpgrading)
 		return false, err
@@ -156,80 +172,29 @@ func assignUpgrade(ctx context.Context, r common.ReadStatusWriter, os upgradev1.
 		log.Error(err, "unable to create requirement "+values.LabelMaster)
 		return false, err
 	}
+	var requirements []labels.Requirement
+	requirements = append(requirements, requirement, *reqMaster)
+	if os.Spec.NodeSelector != "" {
+		reqSelector, err := labels.NewRequirement(values.LabelNodeSelector, selection.Equals, []string{os.Spec.NodeSelector})
+		if err != nil {
+			log.Error(err, "unable to create requirement "+values.LabelNodeSelector)
+			return false, err
+		}
+		fmt.Println("requirement is ", reqSelector.String())
+		requirements = append(requirements, *reqSelector)
+	}
 
-	nodes, err := getNodes(ctx, r, limit+1, *requirement, *reqMaster) // one more to see if all node updated
+	nodes, err := getNodes(ctx, r, limit+1, requirements...) // one more to see if all nodes updated
+	if err != nil {
+		return false, err
+	}
+	fmt.Println("nodes has not upgrade/config and has selector ", len(nodes))
+	// Upgrade OS for selected nodes
+	count, err := ops.updateNodes(ctx, r, &os, nodes, limit)
 	if err != nil {
 		return false, err
 	}
 
-	var count = 0
-	for _, node := range nodes {
-		if count >= limit {
-			break
-		}
-		osVersionNode := node.Status.NodeInfo.OSImage
-		if os.Spec.OSVersion != osVersionNode {
-			var osInstance upgradev1.OSInstance
-			if err = r.Get(ctx, types.NamespacedName{Namespace: nameSpace, Name: node.Name}, &osInstance); err != nil {
-				if err = client.IgnoreNotFound(err); err != nil {
-					log.Error(err, "failed to get osInstance "+node.Name)
-					return false, err
-				}
-				continue
-			}
-			count++
-			node.Labels[values.LabelUpgrading] = ""
-			expUpVersion := os.Spec.UpgradeConfigs.Version
-			osiUpVersion := osInstance.Spec.UpgradeConfigs.Version
-			if osiUpVersion != expUpVersion {
-				osInstance.Spec.UpgradeConfigs = os.Spec.UpgradeConfigs
-			}
-			expSysVersion := os.Spec.SysConfigs.Version
-			osiSysVersion := osInstance.Spec.SysConfigs.Version
-			if osiSysVersion != expSysVersion {
-				osInstance.Spec.SysConfigs = os.Spec.SysConfigs
-				for i, config := range osInstance.Spec.SysConfigs.Configs {
-					if config.Model == "grub.cmdline.current" {
-						osInstance.Spec.SysConfigs.Configs[i].Model = "grub.cmdline.next"
-					}
-					if config.Model == "grub.cmdline.next" {
-						osInstance.Spec.SysConfigs.Configs[i].Model = "grub.cmdline.current"
-					}
-				}
-			}
-			osInstance.Spec.NodeStatus = values.NodeStatusUpgrade.String()
-			if err = r.Update(ctx, &osInstance); err != nil {
-				log.Error(err, "unable to update", "osInstance", osInstance.Name)
-			}
-			if err = r.Update(ctx, &node); err != nil {
-				log.Error(err, "unable to label", "node", node.Name)
-			}
-		}
-	}
-	return count >= limit, nil
-}
-
-func assignConfig(ctx context.Context, r common.ReadStatusWriter, sysConfigs upgradev1.SysConfigs,
-	configVersion string, limit int) (bool, error) {
-	osInstances, err := getIdleOSInstances(ctx, r, limit+1) // one more to see if all node updated
-	if err != nil {
-		return false, err
-	}
-	var count = 0
-	for _, osInstance := range osInstances {
-		if count >= limit {
-			break
-		}
-		configVersionNode := osInstance.Spec.SysConfigs.Version
-		if configVersion != configVersionNode {
-			count++
-			osInstance.Spec.SysConfigs = sysConfigs
-			osInstance.Spec.NodeStatus = values.NodeStatusConfig.String()
-			if err = r.Update(ctx, &osInstance); err != nil {
-				log.Error(err, "unable update osInstance ", "osInstanceName ", osInstance.Name)
-			}
-		}
-	}
 	return count >= limit, nil
 }
 
@@ -244,48 +209,37 @@ func getNodes(ctx context.Context, r common.ReadStatusWriter, limit int,
 	return nodeList.Items, nil
 }
 
-func getIdleOSInstances(ctx context.Context, r common.ReadStatusWriter, limit int) ([]upgradev1.OSInstance, error) {
-	var osInstanceList upgradev1.OSInstanceList
-	opt := []client.ListOption{
-		client.MatchingFields{values.OsiStatusName: values.NodeStatusIdle.String()},
-		&client.ListOptions{Limit: int64(limit)},
-	}
-	if err := r.List(ctx, &osInstanceList, opt...); err != nil {
-		log.Error(err, "unable to list nodes with requirements")
-		return nil, err
-	}
-	return osInstanceList.Items, nil
-}
-
-func getConfigOSInstances(ctx context.Context, r common.ReadStatusWriter) ([]upgradev1.OSInstance, error) {
-	var osInstanceList upgradev1.OSInstanceList
-	if err := r.List(ctx, &osInstanceList,
-		client.MatchingFields{values.OsiStatusName: values.NodeStatusConfig.String()}); err != nil {
-		log.Error(err, "unable to list nodes with requirements")
-		return nil, err
-	}
-	return osInstanceList.Items, nil
-}
-
-func checkUpgrading(ctx context.Context, r common.ReadStatusWriter, maxUnavailable int) (int, error) {
-	requirement, err := labels.NewRequirement(values.LabelUpgrading, selection.Exists, nil)
+func calNodeLimit(ctx context.Context, r common.ReadStatusWriter,
+	ops operation, maxUnavailable int, nodeSelector string) (int, error) {
+	fmt.Println("start calNodeLimit")
+	fmt.Println("ops is ", reflect.TypeOf(ops))
+	requirement, err := ops.newExistRequirement()
 	if err != nil {
 		log.Error(err, "unable to create requirement "+values.LabelUpgrading)
 		return 0, err
 	}
-	nodes, err := getNodes(ctx, r, 0, *requirement)
+	fmt.Println("requirement is ", requirement.String())
+	var requirements []labels.Requirement
+	requirements = append(requirements, requirement)
+	if nodeSelector != "" {
+		reqSelector, err := labels.NewRequirement(values.LabelNodeSelector, selection.Equals, []string{nodeSelector})
+		if err != nil {
+			log.Error(err, "unable to create requirement "+values.LabelNodeSelector)
+			return 0, err
+		}
+		fmt.Println("requirement is ", reqSelector.String())
+		requirements = append(requirements, *reqSelector)
+	}
+	nodes, err := getNodes(ctx, r, 0, requirements...)
 	if err != nil {
 		return 0, err
+
+	}
+	fmt.Println("nodes has upgrade and selector ", len(nodes))
+	for _, n := range nodes {
+		fmt.Println("   nodes name is  ", n.Name)
 	}
 	return maxUnavailable - len(nodes), nil
-}
-
-func checkConfig(ctx context.Context, r common.ReadStatusWriter, maxUnavailable int) (int, error) {
-	osInstances, err := getConfigOSInstances(ctx, r)
-	if err != nil {
-		return 0, err
-	}
-	return maxUnavailable - len(osInstances), nil
 }
 
 func min(a, b int) int {
@@ -293,4 +247,29 @@ func min(a, b int) int {
 		return a
 	}
 	return b
+}
+
+func deepCopySpecConfigs(os *upgradev1.OS, osinstance *upgradev1.OSInstance, configType string) error {
+	switch configType {
+	case values.UpgradeConfigName:
+		data, err := json.Marshal(os.Spec.UpgradeConfigs)
+		if err != nil {
+			return err
+		}
+		if err = json.Unmarshal(data, &osinstance.Spec.UpgradeConfigs); err != nil {
+			return err
+		}
+	case values.SysConfigName:
+		data, err := json.Marshal(os.Spec.SysConfigs)
+		if err != nil {
+			return err
+		}
+		if err = json.Unmarshal(data, &osinstance.Spec.SysConfigs); err != nil {
+			return err
+		}
+	default:
+		log.Error(nil, "configType "+configType+" cannot be recognized")
+		return fmt.Errorf("configType %s cannot be recognized", configType)
+	}
+	return nil
 }

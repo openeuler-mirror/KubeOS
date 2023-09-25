@@ -89,7 +89,21 @@ func TestServerUpdate(t *testing.T) {
 		{name: "error", fields: fields{UnimplementedOSServer: pb.UnimplementedOSServer{}, disableReboot: true},
 			args: args{in0: context.Background(), req: &pb.UpdateRequest{Version: "test", Certs: &pb.CertsInfo{}}},
 			want: &pb.UpdateResponse{}, wantErr: true},
+		{name: "success", fields: fields{UnimplementedOSServer: pb.UnimplementedOSServer{}, disableReboot: true},
+			args: args{in0: context.Background(), req: &pb.UpdateRequest{Version: "test", Certs: &pb.CertsInfo{}, ImageType: "containerd"}},
+			want: &pb.UpdateResponse{}, wantErr: false},
 	}
+	patchRootfsDisks := gomonkey.ApplyFuncReturn(getRootfsDisks, "/dev/sda2", "/dev/sda3", nil)
+	defer patchRootfsDisks.Reset()
+	// assume now is partition A, want to swiching to partition B
+	patchGetNextPartition := gomonkey.ApplyFuncReturn(getNextPart, "/dev/sda3", "B", nil)
+	defer patchGetNextPartition.Reset()
+	patchDownloadImage := gomonkey.ApplyPrivateMethod(conImageHandler{}, "downloadImage", func(_ conImageHandler, req *pb.UpdateRequest) (string, error) {
+		return "", nil
+	})
+	defer patchDownloadImage.Reset()
+	patchInstall := gomonkey.ApplyFuncReturn(install, nil)
+	defer patchInstall.Reset()
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			s := &Server{
@@ -129,11 +143,26 @@ func TestServerRollback(t *testing.T) {
 		{name: "error", fields: fields{UnimplementedOSServer: pb.UnimplementedOSServer{}, disableReboot: true},
 			args: args{in0: context.Background(), req: &pb.RollbackRequest{}},
 			want: &pb.RollbackResponse{}, wantErr: true},
+		{name: "success", fields: fields{UnimplementedOSServer: pb.UnimplementedOSServer{}, disableReboot: true},
+			args: args{in0: context.Background(), req: &pb.RollbackRequest{}},
+			want: &pb.RollbackResponse{}, wantErr: false},
 	}
-	patchGetNextPart := gomonkey.ApplyFunc(getNextPart, func(partA string, partB string) (string, string, error) {
-		return "", "", fmt.Errorf("rollbak test error")
+	patchRootfsDisks := gomonkey.ApplyFuncReturn(getRootfsDisks, "/dev/sda2", "/dev/sda3", nil)
+	defer patchRootfsDisks.Reset()
+	// assume now is partition A, want to swiching to partition B
+	patchGetNextPartition := gomonkey.ApplyFuncSeq(getNextPart, []gomonkey.OutputCell{
+		{Values: gomonkey.Params{"", "", fmt.Errorf("rollbak test error")}},
+		{Values: gomonkey.Params{"/dev/sda3", "B", nil}},
 	})
-	defer patchGetNextPart.Reset()
+	defer patchGetNextPartition.Reset()
+	patchDownloadImage := gomonkey.ApplyPrivateMethod(conImageHandler{}, "downloadImage", func(_ conImageHandler, req *pb.UpdateRequest) (string, error) {
+		return "", nil
+	})
+	defer patchDownloadImage.Reset()
+	patchInstall := gomonkey.ApplyFuncReturn(install, nil)
+	defer patchInstall.Reset()
+	patchRunCommand := gomonkey.ApplyFuncReturn(runCommand, nil)
+	defer patchRunCommand.Reset()
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			s := &Server{
@@ -179,9 +208,9 @@ func TestServerupdate(t *testing.T) {
 		}},
 			wantErr: true},
 		{name: "errordocker", args: args{&pb.UpdateRequest{
-			DockerImage: "",
-			ImageType:   "docker",
-			Certs:       &pb.CertsInfo{},
+			ContainerImage: "",
+			ImageType:      "docker",
+			Certs:          &pb.CertsInfo{},
 		}},
 			wantErr: true},
 	}
@@ -260,6 +289,50 @@ func TestServerreboot(t *testing.T) {
 			}
 			if err := s.reboot(); (err != nil) != tt.wantErr {
 				t.Errorf("Server.reboot() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestServer_Configure(t *testing.T) {
+	type fields struct {
+		UnimplementedOSServer pb.UnimplementedOSServer
+		mutex                 Lock
+		disableReboot         bool
+	}
+	type args struct {
+		in0 context.Context
+		req *pb.ConfigureRequest
+	}
+	tests := []struct {
+		name    string
+		fields  fields
+		args    args
+		want    *pb.ConfigureResponse
+		wantErr bool
+	}{
+		{
+			name:    "nil",
+			fields:  fields{UnimplementedOSServer: pb.UnimplementedOSServer{}, disableReboot: true},
+			args:    args{in0: context.Background(), req: &pb.ConfigureRequest{}},
+			want:    &pb.ConfigureResponse{},
+			wantErr: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := &Server{
+				UnimplementedOSServer: tt.fields.UnimplementedOSServer,
+				mutex:                 tt.fields.mutex,
+				disableReboot:         tt.fields.disableReboot,
+			}
+			got, err := s.Configure(tt.args.in0, tt.args.req)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("Server.Configure() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("Server.Configure() = %v, want %v", got, tt.want)
 			}
 		})
 	}

@@ -23,7 +23,6 @@ import (
 	"testing"
 
 	"github.com/agiledragon/gomonkey/v2"
-
 	agent "openeuler.org/KubeOS/cmd/agent/api"
 )
 
@@ -67,6 +66,25 @@ func TestKernelSysctl_SetConfig(t *testing.T) {
 				},
 			}},
 		},
+		{
+			name: "nil value",
+			k:    KernelSysctl{},
+			args: args{config: &agent.SysConfig{
+				Contents: map[string]*agent.KeyInfo{
+					"d": {Value: ""},
+				},
+			}},
+		},
+		{
+			name: "nil key",
+			k:    KernelSysctl{},
+			args: args{config: &agent.SysConfig{
+				Contents: map[string]*agent.KeyInfo{
+					"": {Value: "1"},
+				},
+			}},
+			wantErr: true,
+		},
 	}
 	tmpDir := t.TempDir()
 	patchGetProcPath := gomonkey.ApplyFuncReturn(getDefaultProcPath, tmpDir+"/")
@@ -84,6 +102,7 @@ func TestKernelSysctl_SetConfig(t *testing.T) {
 func TestKerSysctlPersist_SetConfig(t *testing.T) {
 	tmpDir := t.TempDir()
 	persistPath := tmpDir + "/test-persist.conf"
+	comment := `# This file is managed by KubeOS for unit testing.`
 	type args struct {
 		config *agent.SysConfig
 	}
@@ -94,21 +113,36 @@ func TestKerSysctlPersist_SetConfig(t *testing.T) {
 		want    []string
 		wantErr bool
 	}{
+		{name: "create file", args: args{config: &agent.SysConfig{ConfigPath: persistPath}}, want: []string{comment}, wantErr: false},
+		{
+			name: "nil path",
+			args: args{
+				config: &agent.SysConfig{},
+			},
+			want:    []string{},
+			wantErr: false,
+		},
 		{
 			name: "add configs",
 			args: args{
 				config: &agent.SysConfig{
 					ConfigPath: persistPath,
 					Contents: map[string]*agent.KeyInfo{
-						"a": {Value: "1"},
-						"b": {Value: "2"},
-						"c": {Value: ""},
+						"a":   {Value: "1"},
+						"b":   {Value: "2"},
+						"c":   {Value: ""},
+						"":    {Value: "4"},
+						"e":   {Value: "5", Operation: "xxx"},
+						"y=1": {Value: "26"},
+						"z":   {Value: "x=1"},
 					},
 				},
 			},
 			want: []string{
 				"a=1",
 				"b=2",
+				"e=5",
+				"z=x=1",
 			},
 			wantErr: false,
 		},
@@ -120,12 +154,15 @@ func TestKerSysctlPersist_SetConfig(t *testing.T) {
 					Contents: map[string]*agent.KeyInfo{
 						"a": {Value: "2"},
 						"b": {Value: ""},
+						"z": {Value: "x=2", Operation: "zzz"},
 					},
 				},
 			},
 			want: []string{
 				"a=2",
 				"b=2",
+				"e=5",
+				"z=x=2",
 			},
 			wantErr: false,
 		},
@@ -137,29 +174,44 @@ func TestKerSysctlPersist_SetConfig(t *testing.T) {
 					Contents: map[string]*agent.KeyInfo{
 						"a": {Value: "1", Operation: "delete"},
 						"b": {Value: "2", Operation: "delete"},
+						"c": {Value: "3", Operation: "delete"},
+						"e": {Value: "5", Operation: "remove"},
+						"f": {Value: "6", Operation: "remove"},
+						"z": {Value: "x=2", Operation: "delete"},
 					},
 				},
 			},
 			want: []string{
 				"a=2",
+				"e=5",
+				"f=6",
 			},
 			wantErr: false,
 		},
 	}
+	patchGetKernelConPath := gomonkey.ApplyFuncReturn(getKernelConPath, persistPath)
+	defer patchGetKernelConPath.Reset()
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			k := KerSysctlPersist{}
 			if err := k.SetConfig(tt.args.config); (err != nil) != tt.wantErr {
 				t.Errorf("KerSysctlPersist.SetConfig() error = %v, wantErr %v", err, tt.wantErr)
 			}
+			if tt.name == "create file" {
+				if err := os.WriteFile(persistPath, []byte(comment), 0644); err != nil {
+					t.Fatalf("failed to write file %s", persistPath)
+				}
+			}
 			data, err := os.ReadFile(persistPath)
 			if err != nil {
 				t.Errorf("failed to read file %s", persistPath)
 			}
 			lines := strings.Split(string(data), "\n")
-			// remove the last empty line
-			lines = lines[:len(lines)-1]
-			sort.Strings(lines)
+			if tt.name != "create file" {
+				// remove the comment and the last empty line
+				lines = lines[1 : len(lines)-1]
+				sort.Strings(lines)
+			}
 			if !reflect.DeepEqual(lines, tt.want) {
 				t.Errorf("KerSysctlPersist file contents not equal, expect: %v, get: %v", tt.want, lines)
 			}
@@ -210,17 +262,38 @@ menuentry 'B' --class KubeOS --class gnu-linux --class gnu --class os --unrestri
 			args: args{
 				config: &agent.SysConfig{
 					Contents: map[string]*agent.KeyInfo{
-						"panic":   {Value: "5"},                        // update existent kv
-						"quiet":   {Value: "", Operation: "delete"},    // delete existent key
-						"oops":    {Value: ""},                         // update existent kv with null value
-						"selinux": {Value: "1", Operation: "delete"},   // failed to delete inconsistent kv
-						"acpi":    {Value: "off", Operation: "delete"}, // failed to delete inexistent kv
-						"debug":   {},                                  // add key
-						"pci":     {Value: "nomis"},                    // add kv
+						"debug":            {},                                  // add key
+						"pci":              {Value: "nomis"},                    // add kv
+						"quiet":            {Value: "", Operation: "delete"},    // delete existent key
+						"panic":            {Value: "5"},                        // update existent kv
+						"nomodeset":        {Operation: "update"},               // invalid operation, default to update existent key
+						"softlockup_panic": {Value: "0", Operation: "update"},   // invalid operation, default to update existent kv
+						"oops":             {Value: ""},                         // warning, skip, update existent kv with null value
+						"":                 {Value: "test"},                     // warning, skip, failed to add kv with empty key
+						"selinux":          {Value: "1", Operation: "delete"},   // failed to delete inconsistent kv
+						"acpi":             {Value: "off", Operation: "delete"}, // failed to delete inexistent kv
+						"ro":               {Value: "1"},                        // update key to kv
 					},
 				},
 			},
-			pattern: `(?m)^\s+linux\s+\/boot\/vmlinuz\s+root=UUID=[0-1]\s+ro\s+rootfstype=ext4\s+nomodeset\s+oops=panic\s+softlockup_panic=1\s+nmi_watchdog=1\s+rd\.shell=0\s+selinux=0\s+crashkernel=256M\s+panic=5\s+(debug\spci=nomis|pci=nomis\sdebug)$`,
+			pattern: `(?m)^\s+linux\s+\/boot\/vmlinuz\s+root=UUID=[0-1]\s+ro=1\s+rootfstype=ext4\s+nomodeset\s+oops=panic\s+softlockup_panic=0\s+nmi_watchdog=1\s+rd\.shell=0\s+selinux=0\s+crashkernel=256M\s+panic=5\s+(debug\spci=nomis|pci=nomis\sdebug)$`,
+			wantErr: false,
+		},
+		{
+			name: "delete and invalid operation",
+			g:    GrubCmdline{isCurPartition: true},
+			args: args{
+				config: &agent.SysConfig{
+					Contents: map[string]*agent.KeyInfo{
+						"debug":     {Operation: "delete"},                 // delete key
+						"pci":       {Value: "nomis", Operation: "delete"}, // delete kv
+						"debugpat":  {Value: "", Operation: "add"},         // passed key, operation is invalid, default to add key
+						"audit":     {Value: "1", Operation: "add"},        // passed kv, key is inexistent, operation is invalid, default to add kv
+						"nomodeset": {Value: "1", Operation: "delete"},     // delete key with inconsistent value
+					},
+				},
+			},
+			pattern: `(?m)^\s+linux\s+\/boot\/vmlinuz\s+root=UUID=[0-1]\s+ro=1\s+rootfstype=ext4\s+nomodeset\s+oops=panic\s+softlockup_panic=0\s+nmi_watchdog=1\s+rd\.shell=0\s+selinux=0\s+crashkernel=256M\s+panic=5\s+(debugpat\saudit=1|audit=1\sdebugpat)$`,
 			wantErr: false,
 		},
 		{
@@ -229,17 +302,21 @@ menuentry 'B' --class KubeOS --class gnu-linux --class gnu --class os --unrestri
 			args: args{
 				config: &agent.SysConfig{
 					Contents: map[string]*agent.KeyInfo{
-						"panic":   {Value: "4"},
-						"quiet":   {Value: "", Operation: "delete"},
-						"oops":    {Value: ""}, // update existent kv with null value
-						"selinux": {Value: "1", Operation: "delete"},
-						"acpi":    {Value: "off", Operation: "delete"},
-						"debug":   {},
-						"pci":     {Value: "nomis"},
+						"debug":            {},
+						"pci":              {Value: "nomis"},
+						"quiet":            {Value: "", Operation: "delete"},
+						"panic":            {Value: "4"},
+						"nomodeset":        {Operation: "update"},             // invalid operation, default to update existent key
+						"softlockup_panic": {Value: "0", Operation: "update"}, // invalid operation, default to update existent kv
+						"oops":             {Value: ""},                       // update existent kv with null value
+						"":                 {Value: "test"},                   // warning, skip, failed to add kv with empty key
+						"selinux":          {Value: "1", Operation: "delete"},
+						"acpi":             {Value: "off", Operation: "delete"},
+						"ro":               {Value: ""},
 					},
 				},
 			},
-			pattern: `(?m)^\s+linux\s+\/boot\/vmlinuz\s+root=UUID=[0-1]\s+ro\s+rootfstype=ext4\s+nomodeset\s+oops=panic\s+softlockup_panic=1\s+nmi_watchdog=1\s+rd\.shell=0\s+selinux=0\s+crashkernel=256M\s+panic=4\s+(debug\spci=nomis|pci=nomis\sdebug)$`,
+			pattern: `(?m)^\s+linux\s+\/boot\/vmlinuz\s+root=UUID=[0-1]\s+ro\s+rootfstype=ext4\s+nomodeset\s+oops=panic\s+softlockup_panic=0\s+nmi_watchdog=1\s+rd\.shell=0\s+selinux=0\s+crashkernel=256M\s+panic=4\s+(debug\spci=nomis|pci=nomis\sdebug)$`,
 			wantErr: false,
 		},
 	}
@@ -247,13 +324,13 @@ menuentry 'B' --class KubeOS --class gnu-linux --class gnu --class os --unrestri
 	defer patchGetGrubPath.Reset()
 	patchGetConfigPartition := gomonkey.ApplyFuncSeq(getConfigPartition, []gomonkey.OutputCell{
 		{Values: gomonkey.Params{false, nil}},
+		{Values: gomonkey.Params{false, nil}},
 		{Values: gomonkey.Params{true, nil}},
 	})
 	defer patchGetConfigPartition.Reset()
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			g := GrubCmdline{}
-			if err := g.SetConfig(tt.args.config); (err != nil) != tt.wantErr {
+			if err := tt.g.SetConfig(tt.args.config); (err != nil) != tt.wantErr {
 				t.Errorf("GrubCmdline.SetConfig() error = %v, wantErr %v", err, tt.wantErr)
 			}
 			contents, err := os.ReadFile(grubCfgPath)
@@ -371,6 +448,104 @@ func Test_getGrubCfgPath(t *testing.T) {
 			got := getGrubCfgPath()
 			if !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("getAndSetConfigsFromFile() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func Test_getConfigPartition(t *testing.T) {
+	type args struct {
+		isCurPartition bool
+	}
+	tests := []struct {
+		name    string
+		args    args
+		want    bool
+		wantErr bool
+	}{
+		{
+			name:    "get current partition",
+			args:    args{isCurPartition: true},
+			want:    false,
+			wantErr: false,
+		},
+		{
+			name:    "get next partition",
+			args:    args{isCurPartition: false},
+			want:    true,
+			wantErr: false,
+		},
+	}
+	patchRootfsDisks := gomonkey.ApplyFuncReturn(getRootfsDisks, "/dev/sda2", "/dev/sda3", nil)
+	defer patchRootfsDisks.Reset()
+	// assume now is partition A, want to swiching to partition B
+	patchGetNextPartition := gomonkey.ApplyFuncReturn(getNextPart, "/dev/sda3", "B", nil)
+	defer patchGetNextPartition.Reset()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := getConfigPartition(tt.args.isCurPartition)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("getConfigPartition() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if got != tt.want {
+				t.Errorf("getConfigPartition() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func Test_ConfigFactoryTemplate(t *testing.T) {
+	type args struct {
+		configType string
+		config     *agent.SysConfig
+	}
+	tests := []struct {
+		name    string
+		args    args
+		wantErr bool
+	}{
+		{
+			name: "error",
+			args: args{
+				configType: "test",
+				config:     &agent.SysConfig{},
+			},
+			wantErr: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if err := ConfigFactoryTemplate(tt.args.configType, tt.args.config); (err != nil) != tt.wantErr {
+				t.Errorf("ConfigFactoryTemplate() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func Test_convertNewConfigsToString(t *testing.T) {
+	type args struct {
+		newConfigs []string
+	}
+	tests := []struct {
+		name    string
+		args    args
+		want    string
+		wantErr bool
+	}{
+		{name: "error", args: args{newConfigs: []string{"a"}}, want: "", wantErr: true},
+	}
+	patchFprintf := gomonkey.ApplyFuncReturn(fmt.Fprintf, 0, fmt.Errorf("error"))
+	defer patchFprintf.Reset()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := convertNewConfigsToString(tt.args.newConfigs)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("convertNewConfigsToString() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if got != tt.want {
+				t.Errorf("convertNewConfigsToString() = %v, want %v", got, tt.want)
 			}
 		})
 	}

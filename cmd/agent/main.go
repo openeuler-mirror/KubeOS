@@ -13,8 +13,6 @@
 package main
 
 import (
-	"fmt"
-
 	"github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
 
@@ -24,7 +22,7 @@ import (
 )
 
 func main() {
-	fmt.Println("Version is:", version.Version)
+	logrus.Infoln("Version is:", version.Version)
 	l, err := server.NewListener(server.SockDir, server.SockName)
 	if err != nil {
 		logrus.Errorln("listen error" + err.Error())

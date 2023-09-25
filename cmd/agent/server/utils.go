@@ -31,10 +31,7 @@ import (
 const (
 	needGBSize = 3 // the max size of update files needed
 	// KB is 1024 B
-	KB = 1024
-)
-
-var (
+	KB            = 1024
 	rootfsArchive = "os.tar"
 	updateDir     = "KubeOS-Update"
 	mountDir      = "kubeos-update"
@@ -51,6 +48,7 @@ type preparePath struct {
 	mountPath  string
 	tarPath    string
 	imagePath  string
+	rootfsFile string
 }
 
 func runCommand(name string, args ...string) error {
@@ -77,6 +75,9 @@ func deleteNewline(out string) string {
 }
 
 func install(imagePath string, side string, next string) error {
+	if err := modifyImageLabel(imagePath, side, next); err != nil {
+		return err
+	}
 	if err := runCommand("dd", "if="+imagePath, "of="+side, "bs=8M"); err != nil {
 		return err
 	}
@@ -100,12 +101,10 @@ func getNextPart(partA string, partB string) (string, string, error) {
 	mountPoint := strings.TrimSpace(string(out))
 
 	side := partA
+	next := "A"
 	if mountPoint == "/" {
 		side = partB
-	}
-	next := "B"
-	if side != partB {
-		next = "A"
+		next = "B"
 	}
 	return side, next, nil
 }
@@ -192,24 +191,25 @@ func prepareEnv() (preparePath, error) {
 	if err := checkDiskSize(needGBSize, PersistDir); err != nil {
 		return preparePath{}, err
 	}
-	updatePath := splicePath(PersistDir, updateDir)
-	mountPath := splicePath(updatePath, mountDir)
-	tarPath := splicePath(updatePath, rootfsArchive)
-	imagePath := splicePath(PersistDir, osImageName)
-
-	if err := cleanSpace(updatePath, mountPath, imagePath); err != nil {
+	upgradePath := newPreparePath()
+	if err := cleanSpace(upgradePath.updatePath, upgradePath.mountPath, upgradePath.imagePath); err != nil {
 		return preparePath{}, err
 	}
-	if err := os.MkdirAll(mountPath, imgPermission); err != nil {
+	if err := os.MkdirAll(upgradePath.mountPath, imgPermission); err != nil {
 		return preparePath{}, err
-	}
-	upgradePath := preparePath{
-		updatePath: updatePath,
-		mountPath:  mountPath,
-		tarPath:    tarPath,
-		imagePath:  imagePath,
 	}
 	return upgradePath, nil
+}
+
+func newPreparePath() preparePath {
+	updatePath := splicePath(PersistDir, updateDir)
+	return preparePath{
+		updatePath: updatePath,
+		mountPath:  splicePath(updatePath, mountDir),
+		tarPath:    splicePath(updatePath, rootfsArchive),
+		imagePath:  splicePath(PersistDir, osImageName),
+		rootfsFile: rootfsArchive,
+	}
 }
 
 func checkDiskSize(needGBSize int, path string) error {
@@ -284,50 +284,9 @@ func checkFileExist(path string) (bool, error) {
 }
 
 func checkOCIImageDigestMatch(containerRuntime string, imageName string, checkSum string) error {
-	var cmdOutput string
-	var err error
-	switch containerRuntime {
-	case "crictl":
-		cmdOutput, err = runCommandWithOut("crictl", "inspecti", "--output", "go-template",
-			"--template", "{{.status.repoDigests}}", imageName)
-		if err != nil {
-			return err
-		}
-	case "docker":
-		cmdOutput, err = runCommandWithOut("docker", "inspect", "--format", "{{.RepoDigests}}", imageName)
-		if err != nil {
-			return err
-		}
-	case "ctr":
-		cmdOutput, err = runCommandWithOut("ctr", "-n", "k8s.io", "images", "ls", "name=="+imageName)
-		if err != nil {
-			return err
-		}
-		// after Fields, we get slice like [REF TYPE DIGEST SIZE PLATFORMS LABELS x x x x x x]
-		// the digest is the position 8 element
-		imageDigest := strings.Split(strings.Fields(cmdOutput)[8], ":")[1]
-		if imageDigest != checkSum {
-			logrus.Errorln("checkSumFailed ", imageDigest, " mismatch to ", checkSum)
-			return fmt.Errorf("checkSumFailed %s mismatch to %s", imageDigest, checkSum)
-		}
-		return nil
-	default:
-		logrus.Errorln("containerRuntime ", containerRuntime, " cannot be recognized")
-		return fmt.Errorf("containerRuntime %s cannot be recognized", containerRuntime)
-	}
-	// cmdOutput format is as follows:
-	// [imageRepository/imageName:imageTag@sha256:digests]
-	// parse the output and get digest
-	var imageDigests string
-	outArray := strings.Split(cmdOutput, "@")
-	if strings.HasPrefix(outArray[len(outArray)-1], "sha256") {
-		pasredArray := strings.Split(strings.TrimSuffix(outArray[len(outArray)-1], "]"), ":")
-		// 2 is the expected length of the array after dividing "imageName:imageTag@sha256:digests" based on ':'
-		rightLen := 2
-		if len(pasredArray) == rightLen {
-			digestIndex := 1 // 1 is the index of digest data in pasredArray
-			imageDigests = pasredArray[digestIndex]
-		}
+	imageDigests, err := getOCIImageDigest(containerRuntime, imageName)
+	if err != nil {
+		return err
 	}
 	if imageDigests == "" {
 		logrus.Errorln("error when get ", imageName, " digests")
@@ -357,13 +316,65 @@ func isCommandAvailable(name string) bool {
 }
 
 func isValidImageName(image string) error {
-	pattern := `^((?:[\w.-]+)(?::\d+)?\/)*(?:[\w.-]+)(?::[\w_.-]+)?(?:@sha256:[a-fA-F0-9]+)?$`
+	pattern := `^((?:[\w.-]+)(?::\d+)?\/)*(?:[\w.-]+)((?::[\w_.-]+)?|(?:@sha256:[a-fA-F0-9]+)?)$`
 	regEx, err := regexp.Compile(pattern)
 	if err != nil {
 		return err
 	}
 	if !regEx.MatchString(image) {
 		return fmt.Errorf("invalid image name %s", image)
+	}
+	return nil
+}
+
+func getOCIImageDigest(containerRuntime string, imageName string) (string, error) {
+	var cmdOutput string
+	var err error
+	var imageDigests string
+	switch containerRuntime {
+	case "crictl":
+		cmdOutput, err = runCommandWithOut("crictl", "inspecti", "--output", "go-template",
+			"--template", "{{.status.repoDigests}}", imageName)
+		if err != nil {
+			return "", err
+		}
+	case "docker":
+		cmdOutput, err = runCommandWithOut("docker", "inspect", "--format", "{{.RepoDigests}}", imageName)
+		if err != nil {
+			return "", err
+		}
+	case "ctr":
+		cmdOutput, err = runCommandWithOut("ctr", "-n", "k8s.io", "images", "ls", "name=="+imageName)
+		if err != nil {
+			return "", err
+		}
+		// after Fields, we get slice like [REF TYPE DIGEST SIZE PLATFORMS LABELS x x x x x x]
+		// the digest is the position 8 element
+		imageDigest := strings.Split(strings.Fields(cmdOutput)[8], ":")[1]
+		return imageDigest, nil
+	default:
+		logrus.Errorln("containerRuntime ", containerRuntime, " cannot be recognized")
+		return "", fmt.Errorf("containerRuntime %s cannot be recognized", containerRuntime)
+	}
+	// cmdOutput format is as follows:
+	// [imageRepository/imageName:imageTag@sha256:digests]
+	// parse the output and get digest
+	outArray := strings.Split(cmdOutput, "@")
+	if strings.HasPrefix(outArray[len(outArray)-1], "sha256") {
+		pasredArray := strings.Split(strings.TrimSuffix(outArray[len(outArray)-1], "]"), ":")
+		// 2 is the expected length of the array after dividing "imageName:imageTag@sha256:digests" based on ':'
+		rightLen := 2
+		if len(pasredArray) == rightLen {
+			digestIndex := 1 // 1 is the index of digest data in pasredArray
+			imageDigests = pasredArray[digestIndex]
+		}
+	}
+	return imageDigests, nil
+}
+
+func modifyImageLabel(imagePath, side, next string) error {
+	if err := runCommand("e2label", imagePath, "ROOT-"+next); err != nil {
+		return err
 	}
 	return nil
 }
