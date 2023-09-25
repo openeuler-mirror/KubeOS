@@ -67,6 +67,8 @@ spec:
                 type: integer
               mtls:
                 type: boolean
+              nodeselector:
+                type: string
               opstype:
                 type: string
               osversion:

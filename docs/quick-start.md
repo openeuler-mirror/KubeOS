@@ -251,7 +251,7 @@
   | evictpodforce      | bool | 升级/回退时是否强制驱逐pod                            | 需为 true 或者 false ，仅在升级或者回退时有效| 必选 |
   | sysconfigs      | / | 配置设置                          | 1. “opstype=config”时只进行配置。  2.“opstype=upgrade/rollback”时，代表升级/回退后配置，即在升级/回退重启后进行配置。```配置（Settings）指导``` | “opstype=config”时必选 |
   | upgradeconfigs | / | 升级前配置设置                       | 在升级或者回退时有效，在升级或者回退操作之前起效，详细字段说明请见```配置（Settings）指导```| 可选 |
-
+  | nodeselector      | string | 需要进行升级/配置/回滚操作的节点label                           | 用于只对具有某些特定label的节点而不是集群所有worker节点进行运维的场景，需要进行运维操作的节点需要包含key为upgrade.openeuler.org/node-selector的label，nodeselector为该label的value值，此参数不配置时，或者配置为""时默认对所有节点进行操作| 可选 |
 #### 升级指导
 
 * 编写YAML文件，在集群中部署 OS 的cr实例，用于部署cr实例的YAML示例如下，假定将上面的YAML保存到upgrade_v1alpha1_os.yaml;
@@ -320,7 +320,7 @@
         mtls: true
       ```
 
-    * 升级并且进行配置的示例如下，
+    * 升级并且进行配置的示例如下
       * 以节点容器引擎为containerd为例，升级方式对配置无影响，upgradeconfigs在升级前起效，sysconfigs在升级后起效，配置参数说明请见```配置(Settings)指导```
       * 升级并且配置时opstype字段需为upgrade
       * upgradeconfig为升级之前执行的配置，sysconfigs为升级机器重启后执行的配置，用户可按需进行配置
@@ -365,7 +365,37 @@
                         - key: kernel param key4
                           value: kernel param value4          
         ```
+    * 只升级部分节点示例如下
+      * 以节点容器引擎为containerd为例，升级方式对节点筛选无影响
+      * 需要进行升级的节点需包含key为upgrade.openeuler.org/node-selector的label，nodeselector的值为该label的value，即假定nodeselector值为kubeos，则只对包含upgrade.openeuler.org/node-selector=kubeos的label的worker节点进行升级
+      * nodeselector对配置和回滚同样有效
+      * 节点添加label和label修改命令示例如下：
+      ``` shell
+      # 为节点kubeos-node1增加label
+      kubectl label nodes kubeos-node1 upgrade.openeuler.org/node-selector=kubeos-v1
+      # 修改节点kubeos-node1的label
+      kubectl label --overwrite nodes kubeos-node2 upgrade.openeuler.org/node-selector=kubeos-v2
 
+      ```
+      * yaml示例如下：
+      ```yaml
+      apiVersion: upgrade.openeuler.org/v1alpha1
+      kind: OS
+      metadata:
+        name: os-sample
+      spec:
+        imagetype: containerd
+        opstype: upgrade
+        osversion: edit.os.version
+        maxunavailable: edit.node.upgrade.number
+        containerimage: container image like repository/name:tag
+        evictpodforce: true/false
+        imageurl: ""
+        checksum: container image digests
+        flagSafe: false
+        mtls: true
+        nodeselector: edit.node.label.key
+      ```
 * 查看未升级的节点的 OS 版本
 
     ```shell
@@ -711,8 +741,7 @@ hostshell
               operation: delete
     ```
 
-* kenerl.sysctl：临时设置内核参数，重启后无效，key/value 表示内核参数的 key/value， key与value均不能为空且key不能包含“=”，该参数不支持删除操作（operation=delete）示例如下:
-
+* kernel.sysctl.persist: 设置持久化内核参数，key/value表示内核参数的key/value，key与value均不能为空且key不能包含“=”， configpath为配置文件路径，支持新建（需保证父目录存在），如不指定configpath默认修改/etc/sysctl.conf，示例如下：
     ```yaml
     configs:
       - model: kernel.sysctl.persist

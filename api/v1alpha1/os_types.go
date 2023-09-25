@@ -38,6 +38,8 @@ type OSSpec struct {
 	SysConfigs SysConfigs `json:"sysconfigs"`
 	// +kubebuilder:validation:Optional
 	UpgradeConfigs SysConfigs `json:"upgradeconfigs"`
+	// +kubebuilder:validation:Optional
+	NodeSelector string `json:"nodeselector"`
 }
 
 // +kubebuilder:subresource:status
