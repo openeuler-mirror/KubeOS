@@ -244,6 +244,13 @@ func (r *OSReconciler) refreshNode(ctx context.Context, node *corev1.Node, osIns
 			return err
 		}
 	}
+	if _, ok := node.Labels[values.LabelConfiguring]; ok {
+		delete(node.Labels, values.LabelConfiguring)
+		if err := r.Update(ctx, node); err != nil {
+			log.Error(err, "unable to delete label", "node", node.Name)
+			return err
+		}
+	}
 	if node.Spec.Unschedulable { // update done, uncordon the node
 		drainer := &drain.Helper{
 			Ctx:                ctx,

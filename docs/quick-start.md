@@ -176,6 +176,7 @@
   | clientcert     | string | https双向认证时使用的客户端证书文件                          | 仅在使用https双向认证时有效|mtls为true时必选 |
   | clientkey      | string | https双向认证时使用的客户端公钥                              | 仅在使用https双向认证时有效|mtls为true时必选 |
   | evictpodforce      | bool | 用于表示升级/回退时是否强制驱逐pod                            | 需为 true 或者 false ，仅在升级或者回退时有效| 必选 |
+  | nodeselector      | string | 需要进行升级/配置/回滚操作的节点label                           | 用于只对具有某些特定label的节点而不是集群所有worker节点进行运维的场景，需要进行运维操作的节点需要包含key为upgrade.openeuler.org/node-selector的label，nodeselector为该label的value值，此参数不配置时，或者配置为""时默认对所有节点进行操作| 可选 |
   | sysconfigs      | / | 需要进行配置的参数值                            | 在配置或者升级或者回退机器时有效，在升级或者回退操作之后即机器重启之后起效，详细字段说明请见```配置（Settings）指导```| 可选 |
   | upgradeconfigs      | / | 需要升级前进行的配置的参数值                            | 在升级或者回退时有效，在升级或者回退操作之前起效，详细字段说明请见```配置（Settings）指导```| 可选 |  
 
@@ -247,7 +248,7 @@
         mtls: true
       ```
 
-    * 升级并且进行配置的示例如下，
+    * 升级并且进行配置的示例如下
       * 以节点容器引擎为containerd为例，升级方式对配置无影响，upgradeconfigs在升级前起效，sysconfigs在升级后起效，配置参数说明请见```配置(Settings)指导```
       * 升级并且配置时opstype字段需为upgrade
       * upgradeconfig为升级之前执行的配置，sysconfigs为升级机器重启后执行的配置，用户可按需进行配置
@@ -292,7 +293,37 @@
                         - key: kernel param key4
                           value: kernel param value4          
         ```
+    * 只升级部分节点示例如下
+      * 以节点容器引擎为containerd为例，升级方式对节点筛选无影响
+      * 需要进行升级的节点需包含key为upgrade.openeuler.org/node-selector的label，nodeselector的值为该label的value，即假定nodeselector值为kubeos，则只对包含upgrade.openeuler.org/node-selector=kubeos的label的worker节点进行升级
+      * nodeselector对配置和回滚同样有效
+      * 节点添加label和label修改命令示例如下：
+      ``` shell
+      # 为节点kubeos-node1增加label
+      kubectl label nodes kubeos-node1 upgrade.openeuler.org/node-selector=kubeos-v1
+      # 修改节点kubeos-node1的label
+      kubectl label --overwrite nodes kubeos-node2 upgrade.openeuler.org/node-selector=kubeos-v2
 
+      ```
+      * yaml示例如下：
+      ```yaml
+      apiVersion: upgrade.openeuler.org/v1alpha1
+      kind: OS
+      metadata:
+        name: os-sample
+      spec:
+        imagetype: containerd
+        opstype: upgrade
+        osversion: edit.os.version
+        maxunavailable: edit.node.upgrade.number
+        containerimage: container image like repository/name:tag
+        evictpodforce: true/false
+        imageurl: ""
+        checksum: container image digests
+        flagSafe: false
+        mtls: true
+        nodeselector: edit.node.label.key
+      ```
 * 查看未升级的节点的 OS 版本
 
     ```shell
@@ -366,20 +397,20 @@
   * 查看配置之前的节点的配置的版本和节点状态（NODESTATUS状态为idle）
 
     ```shell
-    kubectl get osinstances -o custom-columns='NAME:.metadata.name,NODESTATUS:.spec.nodestatus,SYSCONFIG:status.sysconfigs.version,UPGRADESYSCONFIG:status.upgradesysconfigs.version'
+    kubectl get osinstances -o custom-columns='NAME:.metadata.name,NODESTATUS:.spec.nodestatus,SYSCONFIG:status.sysconfigs.version,UPGRADESYSCONFIG:status.upgradeconfigs.version'
     ```
 
   * 执行命令，在集群中部署cr实例后，节点会根据配置的参数信息进行配置，再次查看节点状态(NODESTATUS变成config)
 
     ```shell
     kubectl apply -f upgrade_v1alpha1_os.yaml
-    kubectl get osinstances -o custom-columns='NAME:.metadata.name,NODESTATUS:.spec.nodestatus,SYSCONFIG:status.sysconfigs.version,UPGRADESYSCONFIG:status.upgradesysconfigs.version'
+    kubectl get osinstances -o custom-columns='NAME:.metadata.name,NODESTATUS:.spec.nodestatus,SYSCONFIG:status.sysconfigs.version,UPGRADESYSCONFIG:status.upgradeconfigs.version'
     ```
 
   * 再次查看节点的配置的版本确认节点是否配置完成(NODESTATUS恢复为idle)
 
     ```shell
-    kubectl get osinstances -o custom-columns='NAME:.metadata.name,NODESTATUS:.spec.nodestatus,SYSCONFIG:status.sysconfigs.version,UPGRADESYSCONFIG:status.upgradesysconfigs.version'
+    kubectl get osinstances -o custom-columns='NAME:.metadata.name,NODESTATUS:.spec.nodestatus,SYSCONFIG:status.sysconfigs.version,UPGRADESYSCONFIG:status.upgradeconfigs.version'
     ```
 
 * 如果后续需要再次升级，与上面相同对 upgrade_v1alpha1_os.yaml 的相应字段进行相应修改。
@@ -605,7 +636,7 @@ hostshell
 
 #### kernel Settings
 
-* kenerl.sysctl: 设置内核参数，key/value 表示内核参数的 key/value, 示例如下:
+* kenerl.sysctl: 临时设置内核参数，重启后无效，key/value 表示内核参数的 key/value， key与value均不能为空且key不能包含“=”，该参数不支持删除操作（operation=delete）, 示例如下:
 
     ```yaml
     configs:
@@ -618,8 +649,7 @@ hostshell
               operation: delete
     ```
 
-* kernel.sysctl.persist: 设置持久化内核参数，key/value 表示内核参数的 key/value, configpath为配置修改/新建的文件路径，如不指定configpath默认修改/etc/sysctl.conf
-
+* kernel.sysctl.persist: 设置持久化内核参数，key/value表示内核参数的key/value，key与value均不能为空且key不能包含“=”， configpath为配置文件路径，支持新建（需保证父目录存在），如不指定configpath默认修改/etc/sysctl.conf，示例如下：
     ```yaml
     configs:
       - model: kernel.systcl.persist
@@ -637,13 +667,14 @@ hostshell
 * grub.cmdline: 设置grub.cfg文件中的内核引导参数，该行参数在grub.cfg文件中类似如下示例：
 
   ```shell
-      linux   /boot/vmlinuz root=UUID=5b1aaf5d-5b25-4e4b-a0d3-3d4c8d2e6a6e ro consoleblank=600 console=tty0 console=ttyS0,115200n8 selinux=1 panic=3
+      linux   /boot/vmlinuz root=/dev/sda2 ro rootfstype=ext4 nomodeset quiet oops=panic softlockup_panic=1 nmi_watchdog=1 rd.shell=0 selinux=0 crashkernel=256M panic=3
   ```  
 
-  key/value 表示如上示例中内核引导参数的 key=value。
-  **注意：** 当该参数有多个等号，如root=UUID=some-uuid时，配置时的key为第一个等号前的所有字符，value为第一个等号后的所有字符。
-  配置方法示例如下：
-
+* KubeOS使用双分区，grub.cmdline支持对当前分区或下一分区进行配置：
+  * grub.cmdline.current：对当前分区的启动项参数进行配置。
+  * grub.cmdline.next：对下一分区的启动项参数进行配置。
+* 注意：升级/回退前后的配置，始终基于升级/回退操作下发时的分区位置进行current/next的区分。假设当前分区为A分区，下发升级操作并在sysconfigs（升级重启后配置）中配置grub.cmdline.current，重启后进行配置时仍修改A分区对应的grub cmdline。
+* grub.cmdline.current/next支持“key=value”（value不能为空），也支持单key。若value中有“=”，例如“root=UUID=some-uuid”，key应设置为第一个“=”前的所有字符，value为第一个“=”后的所有字符。 配置方法示例如下：
     ```yaml
     configs:
       - model: grub.cmdline

@@ -13,6 +13,7 @@ spec:
     checksum: image digests
     flagSafe: false
     mtls: false
+    nodeselector: edit.nodes.label
     sysconfigs:
         version: edit.sysconfig.version
         configs:
