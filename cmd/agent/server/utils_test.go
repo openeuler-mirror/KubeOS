@@ -86,32 +86,31 @@ func Test_getNextPart(t *testing.T) {
 	tests := []struct {
 		name    string
 		args    args
-		want    string
-		want1   string
+		want    partitionInfo
 		wantErr bool
 	}{
-		{name: "switch to sda3", args: args{partA: "/dev/sda2", partB: "/dev/sda3"}, want: "/dev/sda3", want1: "B", wantErr: false},
-		{name: "switch to sda2", args: args{partA: "/dev/sda2", partB: "/dev/sda3"}, want: "/dev/sda2", want1: "A", wantErr: false},
-		{name: "error", args: args{partA: "/dev/sda2", partB: "/dev/sda3"}, want: "", want1: "", wantErr: true},
+		{name: "switch to sda3", args: args{partA: "/dev/sda2", partB: "/dev/sda3"}, want: partitionInfo{"/dev/sda3", "B", "ext4"}, wantErr: false},
+		{name: "switch to sda2", args: args{partA: "/dev/sda2", partB: "/dev/sda3"}, want: partitionInfo{"/dev/sda2", "A", "ext4"}, wantErr: false},
+		{name: "error", args: args{partA: "/dev/sda2", partB: "/dev/sda3"}, want: partitionInfo{}, wantErr: true},
 	}
 	patchExecCommand := gomonkey.ApplyMethodSeq(&exec.Cmd{}, "CombinedOutput", []gomonkey.OutputCell{
 		{Values: gomonkey.Params{[]byte("/"), nil}},
+		{Values: gomonkey.Params{[]byte("ext4"), nil}},
 		{Values: gomonkey.Params{[]byte(""), nil}},
+		{Values: gomonkey.Params{[]byte("ext4"), nil}},
 		{Values: gomonkey.Params{[]byte(""), fmt.Errorf("error")}},
+		{Values: gomonkey.Params{[]byte("ext4"), nil}},
 	})
 	defer patchExecCommand.Reset()
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, got1, err := getNextPart(tt.args.partA, tt.args.partB)
+			nextPartInfo, err := getNextPart(tt.args.partA, tt.args.partB)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("getNextPart() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
-			if got != tt.want {
-				t.Errorf("getNextPart() got = %v, want %v", got, tt.want)
-			}
-			if got1 != tt.want1 {
-				t.Errorf("getNextPart() got1 = %v, want %v", got1, tt.want1)
+			if nextPartInfo != tt.want {
+				t.Errorf("getNextPart() got = %v, want %v", nextPartInfo, tt.want)
 			}
 		})
 	}
@@ -188,6 +187,8 @@ func Test_createOSImage(t *testing.T) {
 			wantErr: false,
 		},
 	}
+	patchGetNextPartition := gomonkey.ApplyFuncReturn(getNextPart, partitionInfo{"/dev/sda3", "B", "ext4"}, nil)
+	defer patchGetNextPartition.Reset()
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got, err := createOSImage(tt.args.neededPath)

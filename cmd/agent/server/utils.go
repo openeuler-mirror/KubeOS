@@ -51,6 +51,12 @@ type preparePath struct {
 	rootfsFile string
 }
 
+type partitionInfo struct {
+	device    string
+	menuentry string
+	fsType    string
+}
+
 func runCommand(name string, args ...string) error {
 	out, err := exec.Command(name, args...).CombinedOutput()
 	if err != nil {
@@ -68,16 +74,11 @@ func runCommandWithOut(name string, args ...string) (string, error) {
 }
 
 func deleteNewline(out string) string {
-	if strings.HasSuffix(out, "\n") {
-		out = strings.TrimSuffix(out, "\n")
-	}
+	out = strings.TrimSuffix(out, "\n")
 	return out
 }
 
 func install(imagePath string, side string, next string) error {
-	if err := modifyImageLabel(imagePath, side, next); err != nil {
-		return err
-	}
 	if err := runCommand("dd", "if="+imagePath, "of="+side, "bs=8M"); err != nil {
 		return err
 	}
@@ -93,20 +94,27 @@ func install(imagePath string, side string, next string) error {
 	}
 }
 
-func getNextPart(partA string, partB string) (string, string, error) {
+func getNextPart(partA string, partB string) (partitionInfo, error) {
 	out, err := exec.Command("lsblk", "-no", "MOUNTPOINT", partA).CombinedOutput()
 	if err != nil {
-		return "", "", fmt.Errorf("fail to lsblk %s out:%s err:%s", partA, out, err)
+		return partitionInfo{}, fmt.Errorf("fail to lsblk %s out:%s err:%s", partA, out, err)
 	}
 	mountPoint := strings.TrimSpace(string(out))
-
 	side := partA
 	next := "A"
 	if mountPoint == "/" {
 		side = partB
 		next = "B"
 	}
-	return side, next, nil
+	fsType, err := exec.Command("lsblk", "-no", "FSTYPE", side).CombinedOutput()
+	if err != nil {
+		return partitionInfo{}, fmt.Errorf("fail to lsblk %s out:%s err:%s", side, fsType, err)
+	}
+	return partitionInfo{
+		device:    side,
+		menuentry: next,
+		fsType:    strings.TrimSpace(string(fsType)),
+	}, nil
 }
 
 func getRootfsDisks() (string, string, error) {
@@ -155,13 +163,21 @@ func getBootMode() (string, error) {
 func createOSImage(neededPath preparePath) (string, error) {
 	imagePath := neededPath.imagePath
 	updatePath := neededPath.updatePath
+	partA, partB, err := getRootfsDisks()
+	if err != nil {
+		return "", err
+	}
+	nextPartInfo, err := getNextPart(partA, partB)
+	if err != nil {
+		return "", err
+	}
 	if err := runCommand("dd", "if=/dev/zero", "of="+imagePath, "bs=2M", "count=1024"); err != nil {
 		return "", err
 	}
 	if err := os.Chmod(imagePath, imgPermission); err != nil {
 		return "", err
 	}
-	if err := runCommand("mkfs.ext4", "-L", "ROOT-A", imagePath); err != nil {
+	if err := runCommand("mkfs."+nextPartInfo.fsType, "-L", "ROOT-"+nextPartInfo.menuentry, imagePath); err != nil {
 		return "", err
 	}
 	mountPath := neededPath.mountPath
@@ -370,11 +386,4 @@ func getOCIImageDigest(containerRuntime string, imageName string) (string, error
 		}
 	}
 	return imageDigests, nil
-}
-
-func modifyImageLabel(imagePath, side, next string) error {
-	if err := runCommand("e2label", imagePath, "ROOT-"+next); err != nil {
-		return err
-	}
-	return nil
 }

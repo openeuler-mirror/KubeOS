@@ -128,12 +128,12 @@ func (s *Server) update(req *pb.UpdateRequest) error {
 	if err != nil {
 		return err
 	}
-	side, next, err := getNextPart(partA, partB)
-	logrus.Infoln("switching to " + side + " partition " + next)
+	nextPartInfo, err := getNextPart(partA, partB)
+	logrus.Infoln("switching to " + nextPartInfo.device + " partition " + nextPartInfo.menuentry)
 	if err != nil {
 		return err
 	}
-	if err = install(imagePath, side, next); err != nil {
+	if err = install(imagePath, nextPartInfo.device, nextPartInfo.menuentry); err != nil {
 		return err
 	}
 	return s.reboot()
@@ -144,7 +144,7 @@ func (s *Server) rollback() error {
 	if err != nil {
 		return err
 	}
-	_, next, err := getNextPart(partA, partB)
+	nextPartInfo, err := getNextPart(partA, partB)
 	if err != nil {
 		return err
 	}
@@ -153,11 +153,11 @@ func (s *Server) rollback() error {
 		return err
 	}
 	if bootMode == "uefi" {
-		if err = runCommand("grub2-editenv", grubenvPath, "set", "saved_entry="+next); err != nil {
+		if err = runCommand("grub2-editenv", grubenvPath, "set", "saved_entry="+nextPartInfo.menuentry); err != nil {
 			return err
 		}
 	} else {
-		if err = runCommand("grub2-set-default", next); err != nil {
+		if err = runCommand("grub2-set-default", nextPartInfo.menuentry); err != nil {
 			return err
 		}
 	}
