@@ -61,6 +61,10 @@ agent:
 	${GO_BUILD_CGO} ${LD_FLAGS} -o bin/os-agent cmd/agent/main.go
 	strip bin/os-agent
 
+kbimg:
+	${GO_BUILD_CGO} ${LD_FLAGS} -o bin/kbimg cmd/kbimg/main.go
+	strip bin/kbimg
+
 hostshell:
 	${GO_BUILD_CGO} ${LD_FLAGS} -o bin/hostshell cmd/admin-container/main.go
 	strip bin/hostshell
