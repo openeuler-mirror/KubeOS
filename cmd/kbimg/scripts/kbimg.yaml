@@ -1,0 +1,129 @@
+## Copyright (c) Huawei Technologies Co., Ltd. 2021. All rights reserved.
+# KubeOS is licensed under the Mulan PSL v2.
+# You can use this software according to the terms and conditions of the Mulan PSL v2.
+# You may obtain a copy of Mulan PSL v2 at:
+#     http://license.coscl.org.cn/MulanPSL2
+# THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY OR FIT FOR A PARTICULAR
+# PURPOSE.
+## See the Mulan PSL v2 for more details.
+
+
+# build options
+option_config:
+  # docker image build 
+  # image: upgrade_image
+  # p: /etc/yum.repos.d/openEuler.repo
+  # v: v4
+  # b: /opt/KubeOS/bin/os-agent
+  # e: '$1$jGm34rPK$wljTBdbK9CRaJnG55/hEg1'
+  # d: openeuler_repository/openeuler:v4
+    
+  # vitural machine image build
+  # argument "-l" now is being testing, please don't change it
+  # image: vm_image_repo
+  # p: /etc/yum.repos.d/openEuler.repo
+  # v: v5
+  # b: /opt/KubeOS/bin/os-agent
+  # e: '$1$VF.Nxbia$oECrfHoXPiZBOhdF/3A4Z/'
+  # l: efi 
+
+  # image: vm_image_docker
+  # d: openeuler_repository/openeuler:v3
+
+  # physical machine image build
+  image: pxe_image_repo
+  p: /etc/yum.repos.d/openEuler.repo
+  v: v6
+  b: /opt/KubeOS/bin/os-agent
+  e: '$1$VF.Nxbia$oECrfHoXPiZBOhdF/3A4Z/'
+
+  # image: pxe_image_docker
+  # d: openeuler_repository/openeuler:v3
+
+# part your image
+partition_config: 
+  - Label: BOOT
+    limit: 80
+    type: ext4
+  - Label: ROOT-A 
+    limit: 3180
+    type: ext4
+  - Label: ROOT-B
+    limit: 4280
+    type: ext4
+  - Label: TEST-A
+    limit: 5280
+    type: vfat
+  - Label: TEST-B
+    limit: 6380
+    type: vfat
+  - Label: TEST-C
+    limit: 7380
+    type: ext4
+  - Label: PERSIST
+    limit: 999999999
+    type: ext4
+
+# move the files into your image
+file_config:
+  - sourcePath: /opt/Testfiles
+    targetPath: /home
+
+  - sourcePath: /opt/Testdirs
+    targetPath: /home
+
+  - sourcePath: /opt/KubeOS/scripts/common
+    targetPath: /home
+
+  - sourcePath: /opt/KubeOS/cmd/kbimg/scripts/kbimg.yaml
+    targetPath: /home
+
+  - sourcePath: /opt/Testfiles/Truefile
+    targetPath: /home
+
+  - sourcePath: /opt/Testfiles/test.service
+    targetPath: /etc/systemd/system
+
+  - sourcePath: /opt/Testfiles/test2.service
+    targetPath: /etc/systemd/system
+
+# add user / user groups
+user_config:
+  - name: goer1
+    passwd: 'kqjlRtDdGR/q6'
+    groups: root
+  
+  - name: goer2
+    passwd: 'kqjlRtDdGR/q6'
+    groups: bin
+
+  - name: goer1
+    passwd: 'YyEavjeg1Ym0Q'
+    groups: bin
+
+  - name: Lalo
+    passwd: 'YyEavjeg1Ym0Q'
+    groups: Salamanca
+
+  - name: Tuco
+    passwd: 'YyEavjeg1Ym0Q'
+    groups: Salamanca
+
+# set your host name
+host_config:
+  hostname: Salamanca
+
+# set your grub password 
+grub_config:
+  password: 'grub.pbkdf2.sha512.10000.2A4C76D83E268D524E2CAAF25996E436C23F0915ECE407719B9B0FCE9F401A9D4EA3E2D76F57CC2038415CAAFA2016B2FF665D49FEEC195884B329FCD2D21C5B.28B082CAC0975C5B0D621F2C68482E59D42A0E02D9220B6B640B63C3223A6BCFC7458C5E56C0F9B4BD5D17B1905137DE657999631E2A17351885BB644AA0DEF9'
+
+# systemd service config
+systemd_service_config:
+  - name: test.service
+    start: true
+
+  - name: test2.service
+    start: false
+
+
