@@ -479,7 +479,7 @@ func Test_getConfigPartition(t *testing.T) {
 	patchRootfsDisks := gomonkey.ApplyFuncReturn(getRootfsDisks, "/dev/sda2", "/dev/sda3", nil)
 	defer patchRootfsDisks.Reset()
 	// assume now is partition A, want to swiching to partition B
-	patchGetNextPartition := gomonkey.ApplyFuncReturn(getNextPart, "/dev/sda3", "B", nil)
+	patchGetNextPartition := gomonkey.ApplyFuncReturn(getNextPart, partitionInfo{"/dev/sda3", "B", "ext4"}, nil)
 	defer patchGetNextPartition.Reset()
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

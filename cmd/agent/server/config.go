@@ -133,12 +133,12 @@ func getConfigPartition(isCurPartition bool) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	_, next, err := getNextPart(partA, partB)
+	nextPartInfo, err := getNextPart(partA, partB)
 	if err != nil {
 		return false, err
 	}
 	var flag bool
-	if next == "B" {
+	if nextPartInfo.menuentry == "B" {
 		flag = true
 	}
 	return isCurPartition != flag, nil

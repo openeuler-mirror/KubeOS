@@ -96,7 +96,7 @@ func TestServerUpdate(t *testing.T) {
 	patchRootfsDisks := gomonkey.ApplyFuncReturn(getRootfsDisks, "/dev/sda2", "/dev/sda3", nil)
 	defer patchRootfsDisks.Reset()
 	// assume now is partition A, want to swiching to partition B
-	patchGetNextPartition := gomonkey.ApplyFuncReturn(getNextPart, "/dev/sda3", "B", nil)
+	patchGetNextPartition := gomonkey.ApplyFuncReturn(getNextPart, partitionInfo{"/dev/sda3", "B", "ext4"}, nil)
 	defer patchGetNextPartition.Reset()
 	patchDownloadImage := gomonkey.ApplyPrivateMethod(conImageHandler{}, "downloadImage", func(_ conImageHandler, req *pb.UpdateRequest) (string, error) {
 		return "", nil
@@ -151,8 +151,8 @@ func TestServerRollback(t *testing.T) {
 	defer patchRootfsDisks.Reset()
 	// assume now is partition A, want to swiching to partition B
 	patchGetNextPartition := gomonkey.ApplyFuncSeq(getNextPart, []gomonkey.OutputCell{
-		{Values: gomonkey.Params{"", "", fmt.Errorf("rollbak test error")}},
-		{Values: gomonkey.Params{"/dev/sda3", "B", nil}},
+		{Values: gomonkey.Params{partitionInfo{}, fmt.Errorf("rollbak test error")}},
+		{Values: gomonkey.Params{partitionInfo{"/dev/sda3", "B", "ext4"}, nil}},
 	})
 	defer patchGetNextPartition.Reset()
 	patchDownloadImage := gomonkey.ApplyPrivateMethod(conImageHandler{}, "downloadImage", func(_ conImageHandler, req *pb.UpdateRequest) (string, error) {
@@ -248,8 +248,8 @@ func TestServerrollback(t *testing.T) {
 		{name: "error", fields: fields{UnimplementedOSServer: pb.UnimplementedOSServer{}, disableReboot: true},
 			wantErr: true},
 	}
-	patchGetNextPart := gomonkey.ApplyFunc(getNextPart, func(partA string, partB string) (string, string, error) {
-		return "", "", fmt.Errorf("rollbak test error")
+	patchGetNextPart := gomonkey.ApplyFunc(getNextPart, func(partA string, partB string) (partitionInfo, error) {
+		return partitionInfo{}, fmt.Errorf("rollbak test error")
 	})
 	defer patchGetNextPart.Reset()
 	for _, tt := range tests {
