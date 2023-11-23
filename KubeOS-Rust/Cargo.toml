@@ -1,0 +1,15 @@
+[workspace]
+members = [
+    "manager",
+    "agent",
+    "cli",
+    "proxy",
+]
+
+[profile.release]
+opt-level = 's'
+debug = false
+rpath = false
+debug-assertions = false
+overflow-checks = false
+lto = true

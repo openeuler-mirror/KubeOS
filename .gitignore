@@ -1,1 +1,8 @@
+# vscode settings
+.vscode
+
+# rust dependencies
+target/
+
+# KubeOS bin
 /bin

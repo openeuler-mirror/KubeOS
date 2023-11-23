@@ -1,0 +1,20 @@
+[package]
+name         = "os-agent"
+version      = "0.1.0"
+edition      = "2021"
+description  = "KubeOS os-agent"
+license      = "MulanPSL-2.0"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[dependencies]
+manager            = { package = "manager", path = "../manager" }
+jsonrpc-core       = { version = "15.1" }
+jsonrpc-derive     = { version = "15.1" }
+jsonrpc-ipc-server = { version = "15.1" }
+serde              = { version = "1.0", features = ["derive"] }
+serde_json         = { version = "1.0" }
+log                = { version = "= 0.4.15" }
+anyhow             = { version = "1.0" }
+env_logger         = { version = "0.9" }
+lazy_static        = { version = "1.4" }
+nix                = { version = "0.26.2" }
