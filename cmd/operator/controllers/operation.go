@@ -20,10 +20,11 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/selection"
 	"k8s.io/apimachinery/pkg/types"
-	upgradev1 "openeuler.org/KubeOS/api/v1alpha1"
 	"openeuler.org/KubeOS/pkg/common"
 	"openeuler.org/KubeOS/pkg/values"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	upgradev1 "openeuler.org/KubeOS/api/v1alpha1"
 )
 
 type operation interface {
