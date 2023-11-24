@@ -70,7 +70,7 @@
 
 * OS虚拟机镜像制作
   * 制作注意事项
-    * 请确保已安装qemu-img，bc，parted，tar，yum，docker
+    * 请确保已安装qemu-img，bc，parted，tar，yum，docker, dosfstools
     * 容器OS镜像制作需要使用root权限
     * 容器OS 镜像制作工具的 rpm 包源为 openEuler 具体版本的 everything 仓库和 EPOL 仓库。制作镜像时提供的 repo 文件中，yum 源建议同时配置 openEuler 具体版本的 everything 仓库和 EPOL 仓库
     * 容器OS镜像制作之前需要先将当前机器上的selinux关闭或者设为允许模式
@@ -87,6 +87,7 @@
           ```
 
         * 其中 xx.repo 为制作镜像所需要的 yum 源，yum 源建议配置为 openEuler 具体版本的 everything 仓库和 EPOL 仓库。
+        * 示例命令使用的密码为```openEuler12#$```
         * 容器 OS 镜像制作完成后，会在 scripts 目录下生成：
           * raw格式的系统镜像system.img，system.img大小默认为20G，支持的根文件系统分区大小<2020MiB，持久化分区<16GB。
           * qcow2 格式的系统镜像 system.qcow2。
@@ -272,13 +273,13 @@
             sysconfigs:
                 version: edit.os.version
                 configs:
-                    - model: kernel.systcl
+                    - model: kernel.sysctl
                     contents:
                         - key: kernel param key1
                           value: kernel param value1
                         - key: kernel param key2
                           value: kernel param value2
-                    - model: kernel.systcl.persist
+                    - model: kernel.sysctl.persist
                       configpath: persist file path
                       contents:
                         - key: kernel param key3
@@ -288,7 +289,7 @@
             upgradeconfigs:
                 version: 1.0.0
                 configs:
-                    - model: kernel.systcl
+                    - model: kernel.sysctl
                     contents:
                         - key: kernel param key4
                           value: kernel param value4          
@@ -368,14 +369,14 @@
     sysconfigs:
         version: 1.0.0
         configs:
-            - model: kernel.systcl
+            - model: kernel.sysctl
               contents:
                 - key: kernel param key1
                   value: kernel param value1
                 - key: kernel param key2
                   value: kernel param value2
                   operation: delete
-            - model: kernel.systcl.persist
+            - model: kernel.sysctl.persist
               configpath: persist file path
               contents:
                 - key: kernel param key3
@@ -475,13 +476,13 @@
         sysconfigs:
             version: previous config version
             configs:
-                - model: kernel.systcl
+                - model: kernel.sysctl
                   contents:
                     - key: kernel param key1
                       value: kernel param value1
                     - key: kernel param key2
                       value: kernel param value2
-                - model: kernel.systcl.persist
+                - model: kernel.sysctl.persist
                   configpath: persist file path
                   contents:
                     - key: kernel param key3
@@ -640,7 +641,7 @@ hostshell
 
     ```yaml
     configs:
-      - model: kernel.systcl
+      - model: kernel.sysctl
         contents:
             - key: user.max_user_namespaces
               value: 16384
@@ -652,7 +653,7 @@ hostshell
 * kernel.sysctl.persist: 设置持久化内核参数，key/value表示内核参数的key/value，key与value均不能为空且key不能包含“=”， configpath为配置文件路径，支持新建（需保证父目录存在），如不指定configpath默认修改/etc/sysctl.conf，示例如下：
     ```yaml
     configs:
-      - model: kernel.systcl.persist
+      - model: kernel.sysctl.persist
         configpath : /etc/persist.conf
         contents:
             - key: user.max_user_namespaces
@@ -677,7 +678,7 @@ hostshell
 * grub.cmdline.current/next支持“key=value”（value不能为空），也支持单key。若value中有“=”，例如“root=UUID=some-uuid”，key应设置为第一个“=”前的所有字符，value为第一个“=”后的所有字符。 配置方法示例如下：
     ```yaml
     configs:
-      - model: grub.cmdline
+      - model: grub.cmdline.current
         contents:
             - key: selinux
               value: 0
