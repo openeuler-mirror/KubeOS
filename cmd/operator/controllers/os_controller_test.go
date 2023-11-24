@@ -23,7 +23,6 @@ import (
 	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	corev1 "k8s.io/api/core/v1"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -1220,7 +1219,7 @@ func Test_getNodes(t *testing.T) {
 	tests := []struct {
 		name    string
 		args    args
-		want    []corev1.Node
+		want    []v1.Node
 		wantErr bool
 	}{
 		{
