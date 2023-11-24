@@ -7,8 +7,8 @@ require (
 	github.com/go-logr/logr v1.2.4
 	github.com/google/uuid v1.1.2
 	github.com/mitchellh/mapstructure v1.4.1
-	github.com/onsi/ginkgo/v2 v2.9.7
-	github.com/onsi/gomega v1.27.8
+	github.com/onsi/ginkgo/v2 v2.1.4
+	github.com/onsi/gomega v1.20.0
 	github.com/shirou/gopsutil/v3 v3.23.7
 	github.com/sirupsen/logrus v1.8.1
 	github.com/spf13/cobra v1.4.0

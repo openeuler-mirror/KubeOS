@@ -17,7 +17,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"reflect"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -159,10 +158,7 @@ func getAndUpdateOS(ctx context.Context, r common.ReadStatusWriter, name types.N
 
 func assignOperation(ctx context.Context, r common.ReadStatusWriter, os upgradev1.OS, limit int,
 	ops operation) (bool, error) {
-	fmt.Println("start assignOperation")
-	fmt.Println("ops is ", reflect.TypeOf(ops))
 	requirement, err := ops.newNotExistRequirement()
-	fmt.Println("requirement is ", requirement.String())
 	if err != nil {
 		log.Error(err, "unable to create requirement "+values.LabelUpgrading)
 		return false, err
@@ -180,7 +176,6 @@ func assignOperation(ctx context.Context, r common.ReadStatusWriter, os upgradev
 			log.Error(err, "unable to create requirement "+values.LabelNodeSelector)
 			return false, err
 		}
-		fmt.Println("requirement is ", reqSelector.String())
 		requirements = append(requirements, *reqSelector)
 	}
 
@@ -188,7 +183,6 @@ func assignOperation(ctx context.Context, r common.ReadStatusWriter, os upgradev
 	if err != nil {
 		return false, err
 	}
-	fmt.Println("nodes has not upgrade/config and has selector ", len(nodes))
 	// Upgrade OS for selected nodes
 	count, err := ops.updateNodes(ctx, r, &os, nodes, limit)
 	if err != nil {
@@ -211,14 +205,11 @@ func getNodes(ctx context.Context, r common.ReadStatusWriter, limit int,
 
 func calNodeLimit(ctx context.Context, r common.ReadStatusWriter,
 	ops operation, maxUnavailable int, nodeSelector string) (int, error) {
-	fmt.Println("start calNodeLimit")
-	fmt.Println("ops is ", reflect.TypeOf(ops))
 	requirement, err := ops.newExistRequirement()
 	if err != nil {
 		log.Error(err, "unable to create requirement "+values.LabelUpgrading)
 		return 0, err
 	}
-	fmt.Println("requirement is ", requirement.String())
 	var requirements []labels.Requirement
 	requirements = append(requirements, requirement)
 	if nodeSelector != "" {
@@ -227,17 +218,12 @@ func calNodeLimit(ctx context.Context, r common.ReadStatusWriter,
 			log.Error(err, "unable to create requirement "+values.LabelNodeSelector)
 			return 0, err
 		}
-		fmt.Println("requirement is ", reqSelector.String())
 		requirements = append(requirements, *reqSelector)
 	}
 	nodes, err := getNodes(ctx, r, 0, requirements...)
 	if err != nil {
 		return 0, err
 
-	}
-	fmt.Println("nodes has upgrade and selector ", len(nodes))
-	for _, n := range nodes {
-		fmt.Println("   nodes name is  ", n.Name)
 	}
 	return maxUnavailable - len(nodes), nil
 }

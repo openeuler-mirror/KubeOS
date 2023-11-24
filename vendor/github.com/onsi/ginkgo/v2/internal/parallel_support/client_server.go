@@ -42,8 +42,6 @@ type Client interface {
 	PostSuiteWillBegin(report types.Report) error
 	PostDidRun(report types.SpecReport) error
 	PostSuiteDidEnd(report types.Report) error
-	PostReportBeforeSuiteCompleted(state types.SpecState) error
-	BlockUntilReportBeforeSuiteCompleted() (types.SpecState, error)
 	PostSynchronizedBeforeSuiteCompleted(state types.SpecState, data []byte) error
 	BlockUntilSynchronizedBeforeSuiteData() (types.SpecState, []byte, error)
 	BlockUntilNonprimaryProcsHaveFinished() error
@@ -51,7 +49,6 @@ type Client interface {
 	FetchNextCounter() (int, error)
 	PostAbort() error
 	ShouldAbort() bool
-	PostEmitProgressReport(report types.ProgressReport) error
 	Write(p []byte) (int, error)
 }
 

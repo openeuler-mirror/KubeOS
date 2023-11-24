@@ -65,6 +65,7 @@ func (u upgradeOps) updateNodes(ctx context.Context, r common.ReadStatusWriter, 
 		}
 		osVersionNode := node.Status.NodeInfo.OSImage
 		if os.Spec.OSVersion != osVersionNode {
+			log.Info("Upgrading node " + node.Name)
 			var osInstance upgradev1.OSInstance
 			if err := r.Get(ctx, types.NamespacedName{Namespace: os.GetObjectMeta().GetNamespace(), Name: node.Name}, &osInstance); err != nil {
 				if err = client.IgnoreNotFound(err); err != nil {
@@ -109,11 +110,13 @@ func (u upgradeOps) updateNodeAndOSins(ctx context.Context, r common.ReadStatusW
 		log.Error(err, "unable to update", "osInstance", osInstance.Name)
 		return err
 	}
+	log.Info("Update osinstance spec successfully")
 	node.Labels[values.LabelUpgrading] = ""
 	if err := r.Update(ctx, node); err != nil {
 		log.Error(err, "unable to label", "node", node.Name)
 		return err
 	}
+	log.Info("Add node upgrading label " + values.LabelUpgrading + " successfully")
 	return nil
 }
 
@@ -153,6 +156,7 @@ func (c configOps) updateNodes(ctx context.Context, r common.ReadStatusWriter, o
 			continue
 		}
 		if os.Spec.SysConfigs.Version != osInstance.Spec.SysConfigs.Version {
+			log.Info("Configuring node " + node.Name)
 			if err := c.updateNodeAndOSins(ctx, r, os, &node, &osInstance); err != nil {
 				log.Error(err, "failed to update node and osinstance ,skip this node ")
 				continue
@@ -173,10 +177,12 @@ func (c configOps) updateNodeAndOSins(ctx context.Context, r common.ReadStatusWr
 		log.Error(err, "unable to update", "osInstance", osInstance.Name)
 		return err
 	}
+	log.Info("Update osinstance spec successfully")
 	node.Labels[values.LabelConfiguring] = ""
 	if err := r.Update(ctx, node); err != nil {
 		log.Error(err, "unable to label", "node", node.Name)
 		return err
 	}
+	log.Info("Add node configuring label " + values.LabelConfiguring + " successfully")
 	return nil
 }
