@@ -25,7 +25,6 @@ use super::{
     executor::CommandExecutor,
     partition::PartitionInfo,
 };
-use crate::{sys_mgmt::DEFAULT_GRUBENV_PATH, utils::switch_boot_menuentry};
 
 pub struct UpgradeImageManager<T: CommandExecutor> {
     pub paths: PreparePath,
@@ -129,7 +128,6 @@ impl<T: CommandExecutor> UpgradeImageManager<T> {
     pub fn install(&self) -> Result<()> {
         let image_str = self.image_path_str()?;
         let device = self.next_partition.device.as_str();
-        let menuentry = self.next_partition.menuentry.as_str();
         self.executor.run_command(
             "dd",
             &[
@@ -139,14 +137,11 @@ impl<T: CommandExecutor> UpgradeImageManager<T> {
             ],
         )?;
         debug!("Install image {} to {} done", image_str, device);
-        // based on boot mode use different command to switch boot partition
-        switch_boot_menuentry(&self.executor, DEFAULT_GRUBENV_PATH, menuentry)?;
         info!(
-            "Switch to boot partition: {}, device: {}",
-            menuentry, device
+            "Device {} is overwritten and unable to rollback to the previous version anymore if the eviction of node fails",
+            device
         );
         delete_file_or_dir(image_str)?;
-        debug!("Remove image {}", image_str);
         Ok(())
     }
 }
@@ -221,17 +216,6 @@ mod tests {
         //mock install->dd
         mock.expect_run_command()
             .withf(|name, _| name == "dd")
-            .times(1) // Expect it to be called once
-            .returning(|_, _| Ok(()));
-
-        //mock install->grub2-set-default
-        mock.expect_run_command()
-            .withf(|name, args| {
-                name == "grub2-editenv"
-                    && args[0] == "/boot/efi/EFI/openEuler/grubenv"
-                    && args[1] == "set"
-                    && args[2] == "saved_entry=B"
-            })
             .times(1) // Expect it to be called once
             .returning(|_, _| Ok(()));
 

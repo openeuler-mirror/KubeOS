@@ -18,7 +18,7 @@ use std::{
 };
 
 use anyhow::{anyhow, Result};
-use log::{debug, info};
+use log::{debug, info, trace};
 use nix::{mount, mount::MntFlags};
 
 use super::executor::CommandExecutor;
@@ -72,7 +72,7 @@ pub fn perpare_env(
 }
 
 pub fn check_disk_size(need_gb: i64, path: &str) -> Result<()> {
-    info!("Check if there is enough disk space to upgrade");
+    trace!("Check if there is enough disk space to upgrade");
     let kb = 1024;
     let fs_stat = nix::sys::statfs::statfs(path)?;
     let need_disk_size = need_gb * kb * kb * kb;
@@ -81,6 +81,7 @@ pub fn check_disk_size(need_gb: i64, path: &str) -> Result<()> {
     if available_space < need_disk_size {
         return Err(anyhow!("Space is not enough for downloading"));
     }
+    debug!("There is enough disk space to upgrade");
     Ok(())
 }
 
@@ -89,7 +90,7 @@ pub fn clean_env<P>(update_path: P, mount_path: P, image_path: P) -> Result<()>
 where
     P: AsRef<Path>,
 {
-    info!("Clean upgrade environment");
+    info!("Clean up the residual upgrade environment");
     if is_mounted(&mount_path)? {
         debug!("Umount {}", mount_path.as_ref().display());
         if let Err(errno) = mount::umount2(mount_path.as_ref(), MntFlags::MNT_FORCE) {
