@@ -25,7 +25,7 @@ use anyhow::Result;
 use cli::{
     client::Client as AgentClient,
     method::{
-        callable_method::RpcMethod, cleanup::CleanupMethod, configure::ConfigureMethod,
+        callable_method::RpcMethod, configure::ConfigureMethod,
         prepare_upgrade::PrepareUpgradeMethod, rollback::RollbackMethod, upgrade::UpgradeMethod,
     },
 };
@@ -348,23 +348,8 @@ impl<T: ApplyApi> ProxyController<T> {
                         return Err(Error::AgentError { source: e });
                     }
                 }
-                match self
-                    .evict_node(&node.name(), os_cr.spec.evictpodforce)
-                    .await
-                {
-                    Ok(()) => {}
-                    Err(e) => {
-                        match CleanupMethod::new().call(&self.agent_client) {
-                            Ok(_resp) => {}
-                            Err(agent_error) => {
-                                return Err(Error::AgentError {
-                                    source: agent_error,
-                                });
-                            }
-                        }
-                        return Err(e);
-                    }
-                }
+                self.evict_node(&node.name(), os_cr.spec.evictpodforce)
+                    .await?;
                 match UpgradeMethod::new().call(&self.agent_client) {
                     Ok(_resp) => {}
                     Err(e) => {

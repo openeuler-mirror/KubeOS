@@ -60,7 +60,7 @@ impl<T: CommandExecutor> CtrImageHandler<T> {
     fn get_image(&self, req: &UpgradeRequest) -> Result<()> {
         let image_name = &req.container_image;
         is_valid_image_name(image_name)?;
-        info!("Start pull image {}", image_name);
+        info!("Start pulling image {}", image_name);
         let containerd_command: String;
         if is_command_available("crictl", &self.executor) {
             containerd_command = "crictl".to_string();
@@ -68,7 +68,7 @@ impl<T: CommandExecutor> CtrImageHandler<T> {
             containerd_command = "ctr".to_string();
         }
         pull_image(&containerd_command, image_name, &self.executor)?;
-        info!("Start check image digest");
+        info!("Start checking image digest");
         check_oci_image_digest_match(
             &containerd_command,
             image_name,

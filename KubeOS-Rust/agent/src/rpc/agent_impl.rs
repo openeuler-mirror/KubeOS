@@ -22,10 +22,9 @@ use super::{
 };
 use manager::{
     api::{AgentStatus, ConfigureRequest, ImageType, Response, UpgradeRequest},
-    sys_mgmt::{CtrImageHandler, CONFIG_TEMPLATE},
+    sys_mgmt::{CtrImageHandler, CONFIG_TEMPLATE, DEFAULT_GRUBENV_PATH},
     utils::{
         clean_env, get_partition_info, switch_boot_menuentry, PreparePath, RealCommandExecutor,
-        UpgradeImageManager,
     },
 };
 
@@ -69,7 +68,7 @@ impl AgentImpl {
     pub fn prepare_upgrade_impl(&self, req: UpgradeRequest) -> Result<Response> {
         let _lock = self.mutex.lock().unwrap();
         debug!("Received an 'prepare upgrade' request: {:?}", req);
-        info!("Start to upgrade to version: {}", req.version);
+        info!("Start preparing for upgrading to version: {}", req.version);
 
         let handler: Box<ImageType<RealCommandExecutor>> = match req.image_type.as_str() {
             "containerd" => Box::new(ImageType::Containerd(CtrImageHandler::default())),
@@ -81,6 +80,7 @@ impl AgentImpl {
             "Ready to install image: {:?}",
             image_manager.paths.image_path.display()
         );
+        image_manager.install()?;
 
         Ok(Response {
             status: AgentStatus::UpgradeReady,
@@ -92,12 +92,15 @@ impl AgentImpl {
         info!("Start to upgrade");
         let command_executor = RealCommandExecutor {};
         let (_, next_partition_info) = get_partition_info(&command_executor)?;
-        let image_manager = UpgradeImageManager::new(
-            PreparePath::default(),
-            next_partition_info,
-            command_executor,
+
+        // based on boot mode use different command to switch boot partition
+        let device = next_partition_info.device.as_str();
+        let menuentry = next_partition_info.menuentry.as_str();
+        switch_boot_menuentry(&command_executor, DEFAULT_GRUBENV_PATH, menuentry)?;
+        info!(
+            "Switch to boot partition: {}, device: {}",
+            menuentry, device
         );
-        image_manager.install()?;
         self.reboot()?;
         Ok(Response {
             status: AgentStatus::Upgraded,
@@ -110,7 +113,7 @@ impl AgentImpl {
         let paths = PreparePath::default();
         clean_env(paths.update_path, paths.mount_path, paths.image_path)?;
         Ok(Response {
-            status: AgentStatus::NotApplied,
+            status: AgentStatus::CleanedUp,
         })
     }
 

@@ -18,6 +18,7 @@ const AGENT_STATUS_UPGRADEREADY: &str = "UPGRADE-READY";
 const AGENT_STATUS_UPGRADED: &str = "UPGRADED";
 const AGENT_STATUS_ROLLBACKED: &str = "ROLLBACKED";
 const AGENT_STATUS_CONFIGURED: &str = "CONFIGURED";
+const AGENT_STATUS_CLEANEDUP: &str = "CLEANEDUP";
 
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub enum AgentStatus {
@@ -27,6 +28,7 @@ pub enum AgentStatus {
     Upgraded,
     Rollbacked,
     Configured,
+    CleanedUp,
 }
 
 impl Default for AgentStatus {
@@ -44,6 +46,7 @@ impl std::fmt::Display for AgentStatus {
             AgentStatus::Upgraded => AGENT_STATUS_UPGRADED,
             AgentStatus::Rollbacked => AGENT_STATUS_ROLLBACKED,
             AgentStatus::Configured => AGENT_STATUS_CONFIGURED,
+            AgentStatus::CleanedUp => AGENT_STATUS_CLEANEDUP,
         })
     }
 }
