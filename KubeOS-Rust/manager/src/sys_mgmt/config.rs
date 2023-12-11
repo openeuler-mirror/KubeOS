@@ -279,7 +279,6 @@ impl Configuration for GrubCmdline {
         if !is_file_exist(&self.grub_path) {
             return Err(anyhow!("Failed to find grub.cfg file"));
         }
-        if cfg!(test) {}
         let config_partition = if cfg!(test) {
             self.is_cur_partition
         } else {
