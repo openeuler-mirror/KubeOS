@@ -17,6 +17,27 @@ spec:
   scope: Namespaced
   versions:
   - name: v1alpha1
+    additionalPrinterColumns:
+    - name: NODESTATUS
+      type: string
+      jsonPath: .spec.nodestatus
+      description: The status of node
+    - name: SYSCONFIG STATUS
+      type: string
+      jsonPath: .status.sysconfigs.version
+      description: The current status of sysconfig
+    - name: SYSCONFIG SPEC
+      type: string
+      jsonPath: .spec.sysconfigs.version
+      description: The expected version of sysconfig
+    - name: UPGRADECONFIG STATUS
+      type: string
+      jsonPath: .status.upgradeconfigs.version
+      description: The current version of upgradeconfig
+    - name: UPGRADECONFIG SPEC
+      type: string
+      jsonPath: .spec.upgradeconfigs.version
+      description: The expected version of upgradeconfig
     schema:
       openAPIV3Schema:
         description: OSInstance defines some infomation of a node

@@ -17,6 +17,19 @@ spec:
   scope: Namespaced
   versions:
   - name: v1alpha1
+    additionalPrinterColumns:
+    - name: OSVersion
+      jsonPath: .spec.osversion
+      type: string
+      description: The version of OS
+    - name: SYSCONFIG VERSION
+      type: string
+      jsonPath: .spec.sysconfigs.version
+      description: The version of sysconfig
+    - name: UPGRADECONFIG VERSION
+      type: string
+      jsonPath: .spec.upgradeconfigs.version
+      description: The version of upgradeconfig
     schema:
       openAPIV3Schema:
         description: OS is a specification for OS in the cluster
