@@ -10,25 +10,20 @@
  * See the Mulan PSL v2 for more details.
  */
 
-use super::crd::{Content, OSInstance, OS};
-use super::drain::drain_os;
-use super::utils::{check_version, get_config_version, ConfigOperation, ConfigType};
-use super::values::{
-    LABEL_UPGRADING, NODE_STATUS_CONFIG, NODE_STATUS_IDLE, OPERATION_TYPE_ROLLBACK,
-    OPERATION_TYPE_UPGRADE, REQUEUE_ERROR, REQUEUE_NORMAL,
-};
 use super::{
-    apiclient::{ApplyApi, ControllerClient},
-    crd::Configs,
-};
-use anyhow::Result;
-use cli::{
-    client::Client as AgentClient,
-    method::{
-        callable_method::RpcMethod, configure::ConfigureMethod,
-        prepare_upgrade::PrepareUpgradeMethod, rollback::RollbackMethod, upgrade::UpgradeMethod,
+    agentclient::{
+        agent_call::AgentCallClient, AgentMethod, ConfigInfo, KeyInfo, Sysconfig, UpgradeInfo,
+    },
+    apiclient::ApplyApi,
+    crd::{Configs, Content, OSInstance, OS},
+    drain::drain_os,
+    utils::{check_version, get_config_version, ConfigOperation, ConfigType},
+    values::{
+        LABEL_UPGRADING, NODE_STATUS_CONFIG, NODE_STATUS_IDLE, OPERATION_TYPE_ROLLBACK,
+        OPERATION_TYPE_UPGRADE, REQUEUE_ERROR, REQUEUE_NORMAL,
     },
 };
+use anyhow::Result;
 use k8s_openapi::api::core::v1::Node;
 use kube::{
     api::{Api, PostParams},
@@ -37,14 +32,13 @@ use kube::{
     Client, ResourceExt,
 };
 use log::{debug, error, info};
-use manager::api::{ConfigureRequest, KeyInfo, Sysconfig as AgentSysconfig, UpgradeRequest};
 use reconciler_error::Error;
 use std::collections::HashMap;
 use std::env;
 
 pub async fn reconcile(
     os: OS,
-    ctx: Context<ProxyController<ControllerClient>>,
+    ctx: Context<ProxyController<impl ApplyApi, impl AgentMethod>>,
 ) -> Result<ReconcilerAction, Error> {
     debug!("start reconcile");
     let proxy_controller = ctx.get_ref();
@@ -159,7 +153,7 @@ pub async fn reconcile(
 
 pub fn error_policy(
     error: &Error,
-    _ctx: Context<ProxyController<ControllerClient>>,
+    _ctx: Context<ProxyController<impl ApplyApi, impl AgentMethod>>,
 ) -> ReconcilerAction {
     error!("Reconciliation error:{}", error.to_string());
     REQUEUE_ERROR
@@ -169,14 +163,14 @@ struct ControllerResources {
     osinstance: OSInstance,
     node: Node,
 }
-pub struct ProxyController<T: ApplyApi> {
+pub struct ProxyController<T: ApplyApi, U: AgentMethod> {
     k8s_client: Client,
     controller_client: T,
-    agent_client: AgentClient,
+    agent_client: U,
 }
 
-impl<T: ApplyApi> ProxyController<T> {
-    pub fn new(k8s_client: Client, controller_client: T, agent_client: AgentClient) -> Self {
+impl<T: ApplyApi, U: AgentMethod> ProxyController<T, U> {
+    pub fn new(k8s_client: Client, controller_client: T, agent_client: U) -> Self {
         ProxyController {
             k8s_client,
             controller_client,
@@ -185,7 +179,7 @@ impl<T: ApplyApi> ProxyController<T> {
     }
 }
 
-impl<T: ApplyApi> ProxyController<T> {
+impl<T: ApplyApi, U: AgentMethod> ProxyController<T, U> {
     async fn check_osi_exisit(&self, namespace: &str, node_name: &str) -> Result<(), Error> {
         let osi_api: Api<OSInstance> = Api::namespaced(self.k8s_client.clone(), namespace);
         match osi_api.get(node_name).await {
@@ -312,10 +306,13 @@ impl<T: ApplyApi> ProxyController<T> {
         if config_info.need_config {
             match config_info.configs.and_then(convert_to_agent_config) {
                 Some(agent_configs) => {
-                    let config_request = ConfigureRequest {
-                        configs: agent_configs,
-                    };
-                    match ConfigureMethod::new(config_request).call(&self.agent_client) {
+                    let agent_call_client = AgentCallClient::default();
+                    match self.agent_client.configure_method(
+                        ConfigInfo {
+                            configs: agent_configs,
+                        },
+                        agent_call_client,
+                    ) {
                         Ok(_resp) => {}
                         Err(e) => {
                             return Err(Error::AgentError { source: e });
@@ -333,16 +330,19 @@ impl<T: ApplyApi> ProxyController<T> {
 
     async fn upgrade_node(&self, os_cr: &OS, node: &Node) -> Result<(), Error> {
         debug!("start upgrade node");
-
         match os_cr.spec.opstype.as_str() {
             OPERATION_TYPE_UPGRADE => {
-                let upgrade_request = UpgradeRequest {
+                let upgrade_info = UpgradeInfo {
                     version: os_cr.spec.osversion.clone(),
                     image_type: os_cr.spec.imagetype.clone(),
                     check_sum: os_cr.spec.checksum.clone(),
                     container_image: os_cr.spec.containerimage.clone(),
                 };
-                match PrepareUpgradeMethod::new(upgrade_request).call(&self.agent_client) {
+                let agent_call_client = AgentCallClient::default();
+                match self
+                    .agent_client
+                    .prepare_upgrade_method(upgrade_info, agent_call_client)
+                {
                     Ok(_resp) => {}
                     Err(e) => {
                         return Err(Error::AgentError { source: e });
@@ -350,7 +350,8 @@ impl<T: ApplyApi> ProxyController<T> {
                 }
                 self.evict_node(&node.name(), os_cr.spec.evictpodforce)
                     .await?;
-                match UpgradeMethod::new().call(&self.agent_client) {
+                let agent_call_client = AgentCallClient::default();
+                match self.agent_client.upgrade_method(agent_call_client) {
                     Ok(_resp) => {}
                     Err(e) => {
                         return Err(Error::AgentError { source: e });
@@ -360,7 +361,8 @@ impl<T: ApplyApi> ProxyController<T> {
             OPERATION_TYPE_ROLLBACK => {
                 self.evict_node(&node.name(), os_cr.spec.evictpodforce)
                     .await?;
-                match RollbackMethod::new().call(&self.agent_client) {
+                let agent_call_client = AgentCallClient::default();
+                match self.agent_client.rollback_method(agent_call_client) {
                     Ok(_resp) => {}
                     Err(e) => {
                         return Err(Error::AgentError { source: e });
@@ -395,7 +397,6 @@ impl<T: ApplyApi> ProxyController<T> {
     async fn drain_node(&self, node_name: &str, force: bool) -> Result<(), Error> {
         use crate::controller::drain::error::DrainError::*;
         match drain_os(&self.k8s_client.clone(), node_name, force).await {
-            Err(FindTargetPods { source, .. }) => Err(Error::KubeError { source: source }),
             Err(DeletePodsError { errors, .. }) => Err(Error::DrainNodeError {
                 value: errors.join("; "),
             }),
@@ -404,13 +405,13 @@ impl<T: ApplyApi> ProxyController<T> {
     }
 }
 
-fn convert_to_agent_config(configs: Configs) -> Option<Vec<AgentSysconfig>> {
-    let mut agent_configs: Vec<AgentSysconfig> = Vec::new();
+fn convert_to_agent_config(configs: Configs) -> Option<Vec<Sysconfig>> {
+    let mut agent_configs: Vec<Sysconfig> = Vec::new();
     if let Some(config_list) = configs.configs {
         for config in config_list.into_iter() {
             match config.contents.and_then(convert_to_config_hashmap) {
                 Some(contents_tmp) => {
-                    let config_tmp = AgentSysconfig {
+                    let config_tmp = Sysconfig {
                         model: config.model.unwrap_or_default(),
                         config_path: config.configpath.unwrap_or_default(),
                         contents: contents_tmp,
@@ -445,6 +446,7 @@ fn convert_to_config_hashmap(contents: Vec<Content>) -> Option<HashMap<String, K
 }
 
 pub mod reconciler_error {
+    use crate::controller::agentclient::agent_error;
     use crate::controller::apiclient::apiclient_error;
     use thiserror::Error;
     #[derive(Error, Debug)]
@@ -480,7 +482,8 @@ pub mod reconciler_error {
         UpgradeBeforeConfig,
 
         #[error("os-agent reported error:{source}")]
-        AgentError { source: anyhow::Error },
+        AgentError { source: agent_error::Error },
+
         #[error("Error when drain node, error reported: {}", value)]
         DrainNodeError { value: String },
     }

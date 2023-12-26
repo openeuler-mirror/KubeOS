@@ -331,12 +331,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "doc-comment"
-version = "0.3.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fea41bba32d969b513997752735605054bc0dfa92b4c56bf1189f2e174be7a10"
-
-[[package]]
 name = "downcast"
 version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -621,12 +615,6 @@ name = "hashbrown"
 version = "0.12.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8a9ee70c43aaf417c914396645a0fa852624801b24ebb7ae78fe8272889ac888"
-
-[[package]]
-name = "heck"
-version = "0.4.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "95505c38b4572b2d910cecb0281560f54b440a19336cbbcb27bf6ce6adc6f5a8"
 
 [[package]]
 name = "hermit-abi"
@@ -1621,13 +1609,11 @@ dependencies = [
  "schemars",
  "serde",
  "serde_json",
- "snafu",
  "socket2",
  "thiserror",
  "thread_local",
  "tokio 1.14.0",
  "tokio-retry",
- "tracing",
 ]
 
 [[package]]
@@ -2020,28 +2006,6 @@ name = "smallvec"
 version = "1.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "942b4a808e05215192e39f4ab80813e599068285906cc91aa64f923db842bd5a"
-
-[[package]]
-name = "snafu"
-version = "0.7.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e4de37ad025c587a29e8f3f5605c00f70b98715ef90b9061a815b9e59e9042d6"
-dependencies = [
- "doc-comment",
- "snafu-derive",
-]
-
-[[package]]
-name = "snafu-derive"
-version = "0.7.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "990079665f075b699031e9c08fd3ab99be5029b96f3b78dc0709e8f77e4efebf"
-dependencies = [
- "heck",
- "proc-macro2",
- "quote",
- "syn 1.0.109",
-]
 
 [[package]]
 name = "socket2"
