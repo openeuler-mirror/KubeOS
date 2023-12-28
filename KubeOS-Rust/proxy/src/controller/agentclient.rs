@@ -21,7 +21,8 @@ use cli::{
 use agent_call::AgentCallClient;
 use agent_error::Error;
 use manager::api::{
-    ConfigureRequest, KeyInfo as AgentKeyInfo, Sysconfig as AgentSysconfig, UpgradeRequest,
+    CertsInfo, ConfigureRequest, KeyInfo as AgentKeyInfo, Sysconfig as AgentSysconfig,
+    UpgradeRequest,
 };
 use std::collections::HashMap;
 use std::path::Path;
@@ -105,6 +106,15 @@ impl AgentMethod for AgentClient {
             image_type: upgrade_info.image_type,
             check_sum: upgrade_info.check_sum,
             container_image: upgrade_info.container_image,
+            // TODO: add image_url, flag_safe, mtls, certs
+            image_url: "".to_string(),
+            flag_safe: false,
+            mtls: false,
+            certs: CertsInfo {
+                ca_cert: "".to_string(),
+                client_cert: "".to_string(),
+                client_key: "".to_string(),
+            },
         };
         match agent_call.call_agent(
             &self.agent_client,
@@ -116,14 +126,14 @@ impl AgentMethod for AgentClient {
     }
 
     fn upgrade_method(&self, agent_call: AgentCallClient) -> Result<(), Error> {
-        match agent_call.call_agent(&self.agent_client, UpgradeMethod::new()) {
+        match agent_call.call_agent(&self.agent_client, UpgradeMethod::default()) {
             Ok(_resp) => Ok(()),
             Err(e) => Err(e),
         }
     }
 
     fn rollback_method(&self, agent_call: AgentCallClient) -> Result<(), Error> {
-        match agent_call.call_agent(&self.agent_client, RollbackMethod::new()) {
+        match agent_call.call_agent(&self.agent_client, RollbackMethod::default()) {
             Ok(_resp) => Ok(()),
             Err(e) => Err(e),
         }

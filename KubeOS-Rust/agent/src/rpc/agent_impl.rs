@@ -12,7 +12,7 @@
 
 use std::{sync::Mutex, thread, time::Duration};
 
-use anyhow::{anyhow, Result};
+use anyhow::{bail, Result};
 use log::{debug, error, info};
 use nix::{sys::reboot::RebootMode, unistd::sync};
 
@@ -22,7 +22,10 @@ use super::{
 };
 use manager::{
     api::{AgentStatus, ConfigureRequest, ImageType, Response, UpgradeRequest},
-    sys_mgmt::{CtrImageHandler, CONFIG_TEMPLATE, DEFAULT_GRUBENV_PATH},
+    sys_mgmt::{
+        CtrImageHandler, DiskImageHandler, DockerImageHandler, CONFIG_TEMPLATE,
+        DEFAULT_GRUBENV_PATH,
+    },
     utils::{
         clean_env, get_partition_info, switch_boot_menuentry, PreparePath, RealCommandExecutor,
     },
@@ -72,7 +75,9 @@ impl AgentImpl {
 
         let handler: Box<ImageType<RealCommandExecutor>> = match req.image_type.as_str() {
             "containerd" => Box::new(ImageType::Containerd(CtrImageHandler::default())),
-            _ => return Err(anyhow!("Invalid image type \"{}\"", req.image_type)),
+            "docker" => Box::new(ImageType::Docker(DockerImageHandler::default())),
+            "disk" => Box::new(ImageType::Disk(DiskImageHandler::default())),
+            _ => bail!("Invalid image type \"{}\"", req.image_type),
         };
 
         let image_manager = handler.download_image(&req)?;
@@ -129,7 +134,7 @@ impl AgentImpl {
                 configuration.set_config(config)?;
             } else {
                 error!("Unknown configuration type: \"{}\"", config_type);
-                Err(anyhow!("Unknown configuration type: \"{}\"", config_type))?;
+                bail!("Unknown configuration type: \"{}\"", config_type);
             }
         }
         Ok(Response {
@@ -172,7 +177,7 @@ impl AgentImpl {
 #[cfg(test)]
 mod test {
     use super::*;
-    use manager::api::Sysconfig;
+    use manager::api::{CertsInfo, Sysconfig};
     use std::collections::HashMap;
 
     #[test]
@@ -217,6 +222,14 @@ mod test {
             check_sum: "xxx".into(),
             image_type: "xxx".into(),
             container_image: "xxx".into(),
+            image_url: "".to_string(),
+            flag_safe: false,
+            mtls: false,
+            certs: CertsInfo {
+                ca_cert: "".to_string(),
+                client_cert: "".to_string(),
+                client_key: "".to_string(),
+            },
         };
         let res = agent.prepare_upgrade_impl(req);
         assert!(res.is_err());

@@ -28,10 +28,9 @@ impl<'a> Request<'a> {}
 
 impl Client {
     pub fn new<P: AsRef<Path>>(socket_path: P) -> Self {
-        let client = Client {
+        Client {
             json_rpc_client: JsonRPCClient::with_transport(UdsTransport::new(socket_path)),
-        };
-        client
+        }
     }
 
     pub fn build_request<'a>(
@@ -39,14 +38,13 @@ impl Client {
         command: &'a str,
         params: &'a Vec<Box<RawValue>>,
     ) -> Request<'a> {
-        let json_rpc_request = self.json_rpc_client.build_request(command, &params);
+        let json_rpc_request = self.json_rpc_client.build_request(command, params);
         let request = Request(json_rpc_request);
         request
     }
 
     pub fn send_request(&self, request: Request) -> Result<JsonRPCResponse, jsonrpc::Error> {
-        let response = self.json_rpc_client.send_request(request.0);
-        response
+        self.json_rpc_client.send_request(request.0)
     }
 }
 

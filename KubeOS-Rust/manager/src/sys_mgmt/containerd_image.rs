@@ -15,9 +15,11 @@ use std::{fs, os::unix::fs::PermissionsExt, path::Path};
 use anyhow::{anyhow, Result};
 use log::{debug, info};
 
-use super::api::{ImageHandler, UpgradeRequest};
-use crate::sys_mgmt::{IMAGE_PERMISSION, NEED_GB_SIZE, PERSIST_DIR};
-use crate::utils::*;
+use crate::{
+    api::{ImageHandler, UpgradeRequest},
+    sys_mgmt::{IMAGE_PERMISSION, NEED_BYTES, PERSIST_DIR},
+    utils::*,
+};
 
 pub struct CtrImageHandler<T: CommandExecutor> {
     pub paths: PreparePath,
@@ -28,7 +30,7 @@ const DEFAULT_NAMESPACE: &str = "k8s.io";
 
 impl<T: CommandExecutor> ImageHandler<T> for CtrImageHandler<T> {
     fn download_image(&self, req: &UpgradeRequest) -> Result<UpgradeImageManager<T>> {
-        perpare_env(&self.paths, NEED_GB_SIZE, PERSIST_DIR, IMAGE_PERMISSION)?;
+        perpare_env(&self.paths, NEED_BYTES, PERSIST_DIR, IMAGE_PERMISSION)?;
         self.get_image(req)?;
         self.get_rootfs_archive(req, IMAGE_PERMISSION)?;
 
@@ -60,21 +62,16 @@ impl<T: CommandExecutor> CtrImageHandler<T> {
     fn get_image(&self, req: &UpgradeRequest) -> Result<()> {
         let image_name = &req.container_image;
         is_valid_image_name(image_name)?;
-        info!("Start pulling image {}", image_name);
-        let containerd_command: String;
-        if is_command_available("crictl", &self.executor) {
-            containerd_command = "crictl".to_string();
+        let cli: String = if is_command_available("crictl", &self.executor) {
+            "crictl".to_string()
         } else {
-            containerd_command = "ctr".to_string();
-        }
-        pull_image(&containerd_command, image_name, &self.executor)?;
+            "ctr".to_string()
+        };
+        remove_image_if_exist(&cli, image_name, &self.executor)?;
+        info!("Start pulling image {}", image_name);
+        pull_image(&cli, image_name, &self.executor)?;
         info!("Start checking image digest");
-        check_oci_image_digest_match(
-            &containerd_command,
-            image_name,
-            &req.check_sum,
-            &self.executor,
-        )?;
+        check_oci_image_digest(&cli, image_name, &req.check_sum, &self.executor)?;
         Ok(())
     }
 
@@ -102,7 +99,7 @@ impl<T: CommandExecutor> CtrImageHandler<T> {
         )?;
         // copy os.tar from mount_path to its partent dir
         self.copy_file(
-            &self.paths.mount_path.join(&self.paths.rootfs_file),
+            self.paths.mount_path.join(&self.paths.rootfs_file),
             &self.paths.tar_path,
             permission,
         )?;
@@ -152,6 +149,7 @@ impl<T: CommandExecutor> CtrImageHandler<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::api::CertsInfo;
     use mockall::mock;
     use std::io::Write;
     use std::path::Path;
@@ -187,11 +185,30 @@ mod tests {
             image_type: "containerd".to_string(),
             container_image: image_name.to_string(),
             check_sum: "22222".to_string(),
+            image_url: "".to_string(),
+            flag_safe: false,
+            mtls: false,
+            certs: CertsInfo {
+                ca_cert: "".to_string(),
+                client_cert: "".to_string(),
+                client_key: "".to_string(),
+            },
         };
         // mock is_command_available
         mock_executor
             .expect_run_command()
             .withf(|cmd, args| cmd == "/bin/sh" && args.contains(&"command -v crictl")) // simplified with a closure
+            .times(1)
+            .returning(|_, _| Ok(()));
+        // mock remove_image_if_exist
+        mock_executor
+            .expect_run_command()
+            .withf(|cmd, args| cmd == "crictl" && args.contains(&"inspecti")) // simplified with a closure
+            .times(1)
+            .returning(|_, _| Ok(()));
+        mock_executor
+            .expect_run_command()
+            .withf(|cmd, args| cmd == "crictl" && args.contains(&"rmi")) // simplified with a closure
             .times(1)
             .returning(|_, _| Ok(()));
         // mock pull_image
@@ -230,6 +247,14 @@ mod tests {
             image_type: "containerd".to_string(),
             container_image: image_name.to_string(),
             check_sum: "22222".to_string(),
+            image_url: "".to_string(),
+            flag_safe: false,
+            mtls: false,
+            certs: CertsInfo {
+                ca_cert: "".to_string(),
+                client_cert: "".to_string(),
+                client_key: "".to_string(),
+            },
         };
 
         // mock check_and_unmount
@@ -351,6 +376,14 @@ mod tests {
             image_type: "containerd".to_string(),
             container_image: "docker.io/library/busybox:latest".to_string(),
             check_sum: "".to_string(),
+            image_url: "".to_string(),
+            flag_safe: false,
+            mtls: false,
+            certs: CertsInfo {
+                ca_cert: "".to_string(),
+                client_cert: "".to_string(),
+                client_key: "".to_string(),
+            },
         };
         ctr.download_image(&update_req).unwrap();
         let tar_path = "/persist/KubeOS-Update/os.tar";

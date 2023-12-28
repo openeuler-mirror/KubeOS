@@ -15,13 +15,8 @@ use serde_json::value::RawValue;
 use crate::method::callable_method::RpcMethod;
 use kubeos_manager::api;
 
+#[derive(Default)]
 pub struct UpgradeMethod {}
-
-impl UpgradeMethod {
-    pub fn new() -> Self {
-        UpgradeMethod {}
-    }
-}
 
 impl RpcMethod for UpgradeMethod {
     type Response = api::Response;

@@ -23,7 +23,7 @@ pub fn request(
     params: Vec<Box<RawValue>>,
 ) -> Result<Response, anyhow::Error> {
     let request = client.build_request(command, &params);
-    let response = client.send_request(request).map_err(|e| parse_error(e));
+    let response = client.send_request(request).map_err(parse_error);
     debug!("{:#?}", response);
     response
 }

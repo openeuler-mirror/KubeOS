@@ -26,6 +26,6 @@ regex = "=1.7.3"
 chrono = { version = "0.4", default-features = false, features = ["std"] }
 h2 = "=0.3.16"
 tokio-retry = "0.3"
-reqwest = { version = "=0.11.10", default-features = false, features =  [ "json" ] }
+reqwest = { version = "=0.11.18", default-features = false, features =  [ "json" ] }
 cli = { version = "0.1.0", path = "../cli" }
 manager = { version = "0.1.0", path = "../manager" }

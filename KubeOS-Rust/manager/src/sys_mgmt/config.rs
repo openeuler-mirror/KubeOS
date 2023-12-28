@@ -19,13 +19,12 @@ use std::{
     string::String,
 };
 
-use anyhow::{anyhow, Context, Ok, Result};
+use anyhow::{bail, Context, Result};
 use lazy_static::lazy_static;
 use log::{debug, info, trace, warn};
 use regex::Regex;
 
-use super::{api::*, values};
-use crate::utils::*;
+use crate::{api::*, sys_mgmt::values, utils::*};
 
 lazy_static! {
     pub static ref CONFIG_TEMPLATE: HashMap<String, Box<dyn Configuration + Sync>> = {
@@ -76,7 +75,7 @@ impl Configuration for KernelSysctl {
             let proc_path = self.get_proc_path(key);
             if key_info.operation == "delete" {
                 warn!("Failed to delete kernel.sysctl config with key \"{}\"", key);
-            } else if key_info.value != "" && key_info.operation == "" {
+            } else if !key_info.value.is_empty() && key_info.operation.is_empty() {
                 fs::write(&proc_path, format!("{}\n", &key_info.value).as_bytes()).with_context(
                     || format!("Failed to write kernel.sysctl with key: \"{}\"", key),
                 )?;
@@ -100,7 +99,7 @@ impl KernelSysctl {
     }
 
     fn get_proc_path(&self, key: &str) -> PathBuf {
-        let path_str = format!("{}{}", self.proc_path, key.replace(".", "/"));
+        let path_str = format!("{}{}", self.proc_path, key.replace('.', "/"));
         Path::new(&path_str).to_path_buf()
     }
 }
@@ -109,7 +108,7 @@ impl Configuration for KernelSysctlPersist {
     fn set_config(&self, config: &mut Sysconfig) -> Result<()> {
         info!("Start set kernel.sysctl.persist");
         let mut config_path = &values::DEFAULT_KERNEL_CONFIG_PATH.to_string();
-        if config.config_path != "" {
+        if !config.config_path.is_empty() {
             config_path = &config.config_path;
         }
         debug!("kernel.sysctl.persist config_path: \"{}\"", config_path);
@@ -140,14 +139,14 @@ fn get_and_set_configs(
     for line in io::BufReader::new(f).lines() {
         let line = line?;
         // if line is a comment or blank
-        if line.starts_with("#") || line.starts_with(";") || line.trim().is_empty() {
+        if line.starts_with('#') || line.starts_with(';') || line.trim().is_empty() {
             configs_write.push(line);
             continue;
         }
         let config_kv: Vec<&str> = line.splitn(2, '=').map(|s| s.trim()).collect();
         // if config_kv is not a key-value pair
         if config_kv.len() != 2 {
-            return Err(anyhow!("could not parse sysctl config {}", line));
+            bail!("could not parse sysctl config {}", line);
         }
         let new_key_info = expect_configs.get(config_kv[0]);
         let new_config = match new_key_info {
@@ -170,7 +169,7 @@ fn write_configs_to_file(config_path: &str, configs: &Vec<String>) -> Result<()>
     let f = File::create(config_path)?;
     let mut w = BufWriter::new(f);
     for line in configs {
-        if line == "" {
+        if line.is_empty() {
             continue;
         }
         writeln!(w, "{}", line.as_str())?;
@@ -179,17 +178,17 @@ fn write_configs_to_file(config_path: &str, configs: &Vec<String>) -> Result<()>
         .with_context(|| format!("Failed to flush file {}", config_path))?;
     w.get_mut()
         .sync_all()
-        .with_context(|| format!("Failed to sync"))?;
+        .with_context(|| "Failed to sync".to_string())?;
     debug!("Write configuration to file \"{}\" success", config_path);
     Ok(())
 }
 
 fn handle_delete_key(config_kv: &Vec<&str>, new_config_info: &KeyInfo) -> String {
     let key = config_kv[0];
-    if config_kv.len() == 1 && new_config_info.value == "" {
+    if config_kv.len() == 1 && new_config_info.value.is_empty() {
         info!("Delete configuration key: \"{}\"", key);
         return String::from("");
-    } else if config_kv.len() == 1 && new_config_info.value != "" {
+    } else if config_kv.len() == 1 && !new_config_info.value.is_empty() {
         warn!(
             "Failed to delete key \"{}\" with inconsistent values \"nil\" and \"{}\"",
             key, new_config_info.value
@@ -210,21 +209,21 @@ fn handle_delete_key(config_kv: &Vec<&str>, new_config_info: &KeyInfo) -> String
 
 fn handle_update_key(config_kv: &Vec<&str>, new_config_info: &KeyInfo) -> String {
     let key = config_kv[0];
-    if new_config_info.operation != "" {
+    if !new_config_info.operation.is_empty() {
         warn!(
             "Unknown operation \"{}\", updating key \"{}\" with value \"{}\" by default",
             new_config_info.operation, key, new_config_info.value
         );
     }
-    if config_kv.len() == values::ONLY_KEY && new_config_info.value == "" {
+    if config_kv.len() == values::ONLY_KEY && new_config_info.value.is_empty() {
         return key.to_string();
     }
     let new_value = new_config_info.value.trim();
-    if config_kv.len() == values::ONLY_KEY && new_config_info.value != "" {
+    if config_kv.len() == values::ONLY_KEY && !new_config_info.value.is_empty() {
         info!("Update configuration \"{}={}\"", key, new_value);
         return format!("{}={}", key, new_value);
     }
-    if new_config_info.value == "" {
+    if new_config_info.value.is_empty() {
         warn!("Failed to update key \"{}\" with \"null\" value", key);
         return config_kv.join("=");
     }
@@ -242,24 +241,24 @@ fn handle_add_key(
             warn!("Failed to delete inexistent key: \"{}\"", key);
             continue;
         }
-        if key == "" || key.contains("=") {
+        if key.is_empty() || key.contains('=') {
             warn!(
                 "Failed to add \"null\" key or key containing \"=\", key: \"{}\"",
                 key
             );
             continue;
         }
-        if config_info.operation != "" {
+        if !config_info.operation.is_empty() {
             warn!(
                 "Unknown operation \"{}\", adding key \"{}\" with value \"{}\" by default",
                 config_info.operation, key, config_info.value
             );
         }
         let (k, v) = (key.trim(), config_info.value.trim());
-        if v == "" && is_only_key_valid {
+        if v.is_empty() && is_only_key_valid {
             info!("Add configuration \"{}\"", k);
             configs_write.push(k.to_string());
-        } else if v == "" {
+        } else if v.is_empty() {
             warn!("Failed to add key \"{}\" with \"null\" value", k);
         } else {
             info!("Add configuration \"{}={}\"", k, v);
@@ -277,7 +276,7 @@ impl Configuration for GrubCmdline {
             info!("Start set grub.cmdline.next configuration");
         }
         if !is_file_exist(&self.grub_path) {
-            return Err(anyhow!("Failed to find grub.cfg file"));
+            bail!("Failed to find grub.cfg file");
         }
         let config_partition = if cfg!(test) {
             self.is_cur_partition
@@ -337,16 +336,13 @@ fn modify_boot_cfg(expect_configs: &mut HashMap<String, KeyInfo>, line: &String)
     let mut new_configs = vec!["       ".to_string()];
     let olg_configs: Vec<&str> = line.split(' ').collect();
     for old_config in olg_configs {
-        if old_config == "" {
+        if old_config.is_empty() {
             continue;
         }
         // At most 2 substrings can be returned to satisfy the case like root=UUID=xxxx
-        let config = old_config.splitn(2, "=").collect::<Vec<&str>>();
+        let config = old_config.splitn(2, '=').collect::<Vec<&str>>();
         if config.len() != values::ONLY_KEY && config.len() != values::KV_PAIR {
-            return Err(anyhow!(
-                "Failed to parse grub.cfg linux line {}",
-                old_config
-            ));
+            bail!("Failed to parse grub.cfg linux line {}", old_config);
         }
         let new_key_info = expect_configs.get(config[0]);
         let new_config = match new_key_info {
@@ -560,9 +556,10 @@ mod tests {
     #[test]
     fn write_configs_to_file_tests() {
         init();
-        let path = "/home/yuhang/abc.txt";
+        let tmp_file = NamedTempFile::new().unwrap();
         let configs = vec!["a=1".to_string(), "b=2".to_string()];
-        write_configs_to_file(&path.to_string(), &configs).unwrap();
+        write_configs_to_file(tmp_file.path().to_str().unwrap(), &configs).unwrap();
+        assert_eq!(fs::read(tmp_file.path()).unwrap(), b"a=1\nb=2\n");
     }
 
     #[test]

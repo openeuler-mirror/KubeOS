@@ -12,8 +12,8 @@
 
 use std::process::Command;
 
-use anyhow::{anyhow, Result};
-use log::trace;
+use anyhow::{bail, Result};
+use log::{debug, trace};
 
 pub trait CommandExecutor: Clone {
     fn run_command<'a>(&self, name: &'a str, args: &[&'a str]) -> Result<()>;
@@ -25,34 +25,36 @@ pub struct RealCommandExecutor {}
 
 impl CommandExecutor for RealCommandExecutor {
     fn run_command<'a>(&self, name: &'a str, args: &[&'a str]) -> Result<()> {
+        trace!("run_command: {} {:?}", name, args);
         let output = Command::new(name).args(args).output()?;
         if !output.status.success() {
             let error_message = String::from_utf8_lossy(&output.stderr);
-            return Err(anyhow!(
+            bail!(
                 "Failed to run command: {} {:?}, stderr: {}",
                 name,
                 args,
                 error_message
-            ));
+            );
         }
-        trace!("run_command: {} {:?} done", name, args);
+        debug!("run_command: {} {:?} done", name, args);
         Ok(())
     }
 
     fn run_command_with_output<'a>(&self, name: &'a str, args: &[&'a str]) -> Result<String> {
+        trace!("run_command_with_output: {} {:?}", name, args);
         let output = Command::new(name).args(args).output()?;
         if !output.status.success() {
             let error_message = String::from_utf8_lossy(&output.stderr);
-            return Err(anyhow!(
+            bail!(
                 "Failed to run command: {} {:?}, stderr: {}",
                 name,
                 args,
                 error_message
-            ));
+            );
         }
         let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-        trace!("run_command_with_output: {} {:?} done", name, args);
-        Ok(stdout.trim_end_matches("\n").to_string())
+        debug!("run_command_with_output: {} {:?} done", name, args);
+        Ok(stdout.trim_end_matches('\n').to_string())
     }
 }
 

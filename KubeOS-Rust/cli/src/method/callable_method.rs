@@ -21,6 +21,6 @@ pub trait RpcMethod {
     fn command_params(&self) -> Vec<Box<RawValue>>;
     fn call(&self, client: &Client) -> Result<Self::Response, anyhow::Error> {
         let response = request(client, self.command_name(), self.command_params())?;
-        response.result().map_err(|e| parse_error(e))
+        response.result().map_err(parse_error)
     }
 }

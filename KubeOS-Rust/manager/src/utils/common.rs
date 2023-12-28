@@ -17,7 +17,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, bail, Result};
 use log::{debug, info, trace};
 use nix::{mount, mount::MntFlags};
 
@@ -53,12 +53,12 @@ pub fn is_file_exist<P: AsRef<Path>>(path: P) -> bool {
 
 pub fn perpare_env(
     prepare_path: &PreparePath,
-    need_gb: i64,
+    need_bytes: i64,
     persist_path: &str,
     permission: u32,
 ) -> Result<()> {
     info!("Prepare environment to upgrade");
-    check_disk_size(need_gb, persist_path)?;
+    check_disk_size(need_bytes, persist_path)?;
     clean_env(
         &prepare_path.update_path,
         &prepare_path.mount_path,
@@ -71,21 +71,19 @@ pub fn perpare_env(
     Ok(())
 }
 
-pub fn check_disk_size(need_gb: i64, path: &str) -> Result<()> {
+pub fn check_disk_size<P: AsRef<Path>>(need_bytes: i64, path: P) -> Result<()> {
     trace!("Check if there is enough disk space to upgrade");
-    let kb = 1024;
-    let fs_stat = nix::sys::statfs::statfs(path)?;
-    let need_disk_size = need_gb * kb * kb * kb;
+    let fs_stat = nix::sys::statfs::statfs(path.as_ref())?;
     let available_blocks = i64::try_from(fs_stat.blocks_available())?;
     let available_space = available_blocks * fs_stat.block_size();
-    if available_space < need_disk_size {
-        return Err(anyhow!("Space is not enough for downloading"));
+    if available_space < need_bytes {
+        bail!("Space is not enough for downloading");
     }
-    debug!("There is enough disk space to upgrade");
+    info!("There is enough disk space to upgrade");
     Ok(())
 }
 
-// clean_env will umount the mount path and delete all files in /persist/KubeOS-Update and update.img
+// clean_env will umount the mount path and delete directory /persist/KubeOS-Update and /persist/update.img
 pub fn clean_env<P>(update_path: P, mount_path: P, image_path: P) -> Result<()>
 where
     P: AsRef<Path>,
@@ -94,11 +92,11 @@ where
     if is_mounted(&mount_path)? {
         debug!("Umount {}", mount_path.as_ref().display());
         if let Err(errno) = mount::umount2(mount_path.as_ref(), MntFlags::MNT_FORCE) {
-            return Err(anyhow!(
+            bail!(
                 "Failed to umount {} in clean_env: {}",
                 mount_path.as_ref().display(),
                 errno
-            ));
+            );
         }
     }
     // losetup -D?
@@ -234,17 +232,18 @@ mod tests {
             image_path: PathBuf::from("/tmp/test_prepare_env/update.img"),
             rootfs_file: "os.tar".to_string(),
         };
-        perpare_env(&paths, 1, "/home", 0o700).unwrap();
+        perpare_env(&paths, 1 * 1024 * 1024 * 1024, "/home", 0o700).unwrap();
     }
 
     #[test]
     fn test_check_disk_size() {
         init();
         let path = "/home";
-        let need_gb = 1;
+        let gb: i64 = 1 * 1024 * 1024 * 1024;
+        let need_gb = 1 * gb;
         let result = check_disk_size(need_gb, path);
         assert!(result.is_ok());
-        let need_gb = 1000;
+        let need_gb = 10000 * gb;
         let result = check_disk_size(need_gb, path);
         assert!(result.is_err());
     }
@@ -291,14 +290,21 @@ mod tests {
         let grubenv_path = "/boot/efi/EFI/openEuler/grubenv";
         let next_menuentry = "B";
         let mut mock = MockCommandExec::new();
-        mock.expect_run_command()
-            .withf(move |name, args| {
-                name == "grub2-editenv"
-                    && args[0] == grubenv_path
-                    && args[2] == format!("saved_entry={}", next_menuentry).as_str()
-            })
-            .times(1) // Expect it to be called once
-            .returning(move |_, _| Ok(()));
+        if get_boot_mode() == "uefi" {
+            mock.expect_run_command()
+                .withf(move |name, args| {
+                    name == "grub2-editenv"
+                        && args[0] == grubenv_path
+                        && args[2] == format!("saved_entry={}", next_menuentry).as_str()
+                })
+                .times(1) // Expect it to be called once
+                .returning(move |_, _| Ok(()));
+        } else {
+            mock.expect_run_command()
+                .withf(move |name, args| name == "grub2-set-default" && args[0] == next_menuentry)
+                .times(1) // Expect it to be called once
+                .returning(move |_, _| Ok(()));
+        }
 
         switch_boot_menuentry(&mock, grubenv_path, next_menuentry).unwrap()
     }

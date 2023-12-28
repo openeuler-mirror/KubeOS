@@ -10,7 +10,7 @@
  * See the Mulan PSL v2 for more details.
  */
 
-use anyhow::{anyhow, Result};
+use anyhow::{bail, Result};
 use log::{debug, trace};
 
 use super::executor::CommandExecutor;
@@ -38,22 +38,21 @@ pub fn get_partition_info<T: CommandExecutor>(
             cur_partition.device = format!("/dev/{}", res[0]).to_string();
             cur_partition.fs_type = res[2].to_string();
             next_partition.fs_type = res[2].to_string();
-            if res[0].contains("2") {
+            if res[0].contains('2') {
+                // root directory is mounted on sda2, so sda3 is the next partition
                 cur_partition.menuentry = String::from("A");
                 next_partition.menuentry = String::from("B");
-                next_partition.device = format!("/dev/{}", res[0].replace("2", "3")).to_string();
-            } else if res[0].contains("3") {
+                next_partition.device = format!("/dev/{}", res[0].replace('2', "3")).to_string();
+            } else if res[0].contains('3') {
+                // root directory is mounted on sda3, so sda2 is the next partition
                 cur_partition.menuentry = String::from("B");
                 next_partition.menuentry = String::from("A");
-                next_partition.device = format!("/dev/{}", res[0].replace("3", "2")).to_string();
+                next_partition.device = format!("/dev/{}", res[0].replace('3', "2")).to_string();
             }
         }
     }
     if cur_partition.device.is_empty() {
-        return Err(anyhow!(
-            "Failed to get partition info, lsblk output: {}",
-            lsblk
-        ));
+        bail!("Failed to get partition info, lsblk output: {}", lsblk);
     }
     Ok((cur_partition, next_partition))
 }

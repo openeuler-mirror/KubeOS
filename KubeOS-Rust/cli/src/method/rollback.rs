@@ -15,13 +15,8 @@ use serde_json::value::RawValue;
 use crate::method::callable_method::RpcMethod;
 use kubeos_manager::api;
 
+#[derive(Default)]
 pub struct RollbackMethod {}
-
-impl RollbackMethod {
-    pub fn new() -> Self {
-        RollbackMethod {}
-    }
-}
 
 impl RpcMethod for RollbackMethod {
     type Response = api::Response;
