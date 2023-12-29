@@ -10,6 +10,7 @@
  * See the Mulan PSL v2 for more details.
  */
 
+mod agentclient;
 mod apiclient;
 mod controller;
 mod crd;
@@ -17,6 +18,7 @@ mod drain;
 mod utils;
 mod values;
 
+pub use agentclient::AgentClient;
 pub use apiclient::ControllerClient;
 pub use controller::{error_policy, reconcile, reconciler_error::Error, ProxyController};
 pub use crd::OS;

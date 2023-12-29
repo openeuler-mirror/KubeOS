@@ -10,6 +10,14 @@
  * See the Mulan PSL v2 for more details.
  */
 
+use self::error::{
+    DrainError::{DeletePodsError, GetPodListsError, WaitDeletionError},
+    EvictionError::{EvictionErrorNoRetry, EvictionErrorRetry},
+};
+use super::values::{
+    EVERY_DELETION_CHECK, EVERY_EVICTION_RETRY, MAX_EVICT_POD_NUM, MAX_RETRIES_TIMES,
+    RETRY_BASE_DELAY, RETRY_MAX_DELAY, TIMEOUT,
+};
 use futures::{stream, StreamExt};
 use k8s_openapi::api::core::v1::{Pod, PodSpec, PodStatus};
 use kube::{
@@ -17,21 +25,15 @@ use kube::{
     core::ObjectList,
     Api, Client, ResourceExt,
 };
+use log::{debug, error, info};
 use reqwest::StatusCode;
 use tokio::time::{sleep, Duration, Instant};
 use tokio_retry::{
     strategy::{jitter, ExponentialBackoff},
     RetryIf,
 };
-use tracing::{event, Level};
 
-use self::error::DrainError;
-use super::values::{
-    EVERY_DELETION_CHECK, EVERY_EVICTION_RETRY, MAX_EVICT_POD_NUM, MAX_RETRIES_TIMES,
-    RETRY_BASE_DELAY, RETRY_MAX_DELAY, TIMEOUT,
-};
-
-pub(crate) async fn drain_os(
+pub async fn drain_os(
     client: &Client,
     node_name: &str,
     force: bool,
@@ -65,7 +67,7 @@ async fn get_pods_deleted(
     let pods: ObjectList<Pod> = match pods_api.list(&lp).await {
         Ok(pods @ ObjectList { .. }) => pods,
         Err(err) => {
-            return Err(DrainError::FindTargetPods {
+            return Err(GetPodListsError {
                 source: err,
                 node_name: node_name.to_string(),
             });
@@ -85,7 +87,7 @@ async fn get_pods_deleted(
         }
     }
     if filterd_err.len() > 0 {
-        return Err(error::DrainError::DeletePodsError {
+        return Err(DeletePodsError {
             errors: filterd_err,
         });
     }
@@ -114,65 +116,61 @@ async fn evict_pod(
                 match eviction_result {
                     Ok(_) => {
                         pod.name();
-                        event!(Level::INFO, "Successfully evicted Pod '{}'", pod.name_any());
+                        debug!("Successfully evicted Pod '{}'", pod.name_any());
                         break;
                     }
                     Err(kube::Error::Api(e)) => {
                         let status_code = StatusCode::from_u16(e.code);
                         match status_code {
-                            Ok(StatusCode::TOO_MANY_REQUESTS) => {
-                                event!(
-                                    Level::ERROR,
-                                    "Too many requests when creating Eviction for Pod '{}': '{}'. This is likely due to respecting a Pod Disruption Budget. Retrying in {:.2}s.",
-                                    pod.name_any(),
-                                    e,
-                                    EVERY_EVICTION_RETRY.as_secs_f64()
-                                );
-                                sleep(EVERY_EVICTION_RETRY).await;
-                                continue;
-                            }
-                            Ok(StatusCode::INTERNAL_SERVER_ERROR) => {
-                                event!(
-                                    Level::ERROR,
-                                    "Error when evicting Pod '{}': '{}'. Check for misconfigured PodDisruptionBudgets. Retrying in {:.2}s.",
-                                    pod.name_any(),
-                                    e,
-                                    EVERY_EVICTION_RETRY.as_secs_f64()
-                                );
-                                sleep(EVERY_EVICTION_RETRY).await;
-                                continue;
+                            Ok(StatusCode::FORBIDDEN) => {
+                                return Err(EvictionErrorNoRetry {
+                                    source: kube::Error::Api(e.clone()),
+                                    pod_name: pod.name_any(),
+                                });
                             }
                             Ok(StatusCode::NOT_FOUND) => {
-                                return Err(error::EvictionError::NonRetriableEviction {
+                                return Err(EvictionErrorNoRetry {
                                     source: kube::Error::Api(e.clone()),
                                     pod_name: pod.name_any(),
                                 });
                             }
-                            Ok(StatusCode::FORBIDDEN) => {
-                                return Err(error::EvictionError::NonRetriableEviction {
-                                    source: kube::Error::Api(e.clone()),
-                                    pod_name: pod.name_any(),
-                                });
+                            Ok(StatusCode::INTERNAL_SERVER_ERROR) => {
+                                error!(
+                                    "Evict pod {} reported error: '{}' and will retry in {:.2}s. This error maybe is due to misconfigured PodDisruptionBudgets.",
+                                    pod.name_any(),
+                                    e,
+                                    EVERY_EVICTION_RETRY.as_secs_f64()
+                                );
+                                sleep(EVERY_EVICTION_RETRY).await;
+                                continue;
+                            }
+                            Ok(StatusCode::TOO_MANY_REQUESTS) => {
+                                error!("Evict pod {} reported error: '{}' and will retry in {:.2}s. This error maybe is due to PodDisruptionBugets.",
+                                    pod.name_any(),
+                                    e,
+                                    EVERY_EVICTION_RETRY.as_secs_f64()
+                                );
+                                sleep(EVERY_EVICTION_RETRY).await;
+                                continue;
                             }
                             Ok(_) => {
-                                event!(
-                                    Level::ERROR,
-                                    "Error when evicting Pod '{}': '{}'.",
+                                error!(
+                                    "Evict pod {} reported error: '{}'.",
                                     pod.name_any(),
                                     e
                                 );
-                                return Err(error::EvictionError::RetriableEviction {
+                                return Err(EvictionErrorRetry {
                                     source: kube::Error::Api(e.clone()),
                                     pod_name: pod.name_any(),
                                 });
                             }
                             Err(_) => {
-                                event!(
-                                    Level::ERROR,
-                                    "Received invalid response code from Kubernetes API: '{}'",
+                                error!(
+                                    "Evict pod {} reported error: '{}'.Received invalid response code from Kubernetes API",
+                                    pod.name_any(),
                                     e
                                 );
-                                return Err(error::EvictionError::RetriableEviction {
+                                return Err(EvictionErrorRetry {
                                     source: kube::Error::Api(e.clone()),
                                     pod_name: pod.name_any(),
                                 });
@@ -180,8 +178,8 @@ async fn evict_pod(
                         }
                     }
                     Err(e) => {
-                        event!(Level::ERROR, "Eviction failed: '{}'. Retrying...", e);
-                        return Err(error::EvictionError::RetriableEviction {
+                        error!("Evict pod {} reported error: '{}' and will retry", pod.name_any(),e);
+                        return Err(EvictionErrorRetry {
                             source: e,
                             pod_name: pod.name_any(),
                         });
@@ -198,37 +196,28 @@ async fn wait_for_deletion(k8s_client: &kube::Client, pod: &Pod) -> Result<(), e
     let start_time = Instant::now();
 
     let pod_api: Api<Pod> = get_pod_api_with_namespace(k8s_client, pod);
+    let response_error_not_found: u16 = 404;
     loop {
         match pod_api.get(&pod.name_any()).await {
-            Err(kube::Error::Api(e)) if e.code == 404 => {
-                event!(Level::INFO, "Pod {} deleted.", pod.name_any());
-                break;
-            }
-
             Ok(p) if p.uid() != pod.uid() => {
-                let name = p
-                    .metadata
-                    .name
-                    .clone()
-                    .or_else(|| p.metadata.generate_name.clone())
-                    .unwrap_or_default();
-                event!(Level::INFO, "Pod {} deleted.", name);
+                let name = (&p).name_any();
+                info!("Pod {} deleted.", name);
                 break;
             }
-
             Ok(_) => {
-                event!(
-                    Level::DEBUG,
-                    "Pod '{}' not yet deleted. Waiting {}s.",
+                info!(
+                    "Pod '{}' is not yet deleted. Waiting {}s.",
                     pod.name_any(),
                     EVERY_DELETION_CHECK.as_secs_f64()
                 );
             }
-
+            Err(kube::Error::Api(e)) if e.code == response_error_not_found => {
+                info!("Pod {} is deleted.", pod.name_any());
+                break;
+            }
             Err(e) => {
-                event!(
-                    Level::ERROR,
-                    "Could not determine if Pod '{}' has been deleted: '{}'. Waiting {}s.",
+                error!(
+                    "Get pod {} reported error: '{}', whether pod is deleted cannot be determined, waiting {}s.",
                     pod.name_any(),
                     e,
                     EVERY_DELETION_CHECK.as_secs_f64()
@@ -236,7 +225,7 @@ async fn wait_for_deletion(k8s_client: &kube::Client, pod: &Pod) -> Result<(), e
             }
         }
         if start_time.elapsed() > TIMEOUT {
-            return Err(error::DrainError::WaitForDeletion {
+            return Err(WaitDeletionError {
                 pod_name: pod.name_any(),
                 max_wait: TIMEOUT,
             });
@@ -246,12 +235,14 @@ async fn wait_for_deletion(k8s_client: &kube::Client, pod: &Pod) -> Result<(), e
     }
     Ok(())
 }
+
 fn get_pod_api_with_namespace(client: &kube::Client, pod: &Pod) -> Api<Pod> {
     match pod.metadata.namespace.as_ref() {
         Some(namespace) => Api::namespaced(client.clone(), namespace),
         None => Api::default_namespaced(client.clone()),
     }
 }
+
 trait NameAny {
     fn name_any(self: &Self) -> String;
 }
@@ -480,7 +471,7 @@ impl PodFilter for CombinedFilter {
     fn filter(self: &Self, pod: &Pod) -> Box<FilterResult> {
         let mut filter_res = self.deleted_filter.filter(pod);
         if !filter_res.result {
-            event!(Level::INFO, filter_res.desc);
+            info!("{}", filter_res.desc);
             return Box::new(FilterResult {
                 result: filter_res.result,
                 desc: filter_res.desc.clone(),
@@ -489,7 +480,7 @@ impl PodFilter for CombinedFilter {
         }
         filter_res = self.daemon_filter.filter(pod);
         if !filter_res.result {
-            event!(Level::INFO, filter_res.desc);
+            info!("{}", filter_res.desc);
             return Box::new(FilterResult {
                 result: filter_res.result,
                 desc: filter_res.desc.clone(),
@@ -498,7 +489,7 @@ impl PodFilter for CombinedFilter {
         }
         filter_res = self.mirror_filter.filter(pod);
         if !filter_res.result {
-            event!(Level::INFO, filter_res.desc);
+            info!("{}", filter_res.desc);
             return Box::new(FilterResult {
                 result: filter_res.result,
                 desc: filter_res.desc.clone(),
@@ -507,7 +498,7 @@ impl PodFilter for CombinedFilter {
         }
         filter_res = self.local_storage_filter.filter(pod);
         if !filter_res.result {
-            event!(Level::INFO, filter_res.desc);
+            info!("{}", filter_res.desc);
             return Box::new(FilterResult {
                 result: filter_res.result,
                 desc: filter_res.desc.clone(),
@@ -516,7 +507,7 @@ impl PodFilter for CombinedFilter {
         }
         filter_res = self.unreplicated_filter.filter(pod);
         if !filter_res.result {
-            event!(Level::INFO, filter_res.desc);
+            info!("{}", filter_res.desc);
             return Box::new(FilterResult {
                 result: filter_res.result,
                 desc: filter_res.desc.clone(),
@@ -592,7 +583,7 @@ impl tokio_retry::Condition<error::EvictionError> for ErrorHandleStrategy {
         match self {
             Self::TolerateStrategy => false,
             Self::RetryStrategy => {
-                if let error::EvictionError::RetriableEviction { .. } = error {
+                if let error::EvictionError::EvictionErrorRetry { .. } = error {
                     true
                 } else {
                     false
@@ -603,46 +594,36 @@ impl tokio_retry::Condition<error::EvictionError> for ErrorHandleStrategy {
 }
 
 pub mod error {
-    use snafu::Snafu;
+    use thiserror::Error;
     use tokio::time::Duration;
 
-    #[derive(Debug, Snafu)]
-    #[snafu(visibility(pub))]
+    #[derive(Debug, Error)]
     pub enum DrainError {
-        #[snafu(display("Unable to find drainable Pods for Node '{}': '{}'", node_name, source))]
-        FindTargetPods {
+        #[error("Get node {} pods list error reported: {}", node_name, source)]
+        GetPodListsError {
             source: kube::Error,
             node_name: String,
         },
 
-        #[snafu(
-            display(
-                "Pod '{}' was not deleted in the time allocated ({:.2}s).",
-                pod_name,
-                max_wait.as_secs_f64()
-            )
-        )]
-        WaitForDeletion {
+        #[error("Pod '{}' was not deleted in the time allocated ({:.2}s).",pod_name,max_wait.as_secs_f64())]
+        WaitDeletionError {
             pod_name: String,
             max_wait: Duration,
         },
-        DeletePodsError {
-            errors: Vec<String>,
-        },
+        #[error("")]
+        DeletePodsError { errors: Vec<String> },
     }
 
-    #[derive(Debug, Snafu)]
-    #[snafu(visibility(pub))]
+    #[derive(Debug, Error)]
     pub enum EvictionError {
-        #[snafu(display("Unable to evict Pod '{}': '{}'", pod_name, source))]
-        RetriableEviction {
+        #[error("Evict Pod {} error: '{}'", pod_name, source)]
+        EvictionErrorRetry {
             source: kube::Error,
             pod_name: String,
         },
 
-        #[snafu(display("Unable to evict Pod '{}': '{}'", pod_name, source))]
-        /// A fatal error occurred while attempting to evict a Pod. This will not be retried.
-        NonRetriableEviction {
+        #[error("Evict Pod {} error: '{}'", pod_name, source)]
+        EvictionErrorNoRetry {
             source: kube::Error,
             pod_name: String,
         },

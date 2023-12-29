@@ -20,8 +20,9 @@ use kube::{
 };
 use log::{error, info};
 mod controller;
-use cli::client::Client as AgentClient;
-use controller::{error_policy, reconcile, ControllerClient, ProxyController, OS, SOCK_PATH};
+use controller::{
+    error_policy, reconcile, AgentClient, ControllerClient, ProxyController, OS, SOCK_PATH,
+};
 
 const PROXY_VERSION: Option<&'static str> = option_env!("CARGO_PKG_VERSION");
 #[tokio::main]
