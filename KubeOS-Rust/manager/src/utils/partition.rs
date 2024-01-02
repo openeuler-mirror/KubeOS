@@ -22,9 +22,7 @@ pub struct PartitionInfo {
     pub fs_type: String,
 }
 
-pub fn get_partition_info<T: CommandExecutor>(
-    executor: &T,
-) -> Result<(PartitionInfo, PartitionInfo), anyhow::Error> {
+pub fn get_partition_info<T: CommandExecutor>(executor: &T) -> Result<(PartitionInfo, PartitionInfo), anyhow::Error> {
     let lsblk = executor.run_command_with_output("lsblk", &["-lno", "NAME,MOUNTPOINTS,FSTYPE"])?;
     // After split whitespace, the root directory line should have 3 elements, which are "sda2 / ext4".
     let mut cur_partition = PartitionInfo::default();
@@ -59,8 +57,9 @@ pub fn get_partition_info<T: CommandExecutor>(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use mockall::{mock, predicate::*};
+
+    use super::*;
 
     // Mock the CommandExecutor trait
     mock! {
@@ -85,24 +84,13 @@ mod tests {
     #[test]
     fn test_get_partition_info() {
         init();
-        let command_output1 =
-            "sda\nsda1 /boot/efi vfat\nsda2 / ext4\nsda3  ext4\nsda4 /persist ext4\nsr0  iso9660\n";
+        let command_output1 = "sda\nsda1 /boot/efi vfat\nsda2 / ext4\nsda3  ext4\nsda4 /persist ext4\nsr0  iso9660\n";
         let mut mock = MockCommandExec::new();
-        mock.expect_run_command_with_output()
-            .times(1)
-            .returning(|_, _| Ok(command_output1.to_string()));
+        mock.expect_run_command_with_output().times(1).returning(|_, _| Ok(command_output1.to_string()));
         let res = get_partition_info(&mock).unwrap();
         let expect_res = (
-            PartitionInfo {
-                device: "/dev/sda2".to_string(),
-                menuentry: "A".to_string(),
-                fs_type: "ext4".to_string(),
-            },
-            PartitionInfo {
-                device: "/dev/sda3".to_string(),
-                menuentry: "B".to_string(),
-                fs_type: "ext4".to_string(),
-            },
+            PartitionInfo { device: "/dev/sda2".to_string(), menuentry: "A".to_string(), fs_type: "ext4".to_string() },
+            PartitionInfo { device: "/dev/sda3".to_string(), menuentry: "B".to_string(), fs_type: "ext4".to_string() },
         );
         assert_eq!(res, expect_res);
     }

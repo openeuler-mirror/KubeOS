@@ -1,16 +1,11 @@
 [workspace]
-members = [
-    "manager",
-    "agent",
-    "cli",
-    "proxy",
-]
+members = ["agent", "cli", "manager", "proxy"]
 resolver = "2"
 
 [profile.release]
-opt-level = 's'
 debug = false
-rpath = false
 debug-assertions = false
-overflow-checks = false
 lto = true
+opt-level = 's'
+overflow-checks = false
+rpath = false

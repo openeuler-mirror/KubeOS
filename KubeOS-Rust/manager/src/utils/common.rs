@@ -12,8 +12,7 @@
 
 use std::{
     fs,
-    os::linux::fs::MetadataExt,
-    os::unix::fs::DirBuilderExt,
+    os::{linux::fs::MetadataExt, unix::fs::DirBuilderExt},
     path::{Path, PathBuf},
 };
 
@@ -51,23 +50,11 @@ pub fn is_file_exist<P: AsRef<Path>>(path: P) -> bool {
     path.as_ref().exists()
 }
 
-pub fn perpare_env(
-    prepare_path: &PreparePath,
-    need_bytes: i64,
-    persist_path: &str,
-    permission: u32,
-) -> Result<()> {
+pub fn perpare_env(prepare_path: &PreparePath, need_bytes: i64, persist_path: &str, permission: u32) -> Result<()> {
     info!("Prepare environment to upgrade");
     check_disk_size(need_bytes, persist_path)?;
-    clean_env(
-        &prepare_path.update_path,
-        &prepare_path.mount_path,
-        &prepare_path.image_path,
-    )?;
-    fs::DirBuilder::new()
-        .recursive(true)
-        .mode(permission)
-        .create(&prepare_path.mount_path)?;
+    clean_env(&prepare_path.update_path, &prepare_path.mount_path, &prepare_path.image_path)?;
+    fs::DirBuilder::new().recursive(true).mode(permission).create(&prepare_path.mount_path)?;
     Ok(())
 }
 
@@ -92,11 +79,7 @@ where
     if is_mounted(&mount_path)? {
         debug!("Umount {}", mount_path.as_ref().display());
         if let Err(errno) = mount::umount2(mount_path.as_ref(), MntFlags::MNT_FORCE) {
-            bail!(
-                "Failed to umount {} in clean_env: {}",
-                mount_path.as_ref().display(),
-                errno
-            );
+            bail!("Failed to umount {} in clean_env: {}", mount_path.as_ref().display(), errno);
         }
     }
     // losetup -D?
@@ -119,18 +102,15 @@ pub fn delete_file_or_dir<P: AsRef<Path>>(path: P) -> Result<()> {
 }
 
 pub fn is_command_available<T: CommandExecutor>(command: &str, command_executor: &T) -> bool {
-    match command_executor.run_command(
-        "/bin/sh",
-        &["-c", format!("command -v {}", command).as_str()],
-    ) {
+    match command_executor.run_command("/bin/sh", &["-c", format!("command -v {}", command).as_str()]) {
         Ok(_) => {
             debug!("command {} is available", command);
             true
-        }
+        },
         Err(_) => {
             debug!("command {} is not available", command);
             false
-        }
+        },
     }
 }
 
@@ -143,12 +123,10 @@ pub fn is_mounted<P: AsRef<Path>>(mount_path: P) -> Result<bool> {
     let dev = mount_meta.st_dev();
 
     // Get device ID of mountPath's parent directory
-    let parent = mount_path.as_ref().parent().ok_or_else(|| {
-        anyhow!(
-            "Failed to get parent directory of {}",
-            mount_path.as_ref().display()
-        )
-    })?;
+    let parent = mount_path
+        .as_ref()
+        .parent()
+        .ok_or_else(|| anyhow!("Failed to get parent directory of {}", mount_path.as_ref().display()))?;
     let parent_meta = fs::symlink_metadata(parent)?;
     let dev_parent = parent_meta.st_dev();
     Ok(dev != dev_parent)
@@ -162,11 +140,7 @@ pub fn switch_boot_menuentry<T: CommandExecutor>(
     if get_boot_mode() == "uefi" {
         command_executor.run_command(
             "grub2-editenv",
-            &[
-                grub_env_path,
-                "set",
-                format!("saved_entry={}", next_menuentry).as_str(),
-            ],
+            &[grub_env_path, "set", format!("saved_entry={}", next_menuentry).as_str()],
         )?;
     } else {
         command_executor.run_command("grub2-set-default", &[next_menuentry])?;
@@ -175,19 +149,15 @@ pub fn switch_boot_menuentry<T: CommandExecutor>(
 }
 
 pub fn get_boot_mode() -> String {
-    if is_file_exist("/sys/firmware/efi") {
-        "uefi".into()
-    } else {
-        "bios".into()
-    }
+    if is_file_exist("/sys/firmware/efi") { "uefi".into() } else { "bios".into() }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use mockall::{mock, predicate::*};
-    use tempfile::NamedTempFile;
-    use tempfile::TempDir;
+    use tempfile::{NamedTempFile, TempDir};
+
+    use super::*;
 
     // Mock the CommandExecutor trait
     mock! {
@@ -254,12 +224,7 @@ mod tests {
         let update_path = "/tmp/test_clean_env";
         let mount_path = "/tmp/test_clean_env/kubeos-update";
         let image_path = "/tmp/test_clean_env/update.img";
-        clean_env(
-            &update_path.to_string(),
-            &mount_path.to_string(),
-            &image_path.to_string(),
-        )
-        .unwrap();
+        clean_env(&update_path.to_string(), &mount_path.to_string(), &image_path.to_string()).unwrap();
     }
 
     #[test]

@@ -20,33 +20,21 @@ impl<T: CommandExecutor> ImageHandler<T> for DockerImageHandler<T> {
         self.get_rootfs_archive(req)?;
 
         let (_, next_partition_info) = get_partition_info(&self.executor)?;
-        let img_manager = UpgradeImageManager::new(
-            self.paths.clone(),
-            next_partition_info,
-            self.executor.clone(),
-        );
+        let img_manager = UpgradeImageManager::new(self.paths.clone(), next_partition_info, self.executor.clone());
         img_manager.create_os_image(IMAGE_PERMISSION)
     }
 }
 
 impl Default for DockerImageHandler<RealCommandExecutor> {
     fn default() -> Self {
-        Self {
-            paths: PreparePath::default(),
-            container_name: "kubeos-temp".into(),
-            executor: RealCommandExecutor {},
-        }
+        Self { paths: PreparePath::default(), container_name: "kubeos-temp".into(), executor: RealCommandExecutor {} }
     }
 }
 
 impl<T: CommandExecutor> DockerImageHandler<T> {
     #[cfg(test)]
     fn new(paths: PreparePath, container_name: String, executor: T) -> Self {
-        Self {
-            paths,
-            container_name,
-            executor,
-        }
+        Self { paths, container_name, executor }
     }
 
     fn get_image(&self, req: &UpgradeRequest) -> Result<()> {
@@ -66,15 +54,9 @@ impl<T: CommandExecutor> DockerImageHandler<T> {
         info!("Start get rootfs {}", image_name);
         self.check_and_rm_container()?;
         debug!("Create container {}", self.container_name);
-        let container_id = self.executor.run_command_with_output(
-            "docker",
-            &["create", "--name", &self.container_name, image_name],
-        )?;
-        debug!(
-            "Copy rootfs from container {} to {}",
-            container_id,
-            self.paths.update_path.display()
-        );
+        let container_id =
+            self.executor.run_command_with_output("docker", &["create", "--name", &self.container_name, image_name])?;
+        debug!("Copy rootfs from container {} to {}", container_id, self.paths.update_path.display());
         self.executor.run_command(
             "docker",
             &[
@@ -88,20 +70,11 @@ impl<T: CommandExecutor> DockerImageHandler<T> {
     }
 
     fn check_and_rm_container(&self) -> Result<()> {
-        let docker_ps_cmd = format!(
-            "docker ps -a -f=name={} | awk 'NR==2' | awk '{{print $1}}'",
-            self.container_name
-        );
-        let exist_id = self
-            .executor
-            .run_command_with_output("bash", &["-c", &docker_ps_cmd])?;
+        let docker_ps_cmd = format!("docker ps -a -f=name={} | awk 'NR==2' | awk '{{print $1}}'", self.container_name);
+        let exist_id = self.executor.run_command_with_output("bash", &["-c", &docker_ps_cmd])?;
         if !exist_id.is_empty() {
-            info!(
-                "Remove container {} {} for cleaning environment",
-                self.container_name, exist_id
-            );
-            self.executor
-                .run_command("docker", &["rm", exist_id.as_str()])?;
+            info!("Remove container {} {} for cleaning environment", self.container_name, exist_id);
+            self.executor.run_command("docker", &["rm", exist_id.as_str()])?;
         }
         Ok(())
     }
@@ -109,8 +82,9 @@ impl<T: CommandExecutor> DockerImageHandler<T> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use mockall::mock;
+
+    use super::*;
 
     mock! {
         pub CommandExec{}
@@ -150,8 +124,8 @@ mod tests {
             .times(1)
             .returning(|_, _| Ok(()));
 
-        let result = DockerImageHandler::new(PreparePath::default(), "test".into(), mock_executor)
-            .check_and_rm_container();
+        let result =
+            DockerImageHandler::new(PreparePath::default(), "test".into(), mock_executor).check_and_rm_container();
         assert!(result.is_ok());
     }
 }

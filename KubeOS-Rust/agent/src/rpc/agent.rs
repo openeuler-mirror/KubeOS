@@ -10,8 +10,9 @@
  * See the Mulan PSL v2 for more details.
  */
 
-use super::function::{rpc, RpcResult};
 use manager::api::{ConfigureRequest, Response, UpgradeRequest};
+
+use super::function::{rpc, RpcResult};
 
 #[rpc(server)]
 pub trait Agent {

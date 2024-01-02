@@ -29,12 +29,7 @@ impl CommandExecutor for RealCommandExecutor {
         let output = Command::new(name).args(args).output()?;
         if !output.status.success() {
             let error_message = String::from_utf8_lossy(&output.stderr);
-            bail!(
-                "Failed to run command: {} {:?}, stderr: {}",
-                name,
-                args,
-                error_message
-            );
+            bail!("Failed to run command: {} {:?}, stderr: {}", name, args, error_message);
         }
         debug!("run_command: {} {:?} done", name, args);
         Ok(())
@@ -45,12 +40,7 @@ impl CommandExecutor for RealCommandExecutor {
         let output = Command::new(name).args(args).output()?;
         if !output.status.success() {
             let error_message = String::from_utf8_lossy(&output.stderr);
-            bail!(
-                "Failed to run command: {} {:?}, stderr: {}",
-                name,
-                args,
-                error_message
-            );
+            bail!("Failed to run command: {} {:?}, stderr: {}", name, args, error_message);
         }
         let stdout = String::from_utf8_lossy(&output.stdout).to_string();
         debug!("run_command_with_output: {} {:?} done", name, args);
@@ -76,16 +66,11 @@ mod tests {
         let executor: RealCommandExecutor = RealCommandExecutor {};
 
         // test run_command_with_output
-        let output = executor
-            .run_command_with_output("echo", &["hello", "world"])
-            .unwrap();
+        let output = executor.run_command_with_output("echo", &["hello", "world"]).unwrap();
         assert_eq!(output, "hello world");
-        let out = executor
-            .run_command_with_output("sh", &["-c", format!("command -v {}", "cat").as_str()])
-            .unwrap();
+        let out = executor.run_command_with_output("sh", &["-c", format!("command -v {}", "cat").as_str()]).unwrap();
         assert_eq!(out, "/usr/bin/cat");
-        let out = executor
-            .run_command_with_output("sh", &["-c", format!("command -v {}", "apple").as_str()]);
+        let out = executor.run_command_with_output("sh", &["-c", format!("command -v {}", "apple").as_str()]);
         assert!(out.is_err());
     }
 

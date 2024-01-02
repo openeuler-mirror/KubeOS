@@ -14,14 +14,7 @@ use kube::CustomResource;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 #[derive(CustomResource, Debug, Clone, Deserialize, Serialize, JsonSchema)]
-#[kube(
-    group = "upgrade.openeuler.org",
-    version = "v1alpha1",
-    kind = "OS",
-    plural = "os",
-    singular = "os",
-    namespaced
-)]
+#[kube(group = "upgrade.openeuler.org", version = "v1alpha1", kind = "OS", plural = "os", singular = "os", namespaced)]
 pub struct OSSpec {
     pub osversion: String,
     pub maxunavailable: i64,

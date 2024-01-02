@@ -34,47 +34,26 @@ pub struct UpgradeImageManager<T: CommandExecutor> {
 
 impl<T: CommandExecutor> UpgradeImageManager<T> {
     pub fn new(paths: PreparePath, next_partition: PartitionInfo, executor: T) -> Self {
-        Self {
-            paths,
-            next_partition,
-            executor,
-        }
+        Self { paths, next_partition, executor }
     }
 
     fn image_path_str(&self) -> Result<&str> {
-        self.paths
-            .image_path
-            .to_str()
-            .context("Failed to convert image path to string")
+        self.paths.image_path.to_str().context("Failed to convert image path to string")
     }
 
     fn mount_path_str(&self) -> Result<&str> {
-        self.paths
-            .mount_path
-            .to_str()
-            .context("Failed to convert mount path to string")
+        self.paths.mount_path.to_str().context("Failed to convert mount path to string")
     }
 
     fn tar_path_str(&self) -> Result<&str> {
-        self.paths
-            .tar_path
-            .to_str()
-            .context("Failed to convert tar path to string")
+        self.paths.tar_path.to_str().context("Failed to convert tar path to string")
     }
 
     pub fn create_image_file(&self, permission: u32) -> Result<()> {
         let image_str = self.image_path_str()?;
 
         debug!("Create image {}", image_str);
-        self.executor.run_command(
-            "dd",
-            &[
-                "if=/dev/zero",
-                &format!("of={}", image_str),
-                "bs=2M",
-                "count=1024",
-            ],
-        )?;
+        self.executor.run_command("dd", &["if=/dev/zero", &format!("of={}", image_str), "bs=2M", "count=1024"])?;
         fs::set_permissions(&self.paths.image_path, Permissions::from_mode(permission))?;
         Ok(())
     }
@@ -84,11 +63,7 @@ impl<T: CommandExecutor> UpgradeImageManager<T> {
         debug!("Format image {}", image_str);
         self.executor.run_command(
             format!("mkfs.{}", self.next_partition.fs_type).as_str(),
-            &[
-                "-L",
-                format!("ROOT-{}", self.next_partition.menuentry).as_str(),
-                image_str,
-            ],
+            &["-L", format!("ROOT-{}", self.next_partition.menuentry).as_str(), image_str],
         )?;
         Ok(())
     }
@@ -97,8 +72,7 @@ impl<T: CommandExecutor> UpgradeImageManager<T> {
         let image_str = self.image_path_str()?;
         let mount_str = self.mount_path_str()?;
         debug!("Mount {} to {}", image_str, mount_str);
-        self.executor
-            .run_command("mount", &["-o", "loop", image_str, mount_str])?;
+        self.executor.run_command("mount", &["-o", "loop", image_str, mount_str])?;
         Ok(())
     }
 
@@ -106,8 +80,7 @@ impl<T: CommandExecutor> UpgradeImageManager<T> {
         let tar_str = self.tar_path_str()?;
         let mount_str = self.mount_path_str()?;
         debug!("Extract {} to mounted path {}", tar_str, mount_str);
-        self.executor
-            .run_command("tar", &["-xvf", tar_str, "-C", mount_str])?;
+        self.executor.run_command("tar", &["-xvf", tar_str, "-C", mount_str])?;
         Ok(())
     }
 
@@ -117,25 +90,15 @@ impl<T: CommandExecutor> UpgradeImageManager<T> {
         self.mount_image()?;
         self.extract_tar_to_image()?;
         // Pass empty image_path to clean_env to avoid delete image file
-        clean_env(
-            &self.paths.update_path,
-            &self.paths.mount_path,
-            &PathBuf::new(),
-        )?;
+        clean_env(&self.paths.update_path, &self.paths.mount_path, &PathBuf::new())?;
         Ok(self)
     }
 
     pub fn install(&self) -> Result<()> {
         let image_str = self.image_path_str()?;
         let device = self.next_partition.device.as_str();
-        self.executor.run_command(
-            "dd",
-            &[
-                format!("if={}", image_str).as_str(),
-                format!("of={}", device).as_str(),
-                "bs=8M",
-            ],
-        )?;
+        self.executor
+            .run_command("dd", &[format!("if={}", image_str).as_str(), format!("of={}", device).as_str(), "bs=8M"])?;
         debug!("Install image {} to {} done", image_str, device);
         info!(
             "Device {} is overwritten and unable to rollback to the previous version anymore if the eviction of node fails",
@@ -148,10 +111,12 @@ impl<T: CommandExecutor> UpgradeImageManager<T> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use mockall::{mock, predicate::*};
     use std::{fs, io::Write, path::Path};
+
+    use mockall::{mock, predicate::*};
     use tempfile::NamedTempFile;
+
+    use super::*;
 
     // Mock the CommandExecutor trait
     mock! {
@@ -227,11 +192,7 @@ mod tests {
                 tar_path: "/tmp/update/image.tar".into(),
                 rootfs_file: "image.tar".into(),
             },
-            PartitionInfo {
-                device: "/dev/sda3".into(),
-                fs_type: "ext4".into(),
-                menuentry: "B".into(),
-            },
+            PartitionInfo { device: "/dev/sda3".into(), fs_type: "ext4".into(), menuentry: "B".into() },
             mock,
         );
 

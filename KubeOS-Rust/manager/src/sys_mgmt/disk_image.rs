@@ -26,69 +26,40 @@ pub struct DiskImageHandler<T: CommandExecutor> {
 impl<T: CommandExecutor> ImageHandler<T> for DiskImageHandler<T> {
     fn download_image(&self, req: &UpgradeRequest) -> Result<UpgradeImageManager<T>> {
         self.download(req)?;
-        self.checksum_match(
-            self.paths.image_path.to_str().unwrap_or_default(),
-            &req.check_sum,
-        )?;
+        self.checksum_match(self.paths.image_path.to_str().unwrap_or_default(), &req.check_sum)?;
         let (_, next_partition_info) = get_partition_info(&self.executor)?;
-        let img_manager = UpgradeImageManager::new(
-            self.paths.clone(),
-            next_partition_info,
-            self.executor.clone(),
-        );
+        let img_manager = UpgradeImageManager::new(self.paths.clone(), next_partition_info, self.executor.clone());
         Ok(img_manager)
     }
 }
 
 impl Default for DiskImageHandler<RealCommandExecutor> {
     fn default() -> Self {
-        Self {
-            paths: PreparePath::default(),
-            executor: RealCommandExecutor {},
-            certs_path: CERTS_PATH.to_string(),
-        }
+        Self { paths: PreparePath::default(), executor: RealCommandExecutor {}, certs_path: CERTS_PATH.to_string() }
     }
 }
 
 impl<T: CommandExecutor> DiskImageHandler<T> {
     #[cfg(test)]
     fn new(paths: PreparePath, executor: T, certs_path: String) -> Self {
-        Self {
-            paths,
-            executor,
-            certs_path,
-        }
+        Self { paths, executor, certs_path }
     }
 
     fn download(&self, req: &UpgradeRequest) -> Result<()> {
         let mut resp = self.send_download_request(req)?;
         if resp.status() != reqwest::StatusCode::OK {
-            bail!(
-                "Failed to download image from {}, status: {}",
-                req.image_url,
-                resp.status()
-            );
+            bail!("Failed to download image from {}, status: {}", req.image_url, resp.status());
         }
-        debug!(
-            "Received response body size: {:?}",
-            resp.content_length().unwrap_or_default()
-        );
+        debug!("Received response body size: {:?}", resp.content_length().unwrap_or_default());
         let need_bytes = resp.content_length().unwrap_or_default() + BUFFER;
 
         check_disk_size(
-            i64::try_from(need_bytes)
-                .with_context(|| "Failed to transform content length from u64 to i64")?,
-            self.paths
-                .image_path
-                .parent()
-                .unwrap_or_else(|| Path::new(PERSIST_DIR)),
+            i64::try_from(need_bytes).with_context(|| "Failed to transform content length from u64 to i64")?,
+            self.paths.image_path.parent().unwrap_or_else(|| Path::new(PERSIST_DIR)),
         )?;
 
         let mut out = fs::File::create(&self.paths.image_path)?;
-        trace!(
-            "Start to save upgrade image to path {}",
-            &self.paths.image_path.display()
-        );
+        trace!("Start to save upgrade image to path {}", &self.paths.image_path.display());
         out.set_permissions(fs::Permissions::from_mode(IMAGE_PERMISSION))?;
         let bytes = resp.copy_to(&mut out)?;
         info!(
@@ -127,22 +98,15 @@ impl<T: CommandExecutor> DiskImageHandler<T> {
             client = Client::new();
         } else if req.mtls {
             // https mtls request
-            client = self
-                .load_ca_client_certs(&req.certs)
-                .with_context(|| "Failed to load client certificates")?;
+            client = self.load_ca_client_certs(&req.certs).with_context(|| "Failed to load client certificates")?;
             info!("Discover https mtls request to: {}", &req.image_url);
         } else {
             // https request
-            client = self
-                .load_ca_certs(&req.certs.ca_cert)
-                .with_context(|| "Failed to load CA certificates")?;
+            client = self.load_ca_certs(&req.certs.ca_cert).with_context(|| "Failed to load CA certificates")?;
             info!("Discover https request to: {}", &req.image_url);
         }
 
-        client
-            .get(&req.image_url)
-            .send()
-            .with_context(|| format!("Failed to fetch from URL: {}", &req.image_url))
+        client.get(&req.image_url).send().with_context(|| format!("Failed to fetch from URL: {}", &req.image_url))
     }
 
     fn load_ca_certs(&self, ca_cert: &str) -> Result<Client> {
@@ -167,11 +131,7 @@ impl<T: CommandExecutor> DiskImageHandler<T> {
         client_identity.extend_from_slice(&client_key);
         let client_id = reqwest::Identity::from_pem(&client_identity)?;
 
-        let client = Client::builder()
-            .use_rustls_tls()
-            .add_root_certificate(ca)
-            .identity(client_id)
-            .build()?;
+        let client = Client::builder().use_rustls_tls().add_root_certificate(ca).identity(client_id).build()?;
         Ok(client)
     }
 
@@ -193,8 +153,9 @@ impl<T: CommandExecutor> DiskImageHandler<T> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use tempfile::NamedTempFile;
+
+    use super::*;
 
     fn init() {
         let _ = env_logger::builder()
@@ -217,11 +178,8 @@ mod tests {
         init();
         // generate tmp file
         let tmp_file = NamedTempFile::new().unwrap();
-        let handler = DiskImageHandler::<RealCommandExecutor>::new(
-            PreparePath::default(),
-            RealCommandExecutor {},
-            String::new(),
-        );
+        let handler =
+            DiskImageHandler::<RealCommandExecutor>::new(PreparePath::default(), RealCommandExecutor {}, String::new());
         let res = handler.cert_exist(tmp_file.path().to_str().unwrap());
         assert!(res.is_ok());
 
@@ -242,18 +200,11 @@ mod tests {
             image_url: "http://localhost:8080/aaa.txt".to_string(),
             flag_safe: true,
             mtls: false,
-            certs: CertsInfo {
-                ca_cert: "".to_string(),
-                client_cert: "".to_string(),
-                client_key: "".to_string(),
-            },
+            certs: CertsInfo { ca_cert: "".to_string(), client_cert: "".to_string(), client_key: "".to_string() },
         };
         let res = handler.send_download_request(&req);
         assert!(res.is_ok());
-        assert_eq!(
-            res.unwrap().text().unwrap(),
-            "This is a test txt file generated by yuhang wei\n"
-        );
+        assert_eq!(res.unwrap().text().unwrap(), "This is a test txt file generated by yuhang wei\n");
 
         // https
         let mut handler = DiskImageHandler::<RealCommandExecutor>::default();
@@ -274,10 +225,7 @@ mod tests {
         };
         let res = handler.send_download_request(&req);
         assert!(res.is_ok());
-        assert_eq!(
-            res.unwrap().text().unwrap(),
-            "This is a test txt file generated by yuhang wei\n"
-        );
+        assert_eq!(res.unwrap().text().unwrap(), "This is a test txt file generated by yuhang wei\n");
 
         // mtls
         let mut handler = DiskImageHandler::<RealCommandExecutor>::default();
@@ -298,10 +246,7 @@ mod tests {
         };
         let res = handler.send_download_request(&req);
         assert!(res.is_ok());
-        assert_eq!(
-            res.unwrap().text().unwrap(),
-            "This is a test txt file generated by yuhang wei\n"
-        );
+        assert_eq!(res.unwrap().text().unwrap(), "This is a test txt file generated by yuhang wei\n");
     }
 
     #[test]
@@ -309,8 +254,7 @@ mod tests {
     fn test_download() {
         init();
         let mut handler = DiskImageHandler::<RealCommandExecutor>::default();
-        handler.paths.image_path =
-            PathBuf::from("/home/yuhang/Documents/KubeOS/KubeOS-Rust/test_download_image");
+        handler.paths.image_path = PathBuf::from("/home/yuhang/Documents/KubeOS/KubeOS-Rust/test_download_image");
         let req = UpgradeRequest {
             version: "v2".into(),
             check_sum: "90da5a14e9c06ddb276b06134e90d37098be2830beaa4357205bec7ff1aa1f7c".into(),
@@ -319,11 +263,7 @@ mod tests {
             image_url: "http://localhost:8080/linux-firmware.rpm".to_string(),
             flag_safe: true,
             mtls: false,
-            certs: CertsInfo {
-                ca_cert: "".to_string(),
-                client_cert: "".to_string(),
-                client_key: "".to_string(),
-            },
+            certs: CertsInfo { ca_cert: "".to_string(), client_cert: "".to_string(), client_key: "".to_string() },
         };
         let res = handler.download(&req);
         assert!(res.is_ok());
@@ -335,8 +275,7 @@ mod tests {
     fn test_checksum_match() {
         init();
         let mut handler = DiskImageHandler::<RealCommandExecutor>::default();
-        handler.paths.image_path =
-            PathBuf::from("/home/yuhang/Documents/KubeOS/KubeOS-Rust/test_download_image");
+        handler.paths.image_path = PathBuf::from("/home/yuhang/Documents/KubeOS/KubeOS-Rust/test_download_image");
         let req = UpgradeRequest {
             version: "v2".into(),
             check_sum: "90da5a14e9c06ddb276b06134e90d37098be2830beaa4357205bec7ff1aa1f7c".into(),
@@ -345,16 +284,10 @@ mod tests {
             image_url: "http://localhost:8080/aaa.txt".to_string(),
             flag_safe: true,
             mtls: false,
-            certs: CertsInfo {
-                ca_cert: "".to_string(),
-                client_cert: "".to_string(),
-                client_key: "".to_string(),
-            },
+            certs: CertsInfo { ca_cert: "".to_string(), client_cert: "".to_string(), client_key: "".to_string() },
         };
         assert_eq!(handler.paths.image_path.exists(), true);
-        handler
-            .checksum_match(handler.paths.image_path.to_str().unwrap(), &req.check_sum)
-            .unwrap();
+        handler.checksum_match(handler.paths.image_path.to_str().unwrap(), &req.check_sum).unwrap();
     }
 
     #[test]

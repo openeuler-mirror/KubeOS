@@ -1,24 +1,24 @@
 [package]
+description = "KubeOS os-agent manager"
+edition = "2021"
+license = "MulanPSL-2.0"
 name = "manager"
 version = "0.1.0"
-edition = "2021"
-description = "KubeOS os-agent manager"
-license = "MulanPSL-2.0"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [dev-dependencies]
-tempfile = "3.6.0"
 mockall = { version = "=0.11.3" }
 predicates = "=2.0.1"
+tempfile = "3.6.0"
 
 [dependencies]
-serde = { version = "1.0", features = ["derive"] }
-serde_json = { version = "1.0" }
-log = { version = "0.4" }
 anyhow = { version = "1.0" }
 env_logger = { version = "0.9" }
 lazy_static = { version = "1.4" }
-reqwest = { version = "=0.11.18", features = ["rustls-tls", "blocking"] }
-regex = { version = "1.7.3" }
+log = { version = "0.4" }
 nix = { version = "0.26.2" }
+regex = { version = "1.7.3" }
+reqwest = { version = "=0.11.18", features = ["blocking", "rustls-tls"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = { version = "1.0" }
 sha2 = { version = "0.10.8" }
