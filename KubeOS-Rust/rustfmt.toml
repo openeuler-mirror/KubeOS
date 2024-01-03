@@ -1,0 +1,11 @@
+# cargo +nightly fmt
+version = "Two"
+use_small_heuristics = "MAX"
+match_block_trailing_comma = true
+newline_style = "Unix"
+merge_derives = false
+max_width = 120
+group_imports = "StdExternalCrate"
+imports_granularity = "Crate"
+reorder_imports = true
+unstable_features = true

@@ -10,12 +10,14 @@
  * See the Mulan PSL v2 for more details.
  */
 
-use super::api;
-
 mod config;
 mod containerd_image;
+mod disk_image;
+mod docker_image;
 mod values;
 
 pub use config::*;
 pub use containerd_image::*;
+pub use disk_image::*;
+pub use docker_image::*;
 pub use values::*;

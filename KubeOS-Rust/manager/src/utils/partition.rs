@@ -10,7 +10,7 @@
  * See the Mulan PSL v2 for more details.
  */
 
-use anyhow::{anyhow, Result};
+use anyhow::{bail, Result};
 use log::{debug, trace};
 
 use super::executor::CommandExecutor;
@@ -22,9 +22,7 @@ pub struct PartitionInfo {
     pub fs_type: String,
 }
 
-pub fn get_partition_info<T: CommandExecutor>(
-    executor: &T,
-) -> Result<(PartitionInfo, PartitionInfo), anyhow::Error> {
+pub fn get_partition_info<T: CommandExecutor>(executor: &T) -> Result<(PartitionInfo, PartitionInfo), anyhow::Error> {
     let lsblk = executor.run_command_with_output("lsblk", &["-lno", "NAME,MOUNTPOINTS,FSTYPE"])?;
     // After split whitespace, the root directory line should have 3 elements, which are "sda2 / ext4".
     let mut cur_partition = PartitionInfo::default();
@@ -38,30 +36,30 @@ pub fn get_partition_info<T: CommandExecutor>(
             cur_partition.device = format!("/dev/{}", res[0]).to_string();
             cur_partition.fs_type = res[2].to_string();
             next_partition.fs_type = res[2].to_string();
-            if res[0].contains("2") {
+            if res[0].contains('2') {
+                // root directory is mounted on sda2, so sda3 is the next partition
                 cur_partition.menuentry = String::from("A");
                 next_partition.menuentry = String::from("B");
-                next_partition.device = format!("/dev/{}", res[0].replace("2", "3")).to_string();
-            } else if res[0].contains("3") {
+                next_partition.device = format!("/dev/{}", res[0].replace('2', "3")).to_string();
+            } else if res[0].contains('3') {
+                // root directory is mounted on sda3, so sda2 is the next partition
                 cur_partition.menuentry = String::from("B");
                 next_partition.menuentry = String::from("A");
-                next_partition.device = format!("/dev/{}", res[0].replace("3", "2")).to_string();
+                next_partition.device = format!("/dev/{}", res[0].replace('3', "2")).to_string();
             }
         }
     }
     if cur_partition.device.is_empty() {
-        return Err(anyhow!(
-            "Failed to get partition info, lsblk output: {}",
-            lsblk
-        ));
+        bail!("Failed to get partition info, lsblk output: {}", lsblk);
     }
     Ok((cur_partition, next_partition))
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use mockall::{mock, predicate::*};
+
+    use super::*;
 
     // Mock the CommandExecutor trait
     mock! {
@@ -86,24 +84,13 @@ mod tests {
     #[test]
     fn test_get_partition_info() {
         init();
-        let command_output1 =
-            "sda\nsda1 /boot/efi vfat\nsda2 / ext4\nsda3  ext4\nsda4 /persist ext4\nsr0  iso9660\n";
+        let command_output1 = "sda\nsda1 /boot/efi vfat\nsda2 / ext4\nsda3  ext4\nsda4 /persist ext4\nsr0  iso9660\n";
         let mut mock = MockCommandExec::new();
-        mock.expect_run_command_with_output()
-            .times(1)
-            .returning(|_, _| Ok(command_output1.to_string()));
+        mock.expect_run_command_with_output().times(1).returning(|_, _| Ok(command_output1.to_string()));
         let res = get_partition_info(&mock).unwrap();
         let expect_res = (
-            PartitionInfo {
-                device: "/dev/sda2".to_string(),
-                menuentry: "A".to_string(),
-                fs_type: "ext4".to_string(),
-            },
-            PartitionInfo {
-                device: "/dev/sda3".to_string(),
-                menuentry: "B".to_string(),
-                fs_type: "ext4".to_string(),
-            },
+            PartitionInfo { device: "/dev/sda2".to_string(), menuentry: "A".to_string(), fs_type: "ext4".to_string() },
+            PartitionInfo { device: "/dev/sda3".to_string(), menuentry: "B".to_string(), fs_type: "ext4".to_string() },
         );
         assert_eq!(res, expect_res);
     }

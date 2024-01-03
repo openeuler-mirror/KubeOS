@@ -35,10 +35,7 @@ fn start_and_run(sock_path: &str) {
     // Create directory for socket if it doesn't exist
     if let Some(dir_path) = socket_path.parent() {
         if !dir_path.exists() {
-            DirBuilder::new()
-                .mode(0o750)
-                .create(dir_path)
-                .expect("Couldn't create directory for socket");
+            DirBuilder::new().mode(0o750).create(dir_path).expect("Couldn't create directory for socket");
         }
     }
 
@@ -51,8 +48,7 @@ fn start_and_run(sock_path: &str) {
     let server = builder.start(sock_path).expect("Couldn't open socket");
 
     let gid = nix::unistd::getgid();
-    nix::unistd::chown(socket_path, Some(nix::unistd::ROOT), Some(gid))
-        .expect("Couldn't set socket group");
+    nix::unistd::chown(socket_path, Some(nix::unistd::ROOT), Some(gid)).expect("Couldn't set socket group");
 
     // Set socket permissions to 0640
     let socket_permissions = Permissions::from_mode(0o640);
@@ -63,13 +59,8 @@ fn start_and_run(sock_path: &str) {
 }
 
 fn main() {
-    Builder::from_env(Env::default().default_filter_or("info"))
-        .target(Target::Stdout)
-        .init();
+    Builder::from_env(Env::default().default_filter_or("info")).target(Target::Stdout).init();
 
-    info!(
-        "os-agent version is: {}",
-        CARGO_PKG_VERSION.unwrap_or("NOT FOUND")
-    );
+    info!("os-agent version is: {}", CARGO_PKG_VERSION.unwrap_or("NOT FOUND"));
     start_and_run(SOCK_PATH);
 }

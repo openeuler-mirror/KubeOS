@@ -12,12 +12,11 @@
 
 use std::{
     fs,
-    os::linux::fs::MetadataExt,
-    os::unix::fs::DirBuilderExt,
+    os::{linux::fs::MetadataExt, unix::fs::DirBuilderExt},
     path::{Path, PathBuf},
 };
 
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, bail, Result};
 use log::{debug, info, trace};
 use nix::{mount, mount::MntFlags};
 
@@ -51,41 +50,27 @@ pub fn is_file_exist<P: AsRef<Path>>(path: P) -> bool {
     path.as_ref().exists()
 }
 
-pub fn perpare_env(
-    prepare_path: &PreparePath,
-    need_gb: i64,
-    persist_path: &str,
-    permission: u32,
-) -> Result<()> {
+pub fn perpare_env(prepare_path: &PreparePath, need_bytes: i64, persist_path: &str, permission: u32) -> Result<()> {
     info!("Prepare environment to upgrade");
-    check_disk_size(need_gb, persist_path)?;
-    clean_env(
-        &prepare_path.update_path,
-        &prepare_path.mount_path,
-        &prepare_path.image_path,
-    )?;
-    fs::DirBuilder::new()
-        .recursive(true)
-        .mode(permission)
-        .create(&prepare_path.mount_path)?;
+    check_disk_size(need_bytes, persist_path)?;
+    clean_env(&prepare_path.update_path, &prepare_path.mount_path, &prepare_path.image_path)?;
+    fs::DirBuilder::new().recursive(true).mode(permission).create(&prepare_path.mount_path)?;
     Ok(())
 }
 
-pub fn check_disk_size(need_gb: i64, path: &str) -> Result<()> {
+pub fn check_disk_size<P: AsRef<Path>>(need_bytes: i64, path: P) -> Result<()> {
     trace!("Check if there is enough disk space to upgrade");
-    let kb = 1024;
-    let fs_stat = nix::sys::statfs::statfs(path)?;
-    let need_disk_size = need_gb * kb * kb * kb;
+    let fs_stat = nix::sys::statfs::statfs(path.as_ref())?;
     let available_blocks = i64::try_from(fs_stat.blocks_available())?;
     let available_space = available_blocks * fs_stat.block_size();
-    if available_space < need_disk_size {
-        return Err(anyhow!("Space is not enough for downloading"));
+    if available_space < need_bytes {
+        bail!("Space is not enough for downloading");
     }
-    debug!("There is enough disk space to upgrade");
+    info!("There is enough disk space to upgrade");
     Ok(())
 }
 
-// clean_env will umount the mount path and delete all files in /persist/KubeOS-Update and update.img
+// clean_env will umount the mount path and delete directory /persist/KubeOS-Update and /persist/update.img
 pub fn clean_env<P>(update_path: P, mount_path: P, image_path: P) -> Result<()>
 where
     P: AsRef<Path>,
@@ -94,11 +79,7 @@ where
     if is_mounted(&mount_path)? {
         debug!("Umount {}", mount_path.as_ref().display());
         if let Err(errno) = mount::umount2(mount_path.as_ref(), MntFlags::MNT_FORCE) {
-            return Err(anyhow!(
-                "Failed to umount {} in clean_env: {}",
-                mount_path.as_ref().display(),
-                errno
-            ));
+            bail!("Failed to umount {} in clean_env: {}", mount_path.as_ref().display(), errno);
         }
     }
     // losetup -D?
@@ -121,18 +102,15 @@ pub fn delete_file_or_dir<P: AsRef<Path>>(path: P) -> Result<()> {
 }
 
 pub fn is_command_available<T: CommandExecutor>(command: &str, command_executor: &T) -> bool {
-    match command_executor.run_command(
-        "/bin/sh",
-        &["-c", format!("command -v {}", command).as_str()],
-    ) {
+    match command_executor.run_command("/bin/sh", &["-c", format!("command -v {}", command).as_str()]) {
         Ok(_) => {
             debug!("command {} is available", command);
             true
-        }
+        },
         Err(_) => {
             debug!("command {} is not available", command);
             false
-        }
+        },
     }
 }
 
@@ -145,12 +123,10 @@ pub fn is_mounted<P: AsRef<Path>>(mount_path: P) -> Result<bool> {
     let dev = mount_meta.st_dev();
 
     // Get device ID of mountPath's parent directory
-    let parent = mount_path.as_ref().parent().ok_or_else(|| {
-        anyhow!(
-            "Failed to get parent directory of {}",
-            mount_path.as_ref().display()
-        )
-    })?;
+    let parent = mount_path
+        .as_ref()
+        .parent()
+        .ok_or_else(|| anyhow!("Failed to get parent directory of {}", mount_path.as_ref().display()))?;
     let parent_meta = fs::symlink_metadata(parent)?;
     let dev_parent = parent_meta.st_dev();
     Ok(dev != dev_parent)
@@ -164,11 +140,7 @@ pub fn switch_boot_menuentry<T: CommandExecutor>(
     if get_boot_mode() == "uefi" {
         command_executor.run_command(
             "grub2-editenv",
-            &[
-                grub_env_path,
-                "set",
-                format!("saved_entry={}", next_menuentry).as_str(),
-            ],
+            &[grub_env_path, "set", format!("saved_entry={}", next_menuentry).as_str()],
         )?;
     } else {
         command_executor.run_command("grub2-set-default", &[next_menuentry])?;
@@ -177,19 +149,15 @@ pub fn switch_boot_menuentry<T: CommandExecutor>(
 }
 
 pub fn get_boot_mode() -> String {
-    if is_file_exist("/sys/firmware/efi") {
-        "uefi".into()
-    } else {
-        "bios".into()
-    }
+    if is_file_exist("/sys/firmware/efi") { "uefi".into() } else { "bios".into() }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use mockall::{mock, predicate::*};
-    use tempfile::NamedTempFile;
-    use tempfile::TempDir;
+    use tempfile::{NamedTempFile, TempDir};
+
+    use super::*;
 
     // Mock the CommandExecutor trait
     mock! {
@@ -234,17 +202,18 @@ mod tests {
             image_path: PathBuf::from("/tmp/test_prepare_env/update.img"),
             rootfs_file: "os.tar".to_string(),
         };
-        perpare_env(&paths, 1, "/home", 0o700).unwrap();
+        perpare_env(&paths, 1 * 1024 * 1024 * 1024, "/home", 0o700).unwrap();
     }
 
     #[test]
     fn test_check_disk_size() {
         init();
         let path = "/home";
-        let need_gb = 1;
+        let gb: i64 = 1 * 1024 * 1024 * 1024;
+        let need_gb = 1 * gb;
         let result = check_disk_size(need_gb, path);
         assert!(result.is_ok());
-        let need_gb = 1000;
+        let need_gb = 10000 * gb;
         let result = check_disk_size(need_gb, path);
         assert!(result.is_err());
     }
@@ -255,12 +224,7 @@ mod tests {
         let update_path = "/tmp/test_clean_env";
         let mount_path = "/tmp/test_clean_env/kubeos-update";
         let image_path = "/tmp/test_clean_env/update.img";
-        clean_env(
-            &update_path.to_string(),
-            &mount_path.to_string(),
-            &image_path.to_string(),
-        )
-        .unwrap();
+        clean_env(&update_path.to_string(), &mount_path.to_string(), &image_path.to_string()).unwrap();
     }
 
     #[test]
@@ -291,14 +255,21 @@ mod tests {
         let grubenv_path = "/boot/efi/EFI/openEuler/grubenv";
         let next_menuentry = "B";
         let mut mock = MockCommandExec::new();
-        mock.expect_run_command()
-            .withf(move |name, args| {
-                name == "grub2-editenv"
-                    && args[0] == grubenv_path
-                    && args[2] == format!("saved_entry={}", next_menuentry).as_str()
-            })
-            .times(1) // Expect it to be called once
-            .returning(move |_, _| Ok(()));
+        if get_boot_mode() == "uefi" {
+            mock.expect_run_command()
+                .withf(move |name, args| {
+                    name == "grub2-editenv"
+                        && args[0] == grubenv_path
+                        && args[2] == format!("saved_entry={}", next_menuentry).as_str()
+                })
+                .times(1) // Expect it to be called once
+                .returning(move |_, _| Ok(()));
+        } else {
+            mock.expect_run_command()
+                .withf(move |name, args| name == "grub2-set-default" && args[0] == next_menuentry)
+                .times(1) // Expect it to be called once
+                .returning(move |_, _| Ok(()));
+        }
 
         switch_boot_menuentry(&mock, grubenv_path, next_menuentry).unwrap()
     }

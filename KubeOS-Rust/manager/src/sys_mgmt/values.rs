@@ -25,6 +25,7 @@ pub const ROOTFS_ARCHIVE: &str = "os.tar";
 pub const UPDATE_DIR: &str = "KubeOS-Update";
 pub const MOUNT_DIR: &str = "kubeos-update";
 pub const OS_IMAGE_NAME: &str = "update.img";
+pub const CERTS_PATH: &str = "/etc/KubeOS/certs/";
 
 pub const DEFAULT_KERNEL_CONFIG_PERM: u32 = 0o644;
 pub const DEFAULT_GRUB_CFG_PERM: u32 = 0o751;
@@ -32,4 +33,4 @@ pub const IMAGE_PERMISSION: u32 = 0o600;
 
 pub const ONLY_KEY: usize = 1;
 pub const KV_PAIR: usize = 2;
-pub const NEED_GB_SIZE: i64 = 3;
+pub const NEED_BYTES: i64 = 3 * 1024 * 1024 * 1024;

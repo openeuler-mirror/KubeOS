@@ -19,13 +19,12 @@ use std::{
     string::String,
 };
 
-use anyhow::{anyhow, Context, Ok, Result};
+use anyhow::{bail, Context, Result};
 use lazy_static::lazy_static;
 use log::{debug, info, trace, warn};
 use regex::Regex;
 
-use super::{api::*, values};
-use crate::utils::*;
+use crate::{api::*, sys_mgmt::values, utils::*};
 
 lazy_static! {
     pub static ref CONFIG_TEMPLATE: HashMap<String, Box<dyn Configuration + Sync>> = {
@@ -40,17 +39,13 @@ lazy_static! {
         );
         config_map.insert(
             values::GRUB_CMDLINE_CURRENT.to_string(),
-            Box::new(GrubCmdline {
-                grub_path: values::DEFAULT_GRUB_CFG_PATH.to_string(),
-                is_cur_partition: true,
-            }) as Box<dyn Configuration + Sync>,
+            Box::new(GrubCmdline { grub_path: values::DEFAULT_GRUB_CFG_PATH.to_string(), is_cur_partition: true })
+                as Box<dyn Configuration + Sync>,
         );
         config_map.insert(
             values::GRUB_CMDLINE_NEXT.to_string(),
-            Box::new(GrubCmdline {
-                grub_path: values::DEFAULT_GRUB_CFG_PATH.to_string(),
-                is_cur_partition: false,
-            }) as Box<dyn Configuration + Sync>,
+            Box::new(GrubCmdline { grub_path: values::DEFAULT_GRUB_CFG_PATH.to_string(), is_cur_partition: false })
+                as Box<dyn Configuration + Sync>,
         );
         config_map
     };
@@ -76,10 +71,9 @@ impl Configuration for KernelSysctl {
             let proc_path = self.get_proc_path(key);
             if key_info.operation == "delete" {
                 warn!("Failed to delete kernel.sysctl config with key \"{}\"", key);
-            } else if key_info.value != "" && key_info.operation == "" {
-                fs::write(&proc_path, format!("{}\n", &key_info.value).as_bytes()).with_context(
-                    || format!("Failed to write kernel.sysctl with key: \"{}\"", key),
-                )?;
+            } else if !key_info.value.is_empty() && key_info.operation.is_empty() {
+                fs::write(&proc_path, format!("{}\n", &key_info.value).as_bytes())
+                    .with_context(|| format!("Failed to write kernel.sysctl with key: \"{}\"", key))?;
                 info!("Configured kernel.sysctl {}={}", key, key_info.value);
             } else {
                 warn!(
@@ -94,13 +88,11 @@ impl Configuration for KernelSysctl {
 
 impl KernelSysctl {
     fn new(proc_path: &str) -> Self {
-        Self {
-            proc_path: String::from(proc_path),
-        }
+        Self { proc_path: String::from(proc_path) }
     }
 
     fn get_proc_path(&self, key: &str) -> PathBuf {
-        let path_str = format!("{}{}", self.proc_path, key.replace(".", "/"));
+        let path_str = format!("{}{}", self.proc_path, key.replace('.', "/"));
         Path::new(&path_str).to_path_buf()
     }
 }
@@ -109,7 +101,7 @@ impl Configuration for KernelSysctlPersist {
     fn set_config(&self, config: &mut Sysconfig) -> Result<()> {
         info!("Start set kernel.sysctl.persist");
         let mut config_path = &values::DEFAULT_KERNEL_CONFIG_PATH.to_string();
-        if config.config_path != "" {
+        if !config.config_path.is_empty() {
             config_path = &config.config_path;
         }
         debug!("kernel.sysctl.persist config_path: \"{}\"", config_path);
@@ -131,29 +123,24 @@ fn create_config_file(config_path: &str) -> Result<()> {
     Ok(())
 }
 
-fn get_and_set_configs(
-    expect_configs: &mut HashMap<String, KeyInfo>,
-    config_path: &str,
-) -> Result<Vec<String>> {
+fn get_and_set_configs(expect_configs: &mut HashMap<String, KeyInfo>, config_path: &str) -> Result<Vec<String>> {
     let f = File::open(config_path)?;
     let mut configs_write = Vec::new();
     for line in io::BufReader::new(f).lines() {
         let line = line?;
         // if line is a comment or blank
-        if line.starts_with("#") || line.starts_with(";") || line.trim().is_empty() {
+        if line.starts_with('#') || line.starts_with(';') || line.trim().is_empty() {
             configs_write.push(line);
             continue;
         }
         let config_kv: Vec<&str> = line.splitn(2, '=').map(|s| s.trim()).collect();
         // if config_kv is not a key-value pair
         if config_kv.len() != 2 {
-            return Err(anyhow!("could not parse sysctl config {}", line));
+            bail!("could not parse sysctl config {}", line);
         }
         let new_key_info = expect_configs.get(config_kv[0]);
         let new_config = match new_key_info {
-            Some(new_key_info) if new_key_info.operation == "delete" => {
-                handle_delete_key(&config_kv, new_key_info)
-            }
+            Some(new_key_info) if new_key_info.operation == "delete" => handle_delete_key(&config_kv, new_key_info),
             Some(new_key_info) => handle_update_key(&config_kv, new_key_info),
             None => config_kv.join("="),
         };
@@ -170,30 +157,24 @@ fn write_configs_to_file(config_path: &str, configs: &Vec<String>) -> Result<()>
     let f = File::create(config_path)?;
     let mut w = BufWriter::new(f);
     for line in configs {
-        if line == "" {
+        if line.is_empty() {
             continue;
         }
         writeln!(w, "{}", line.as_str())?;
     }
-    w.flush()
-        .with_context(|| format!("Failed to flush file {}", config_path))?;
-    w.get_mut()
-        .sync_all()
-        .with_context(|| format!("Failed to sync"))?;
+    w.flush().with_context(|| format!("Failed to flush file {}", config_path))?;
+    w.get_mut().sync_all().with_context(|| "Failed to sync".to_string())?;
     debug!("Write configuration to file \"{}\" success", config_path);
     Ok(())
 }
 
 fn handle_delete_key(config_kv: &Vec<&str>, new_config_info: &KeyInfo) -> String {
     let key = config_kv[0];
-    if config_kv.len() == 1 && new_config_info.value == "" {
+    if config_kv.len() == 1 && new_config_info.value.is_empty() {
         info!("Delete configuration key: \"{}\"", key);
         return String::from("");
-    } else if config_kv.len() == 1 && new_config_info.value != "" {
-        warn!(
-            "Failed to delete key \"{}\" with inconsistent values \"nil\" and \"{}\"",
-            key, new_config_info.value
-        );
+    } else if config_kv.len() == 1 && !new_config_info.value.is_empty() {
+        warn!("Failed to delete key \"{}\" with inconsistent values \"nil\" and \"{}\"", key, new_config_info.value);
         return key.to_string();
     }
     let old_value = config_kv[1];
@@ -210,21 +191,21 @@ fn handle_delete_key(config_kv: &Vec<&str>, new_config_info: &KeyInfo) -> String
 
 fn handle_update_key(config_kv: &Vec<&str>, new_config_info: &KeyInfo) -> String {
     let key = config_kv[0];
-    if new_config_info.operation != "" {
+    if !new_config_info.operation.is_empty() {
         warn!(
             "Unknown operation \"{}\", updating key \"{}\" with value \"{}\" by default",
             new_config_info.operation, key, new_config_info.value
         );
     }
-    if config_kv.len() == values::ONLY_KEY && new_config_info.value == "" {
+    if config_kv.len() == values::ONLY_KEY && new_config_info.value.is_empty() {
         return key.to_string();
     }
     let new_value = new_config_info.value.trim();
-    if config_kv.len() == values::ONLY_KEY && new_config_info.value != "" {
+    if config_kv.len() == values::ONLY_KEY && !new_config_info.value.is_empty() {
         info!("Update configuration \"{}={}\"", key, new_value);
         return format!("{}={}", key, new_value);
     }
-    if new_config_info.value == "" {
+    if new_config_info.value.is_empty() {
         warn!("Failed to update key \"{}\" with \"null\" value", key);
         return config_kv.join("=");
     }
@@ -232,34 +213,28 @@ fn handle_update_key(config_kv: &Vec<&str>, new_config_info: &KeyInfo) -> String
     format!("{}={}", key, new_value)
 }
 
-fn handle_add_key(
-    expect_configs: &HashMap<String, KeyInfo>,
-    is_only_key_valid: bool,
-) -> Vec<String> {
+fn handle_add_key(expect_configs: &HashMap<String, KeyInfo>, is_only_key_valid: bool) -> Vec<String> {
     let mut configs_write = Vec::new();
     for (key, config_info) in expect_configs.iter() {
         if config_info.operation == "delete" {
             warn!("Failed to delete inexistent key: \"{}\"", key);
             continue;
         }
-        if key == "" || key.contains("=") {
-            warn!(
-                "Failed to add \"null\" key or key containing \"=\", key: \"{}\"",
-                key
-            );
+        if key.is_empty() || key.contains('=') {
+            warn!("Failed to add \"null\" key or key containing \"=\", key: \"{}\"", key);
             continue;
         }
-        if config_info.operation != "" {
+        if !config_info.operation.is_empty() {
             warn!(
                 "Unknown operation \"{}\", adding key \"{}\" with value \"{}\" by default",
                 config_info.operation, key, config_info.value
             );
         }
         let (k, v) = (key.trim(), config_info.value.trim());
-        if v == "" && is_only_key_valid {
+        if v.is_empty() && is_only_key_valid {
             info!("Add configuration \"{}\"", k);
             configs_write.push(k.to_string());
-        } else if v == "" {
+        } else if v.is_empty() {
             warn!("Failed to add key \"{}\" with \"null\" value", k);
         } else {
             info!("Add configuration \"{}={}\"", k, v);
@@ -277,17 +252,11 @@ impl Configuration for GrubCmdline {
             info!("Start set grub.cmdline.next configuration");
         }
         if !is_file_exist(&self.grub_path) {
-            return Err(anyhow!("Failed to find grub.cfg file"));
+            bail!("Failed to find grub.cfg file");
         }
-        let config_partition = if cfg!(test) {
-            self.is_cur_partition
-        } else {
-            self.get_config_partition(RealCommandExecutor {})?
-        };
-        debug!(
-            "Config_partition: {} (false means partition A, true means partition B)",
-            config_partition
-        );
+        let config_partition =
+            if cfg!(test) { self.is_cur_partition } else { self.get_config_partition(RealCommandExecutor {})? };
+        debug!("Config_partition: {} (false means partition A, true means partition B)", config_partition);
         let configs = get_and_set_grubcfg(&mut config.contents, &self.grub_path, config_partition)?;
         write_configs_to_file(&self.grub_path, &configs)?;
         Ok(())
@@ -330,29 +299,21 @@ fn get_and_set_grubcfg(
 }
 
 fn modify_boot_cfg(expect_configs: &mut HashMap<String, KeyInfo>, line: &String) -> Result<String> {
-    trace!(
-        "Match partition that need to be configured, entering modify_boot_cfg, linux line: {}",
-        line
-    );
+    trace!("Match partition that need to be configured, entering modify_boot_cfg, linux line: {}", line);
     let mut new_configs = vec!["       ".to_string()];
     let olg_configs: Vec<&str> = line.split(' ').collect();
     for old_config in olg_configs {
-        if old_config == "" {
+        if old_config.is_empty() {
             continue;
         }
         // At most 2 substrings can be returned to satisfy the case like root=UUID=xxxx
-        let config = old_config.splitn(2, "=").collect::<Vec<&str>>();
+        let config = old_config.splitn(2, '=').collect::<Vec<&str>>();
         if config.len() != values::ONLY_KEY && config.len() != values::KV_PAIR {
-            return Err(anyhow!(
-                "Failed to parse grub.cfg linux line {}",
-                old_config
-            ));
+            bail!("Failed to parse grub.cfg linux line {}", old_config);
         }
         let new_key_info = expect_configs.get(config[0]);
         let new_config = match new_key_info {
-            Some(new_key_info) if new_key_info.operation == "delete" => {
-                handle_delete_key(&config, new_key_info)
-            }
+            Some(new_key_info) if new_key_info.operation == "delete" => handle_delete_key(&config, new_key_info),
             Some(new_key_info) => handle_update_key(&config, new_key_info),
             None => config.join("="),
         };
@@ -368,13 +329,13 @@ fn modify_boot_cfg(expect_configs: &mut HashMap<String, KeyInfo>, line: &String)
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::sys_mgmt::{
-        GRUB_CMDLINE_CURRENT, GRUB_CMDLINE_NEXT, KERNEL_SYSCTL, KERNEL_SYSCTL_PERSIST,
-    };
-    use mockall::{mock, predicate::*};
     use std::fs;
+
+    use mockall::{mock, predicate::*};
     use tempfile::{NamedTempFile, TempDir};
+
+    use super::*;
+    use crate::sys_mgmt::{GRUB_CMDLINE_CURRENT, GRUB_CMDLINE_NEXT, KERNEL_SYSCTL, KERNEL_SYSCTL_PERSIST};
 
     // Mock the CommandExecutor trait
     mock! {
@@ -399,19 +360,12 @@ mod tests {
     #[test]
     fn test_get_config_partition() {
         init();
-        let mut grub_cmdline = GrubCmdline {
-            grub_path: String::from(""),
-            is_cur_partition: true,
-        };
+        let mut grub_cmdline = GrubCmdline { grub_path: String::from(""), is_cur_partition: true };
         let mut executor = MockCommandExec::new();
 
         // the output shows that current root menuentry is A
-        let command_output1 =
-            "sda\nsda1 /boot/efi vfat\nsda2 / ext4\nsda3  ext4\nsda4 /persist ext4\nsr0  iso9660\n";
-        executor
-            .expect_run_command_with_output()
-            .times(1)
-            .returning(|_, _| Ok(command_output1.to_string()));
+        let command_output1 = "sda\nsda1 /boot/efi vfat\nsda2 / ext4\nsda3  ext4\nsda4 /persist ext4\nsr0  iso9660\n";
+        executor.expect_run_command_with_output().times(1).returning(|_, _| Ok(command_output1.to_string()));
 
         let result = grub_cmdline.get_config_partition(executor).unwrap();
         // it should return false because the current root menuentry is A and we want to configure current partition
@@ -420,12 +374,8 @@ mod tests {
         let mut executor = MockCommandExec::new();
 
         // the output shows that current root menuentry is A
-        let command_output1 =
-            "sda\nsda1 /boot/efi vfat\nsda2 / ext4\nsda3  ext4\nsda4 /persist ext4\nsr0  iso9660\n";
-        executor
-            .expect_run_command_with_output()
-            .times(1)
-            .returning(|_, _| Ok(command_output1.to_string()));
+        let command_output1 = "sda\nsda1 /boot/efi vfat\nsda2 / ext4\nsda3  ext4\nsda4 /persist ext4\nsr0  iso9660\n";
+        executor.expect_run_command_with_output().times(1).returning(|_, _| Ok(command_output1.to_string()));
         grub_cmdline.is_cur_partition = false;
         let result = grub_cmdline.get_config_partition(executor).unwrap();
         // it should return true because the current root menuentry is A and we want to configure next partition
@@ -440,52 +390,18 @@ mod tests {
         let kernel_sysctl = KernelSysctl::new(tmp_dir.path().to_str().unwrap());
 
         let config_detail = HashMap::from([
-            (
-                "a".to_string(),
-                KeyInfo {
-                    value: "1".to_string(),
-                    operation: "".to_string(),
-                },
-            ),
-            (
-                "b".to_string(),
-                KeyInfo {
-                    value: "2".to_string(),
-                    operation: "delete".to_string(),
-                },
-            ),
-            (
-                "c".to_string(),
-                KeyInfo {
-                    value: "3".to_string(),
-                    operation: "add".to_string(),
-                },
-            ),
-            (
-                "d".to_string(),
-                KeyInfo {
-                    value: "".to_string(),
-                    operation: "".to_string(),
-                },
-            ),
-            (
-                "e".to_string(),
-                KeyInfo {
-                    value: "".to_string(),
-                    operation: "delete".to_string(),
-                },
-            ),
+            ("a".to_string(), KeyInfo { value: "1".to_string(), operation: "".to_string() }),
+            ("b".to_string(), KeyInfo { value: "2".to_string(), operation: "delete".to_string() }),
+            ("c".to_string(), KeyInfo { value: "3".to_string(), operation: "add".to_string() }),
+            ("d".to_string(), KeyInfo { value: "".to_string(), operation: "".to_string() }),
+            ("e".to_string(), KeyInfo { value: "".to_string(), operation: "delete".to_string() }),
         ]);
 
-        let mut config = Sysconfig {
-            model: KERNEL_SYSCTL.to_string(),
-            config_path: String::from(""),
-            contents: config_detail,
-        };
+        let mut config =
+            Sysconfig { model: KERNEL_SYSCTL.to_string(), config_path: String::from(""), contents: config_detail };
         kernel_sysctl.set_config(&mut config).unwrap();
 
-        let result =
-            fs::read_to_string(format!("{}{}", tmp_dir.path().to_str().unwrap(), "a")).unwrap();
+        let result = fs::read_to_string(format!("{}{}", tmp_dir.path().to_str().unwrap(), "a")).unwrap();
         assert_eq!(result, "1\n");
     }
 
@@ -499,27 +415,9 @@ mod tests {
         writeln!(tmp_file, "a=0").unwrap();
         let kernel_sysctl_persist = KernelSysctlPersist {};
         let config_detail = HashMap::from([
-            (
-                "a".to_string(),
-                KeyInfo {
-                    value: "1".to_string(),
-                    operation: "".to_string(),
-                },
-            ),
-            (
-                "b".to_string(),
-                KeyInfo {
-                    value: "2".to_string(),
-                    operation: "delete".to_string(),
-                },
-            ),
-            (
-                "c".to_string(),
-                KeyInfo {
-                    value: "3".to_string(),
-                    operation: "add".to_string(),
-                },
-            ),
+            ("a".to_string(), KeyInfo { value: "1".to_string(), operation: "".to_string() }),
+            ("b".to_string(), KeyInfo { value: "2".to_string(), operation: "delete".to_string() }),
+            ("c".to_string(), KeyInfo { value: "3".to_string(), operation: "add".to_string() }),
         ]);
         let mut config = Sysconfig {
             model: KERNEL_SYSCTL_PERSIST.to_string(),
@@ -560,19 +458,18 @@ mod tests {
     #[test]
     fn write_configs_to_file_tests() {
         init();
-        let path = "/home/yuhang/abc.txt";
+        let tmp_file = NamedTempFile::new().unwrap();
         let configs = vec!["a=1".to_string(), "b=2".to_string()];
-        write_configs_to_file(&path.to_string(), &configs).unwrap();
+        write_configs_to_file(tmp_file.path().to_str().unwrap(), &configs).unwrap();
+        assert_eq!(fs::read(tmp_file.path()).unwrap(), b"a=1\nb=2\n");
     }
 
     #[test]
     fn test_grub_cmdline() {
         init();
         let mut tmp_file = NamedTempFile::new().unwrap();
-        let mut grub_cmdline = GrubCmdline {
-            grub_path: tmp_file.path().to_str().unwrap().to_string(),
-            is_cur_partition: true,
-        };
+        let mut grub_cmdline =
+            GrubCmdline { grub_path: tmp_file.path().to_str().unwrap().to_string(), is_cur_partition: true };
         let grub_cfg = r"menuentry 'A' --class KubeOS --class gnu-linux --class gnu --class os --unrestricted $menuentry_id_option 'KubeOS-A' {
         load_video
         set gfxpayload=keep
@@ -596,69 +493,15 @@ menuentry 'B' --class KubeOS --class gnu-linux --class gnu --class os --unrestri
 }";
         writeln!(tmp_file, "{}", grub_cfg).unwrap();
         let config_first_part = HashMap::from([
-            (
-                "debug".to_string(),
-                KeyInfo {
-                    value: "".to_string(),
-                    operation: "".to_string(),
-                },
-            ),
-            (
-                "quiet".to_string(),
-                KeyInfo {
-                    value: "".to_string(),
-                    operation: "delete".to_string(),
-                },
-            ),
-            (
-                "panic".to_string(),
-                KeyInfo {
-                    value: "5".to_string(),
-                    operation: "".to_string(),
-                },
-            ),
-            (
-                "nomodeset".to_string(),
-                KeyInfo {
-                    value: "".to_string(),
-                    operation: "update".to_string(),
-                },
-            ),
-            (
-                "oops".to_string(),
-                KeyInfo {
-                    value: "".to_string(),
-                    operation: "".to_string(),
-                },
-            ),
-            (
-                "".to_string(),
-                KeyInfo {
-                    value: "test".to_string(),
-                    operation: "".to_string(),
-                },
-            ),
-            (
-                "selinux".to_string(),
-                KeyInfo {
-                    value: "1".to_string(),
-                    operation: "delete".to_string(),
-                },
-            ),
-            (
-                "acpi".to_string(),
-                KeyInfo {
-                    value: "off".to_string(),
-                    operation: "delete".to_string(),
-                },
-            ),
-            (
-                "ro".to_string(),
-                KeyInfo {
-                    value: "1".to_string(),
-                    operation: "".to_string(),
-                },
-            ),
+            ("debug".to_string(), KeyInfo { value: "".to_string(), operation: "".to_string() }),
+            ("quiet".to_string(), KeyInfo { value: "".to_string(), operation: "delete".to_string() }),
+            ("panic".to_string(), KeyInfo { value: "5".to_string(), operation: "".to_string() }),
+            ("nomodeset".to_string(), KeyInfo { value: "".to_string(), operation: "update".to_string() }),
+            ("oops".to_string(), KeyInfo { value: "".to_string(), operation: "".to_string() }),
+            ("".to_string(), KeyInfo { value: "test".to_string(), operation: "".to_string() }),
+            ("selinux".to_string(), KeyInfo { value: "1".to_string(), operation: "delete".to_string() }),
+            ("acpi".to_string(), KeyInfo { value: "off".to_string(), operation: "delete".to_string() }),
+            ("ro".to_string(), KeyInfo { value: "1".to_string(), operation: "".to_string() }),
         ]);
         let mut config = Sysconfig {
             model: GRUB_CMDLINE_CURRENT.to_string(),
@@ -668,20 +511,8 @@ menuentry 'B' --class KubeOS --class gnu-linux --class gnu --class os --unrestri
         grub_cmdline.set_config(&mut config).unwrap();
         grub_cmdline.is_cur_partition = false;
         let config_second = HashMap::from([
-            (
-                "pci".to_string(),
-                KeyInfo {
-                    value: "nomis".to_string(),
-                    operation: "".to_string(),
-                },
-            ),
-            (
-                "panic".to_string(),
-                KeyInfo {
-                    value: "5".to_string(),
-                    operation: "".to_string(),
-                },
-            ),
+            ("pci".to_string(), KeyInfo { value: "nomis".to_string(), operation: "".to_string() }),
+            ("panic".to_string(), KeyInfo { value: "5".to_string(), operation: "".to_string() }),
         ]);
         config.contents = config_second;
         config.model = GRUB_CMDLINE_NEXT.to_string();

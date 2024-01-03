@@ -28,13 +28,9 @@ pub const OPERATION_TYPE_ROLLBACK: &str = "rollback";
 
 pub const SOCK_PATH: &str = "/run/os-agent/os-agent.sock";
 
-pub const REQUEUE_NORMAL: ReconcilerAction = ReconcilerAction {
-    requeue_after: Some(Duration::from_secs(15)),
-};
+pub const REQUEUE_NORMAL: ReconcilerAction = ReconcilerAction { requeue_after: Some(Duration::from_secs(15)) };
 
-pub const REQUEUE_ERROR: ReconcilerAction = ReconcilerAction {
-    requeue_after: Some(Duration::from_secs(1)),
-};
+pub const REQUEUE_ERROR: ReconcilerAction = ReconcilerAction { requeue_after: Some(Duration::from_secs(1)) };
 
 pub const MAX_EVICT_POD_NUM: usize = 5;
 

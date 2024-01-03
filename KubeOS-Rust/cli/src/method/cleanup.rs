@@ -10,18 +10,13 @@
  * See the Mulan PSL v2 for more details.
  */
 
+use kubeos_manager::api;
 use serde_json::value::RawValue;
 
 use crate::method::callable_method::RpcMethod;
-use kubeos_manager::api;
 
+#[derive(Default)]
 pub struct CleanupMethod {}
-
-impl CleanupMethod {
-    pub fn new() -> Self {
-        CleanupMethod {}
-    }
-}
 
 impl RpcMethod for CleanupMethod {
     type Response = api::Response;

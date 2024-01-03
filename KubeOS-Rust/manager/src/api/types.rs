@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 
 use super::agent_status::*;
 use crate::{
-    sys_mgmt::CtrImageHandler,
+    sys_mgmt::{CtrImageHandler, DiskImageHandler, DockerImageHandler},
     utils::{CommandExecutor, UpgradeImageManager},
 };
 
@@ -26,6 +26,17 @@ pub struct UpgradeRequest {
     pub check_sum: String,
     pub image_type: String,
     pub container_image: String,
+    pub image_url: String,
+    pub flag_safe: bool,
+    pub mtls: bool,
+    pub certs: CertsInfo,
+}
+
+#[derive(Deserialize, Serialize, Debug)]
+pub struct CertsInfo {
+    pub ca_cert: String,
+    pub client_cert: String,
+    pub client_key: String,
 }
 
 #[derive(Deserialize, Serialize, Debug)]
@@ -53,12 +64,16 @@ pub struct Response {
 
 pub enum ImageType<T: CommandExecutor> {
     Containerd(CtrImageHandler<T>),
+    Docker(DockerImageHandler<T>),
+    Disk(DiskImageHandler<T>),
 }
 
 impl<T: CommandExecutor> ImageType<T> {
     pub fn download_image(&self, req: &UpgradeRequest) -> anyhow::Result<UpgradeImageManager<T>> {
         match self {
             ImageType::Containerd(handler) => handler.download_image(req),
+            ImageType::Docker(handler) => handler.download_image(req),
+            ImageType::Disk(handler) => handler.download_image(req),
         }
     }
 }

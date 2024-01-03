@@ -17,13 +17,9 @@ use serde_json::value::RawValue;
 
 use crate::client::Client;
 
-pub fn request(
-    client: &Client,
-    command: &str,
-    params: Vec<Box<RawValue>>,
-) -> Result<Response, anyhow::Error> {
+pub fn request(client: &Client, command: &str, params: Vec<Box<RawValue>>) -> Result<Response, anyhow::Error> {
     let request = client.build_request(command, &params);
-    let response = client.send_request(request).map_err(|e| parse_error(e));
+    let response = client.send_request(request).map_err(parse_error);
     debug!("{:#?}", response);
     response
 }
@@ -33,26 +29,24 @@ pub fn parse_error(error: Error) -> anyhow::Error {
         Error::Transport(e) => {
             anyhow!(
                 "Cannot connect to KubeOS os-agent unix socket, {}",
-                e.source()
-                    .map(|e| e.to_string())
-                    .unwrap_or_else(|| "Connection timeout".to_string())
+                e.source().map(|e| e.to_string()).unwrap_or_else(|| "Connection timeout".to_string())
             )
-        }
+        },
         Error::Json(e) => {
             debug!("Json parse error: {:?}", e);
             anyhow!("Failed to parse response")
-        }
+        },
         Error::Rpc(ref e) => match e.message == "Method not found" {
             true => {
                 anyhow!("Method is unimplemented")
-            }
+            },
             false => {
                 anyhow!("{}", e.message)
-            }
+            },
         },
         _ => {
             debug!("{:?}", error);
             anyhow!("Response is invalid")
-        }
+        },
     }
 }

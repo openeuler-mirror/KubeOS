@@ -10,21 +10,18 @@
  * See the Mulan PSL v2 for more details.
  */
 
-use cli::{
-    client::Client,
-    method::{
-        callable_method::RpcMethod, configure::ConfigureMethod,
-        prepare_upgrade::PrepareUpgradeMethod, rollback::RollbackMethod, upgrade::UpgradeMethod,
-    },
-};
+use std::{collections::HashMap, path::Path};
 
 use agent_call::AgentCallClient;
 use agent_error::Error;
-use manager::api::{
-    ConfigureRequest, KeyInfo as AgentKeyInfo, Sysconfig as AgentSysconfig, UpgradeRequest,
+use cli::{
+    client::Client,
+    method::{
+        callable_method::RpcMethod, configure::ConfigureMethod, prepare_upgrade::PrepareUpgradeMethod,
+        rollback::RollbackMethod, upgrade::UpgradeMethod,
+    },
 };
-use std::collections::HashMap;
-use std::path::Path;
+use manager::api::{CertsInfo, ConfigureRequest, KeyInfo as AgentKeyInfo, Sysconfig as AgentSysconfig, UpgradeRequest};
 
 pub struct UpgradeInfo {
     pub version: String,
@@ -49,18 +46,10 @@ pub struct KeyInfo {
 }
 
 pub trait AgentMethod {
-    fn prepare_upgrade_method(
-        &self,
-        upgrade_info: UpgradeInfo,
-        agent_call: AgentCallClient,
-    ) -> Result<(), Error>;
+    fn prepare_upgrade_method(&self, upgrade_info: UpgradeInfo, agent_call: AgentCallClient) -> Result<(), Error>;
     fn upgrade_method(&self, agent_call: AgentCallClient) -> Result<(), Error>;
     fn rollback_method(&self, agent_call: AgentCallClient) -> Result<(), Error>;
-    fn configure_method(
-        &self,
-        config_info: ConfigInfo,
-        agent_call: AgentCallClient,
-    ) -> Result<(), Error>;
+    fn configure_method(&self, config_info: ConfigInfo, agent_call: AgentCallClient) -> Result<(), Error>;
 }
 
 pub mod agent_call {
@@ -69,11 +58,7 @@ pub mod agent_call {
     pub struct AgentCallClient {}
 
     impl AgentCallClient {
-        pub fn call_agent<T: RpcMethod + 'static>(
-            &self,
-            client: &Client,
-            method: T,
-        ) -> Result<(), Error> {
+        pub fn call_agent<T: RpcMethod + 'static>(&self, client: &Client, method: T) -> Result<(), Error> {
             match method.call(client) {
                 Ok(_resp) => Ok(()),
                 Err(e) => Err(Error::AgentError { source: e }),
@@ -88,62 +73,51 @@ pub struct AgentClient {
 
 impl AgentClient {
     pub fn new<P: AsRef<Path>>(socket_path: P) -> Self {
-        AgentClient {
-            agent_client: Client::new(socket_path),
-        }
+        AgentClient { agent_client: Client::new(socket_path) }
     }
 }
 
 impl AgentMethod for AgentClient {
-    fn prepare_upgrade_method(
-        &self,
-        upgrade_info: UpgradeInfo,
-        agent_call: AgentCallClient,
-    ) -> Result<(), Error> {
+    fn prepare_upgrade_method(&self, upgrade_info: UpgradeInfo, agent_call: AgentCallClient) -> Result<(), Error> {
         let upgrade_request = UpgradeRequest {
             version: upgrade_info.version,
             image_type: upgrade_info.image_type,
             check_sum: upgrade_info.check_sum,
             container_image: upgrade_info.container_image,
+            // TODO: add image_url, flag_safe, mtls, certs
+            image_url: "".to_string(),
+            flag_safe: false,
+            mtls: false,
+            certs: CertsInfo { ca_cert: "".to_string(), client_cert: "".to_string(), client_key: "".to_string() },
         };
-        match agent_call.call_agent(
-            &self.agent_client,
-            PrepareUpgradeMethod::new(upgrade_request),
-        ) {
+        match agent_call.call_agent(&self.agent_client, PrepareUpgradeMethod::new(upgrade_request)) {
             Ok(_resp) => Ok(()),
             Err(e) => Err(e),
         }
     }
 
     fn upgrade_method(&self, agent_call: AgentCallClient) -> Result<(), Error> {
-        match agent_call.call_agent(&self.agent_client, UpgradeMethod::new()) {
+        match agent_call.call_agent(&self.agent_client, UpgradeMethod::default()) {
             Ok(_resp) => Ok(()),
             Err(e) => Err(e),
         }
     }
 
     fn rollback_method(&self, agent_call: AgentCallClient) -> Result<(), Error> {
-        match agent_call.call_agent(&self.agent_client, RollbackMethod::new()) {
+        match agent_call.call_agent(&self.agent_client, RollbackMethod::default()) {
             Ok(_resp) => Ok(()),
             Err(e) => Err(e),
         }
     }
 
-    fn configure_method(
-        &self,
-        config_info: ConfigInfo,
-        agent_call: AgentCallClient,
-    ) -> Result<(), Error> {
+    fn configure_method(&self, config_info: ConfigInfo, agent_call: AgentCallClient) -> Result<(), Error> {
         let mut agent_configs: Vec<AgentSysconfig> = Vec::new();
         for config in config_info.configs {
             let mut contents_tmp: HashMap<String, AgentKeyInfo> = HashMap::new();
             for (key, key_info) in config.contents.iter() {
                 contents_tmp.insert(
                     key.to_string(),
-                    AgentKeyInfo {
-                        value: key_info.value.clone(),
-                        operation: key_info.operation.clone(),
-                    },
+                    AgentKeyInfo { value: key_info.value.clone(), operation: key_info.operation.clone() },
                 );
             }
             agent_configs.push(AgentSysconfig {
@@ -152,9 +126,7 @@ impl AgentMethod for AgentClient {
                 contents: contents_tmp,
             })
         }
-        let config_request = ConfigureRequest {
-            configs: agent_configs,
-        };
+        let config_request = ConfigureRequest { configs: agent_configs };
         match agent_call.call_agent(&self.agent_client, ConfigureMethod::new(config_request)) {
             Ok(_resp) => Ok(()),
             Err(e) => Err(e),

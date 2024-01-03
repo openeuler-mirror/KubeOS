@@ -10,10 +10,10 @@
  * See the Mulan PSL v2 for more details.
  */
 
+use kubeos_manager::api;
 use serde_json::value::{to_raw_value, RawValue};
 
 use crate::method::callable_method::RpcMethod;
-use kubeos_manager::api;
 
 pub struct PrepareUpgradeMethod {
     req: api::UpgradeRequest,

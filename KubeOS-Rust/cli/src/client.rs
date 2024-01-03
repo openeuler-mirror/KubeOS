@@ -13,8 +13,7 @@
 use std::path::Path;
 
 use jsonrpc::{
-    simple_uds::UdsTransport, Client as JsonRPCClient, Request as JsonRPCRequest,
-    Response as JsonRPCResponse,
+    simple_uds::UdsTransport, Client as JsonRPCClient, Request as JsonRPCRequest, Response as JsonRPCResponse,
 };
 use serde_json::value::RawValue;
 
@@ -28,33 +27,26 @@ impl<'a> Request<'a> {}
 
 impl Client {
     pub fn new<P: AsRef<Path>>(socket_path: P) -> Self {
-        let client = Client {
-            json_rpc_client: JsonRPCClient::with_transport(UdsTransport::new(socket_path)),
-        };
-        client
+        Client { json_rpc_client: JsonRPCClient::with_transport(UdsTransport::new(socket_path)) }
     }
 
-    pub fn build_request<'a>(
-        &self,
-        command: &'a str,
-        params: &'a Vec<Box<RawValue>>,
-    ) -> Request<'a> {
-        let json_rpc_request = self.json_rpc_client.build_request(command, &params);
+    pub fn build_request<'a>(&self, command: &'a str, params: &'a Vec<Box<RawValue>>) -> Request<'a> {
+        let json_rpc_request = self.json_rpc_client.build_request(command, params);
         let request = Request(json_rpc_request);
         request
     }
 
     pub fn send_request(&self, request: Request) -> Result<JsonRPCResponse, jsonrpc::Error> {
-        let response = self.json_rpc_client.send_request(request.0);
-        response
+        self.json_rpc_client.send_request(request.0)
     }
 }
 
 #[cfg(test)]
 mod test {
+    use kubeos_manager::api;
+
     use super::*;
     use crate::method::{callable_method::RpcMethod, configure::ConfigureMethod};
-    use kubeos_manager::api;
 
     #[test]
     #[ignore]

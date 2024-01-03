@@ -26,11 +26,7 @@ impl RpcFunction {
     {
         (f)().map_err(|e| {
             error!("{:?}", e);
-            Error {
-                code: ErrorCode::ServerError(RPC_OP_ERROR),
-                message: format!("{:?}", e),
-                data: None,
-            }
+            Error { code: ErrorCode::ServerError(RPC_OP_ERROR), message: format!("{:?}", e), data: None }
         })
     }
 }

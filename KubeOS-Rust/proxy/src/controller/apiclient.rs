@@ -10,8 +10,8 @@
  * See the Mulan PSL v2 for more details.
  */
 
-use super::crd::{OSInstance, OSInstanceSpec, OSInstanceStatus};
-use super::values::{LABEL_OSINSTANCE, NODE_STATUS_IDLE, OSINSTANCE_API_VERSION, OSINSTANCE_KIND};
+use std::collections::BTreeMap;
+
 use anyhow::Result;
 use apiclient_error::Error;
 use async_trait::async_trait;
@@ -20,7 +20,11 @@ use kube::{
     Client,
 };
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
+
+use super::{
+    crd::{OSInstance, OSInstanceSpec, OSInstanceStatus},
+    values::{LABEL_OSINSTANCE, NODE_STATUS_IDLE, OSINSTANCE_API_VERSION, OSINSTANCE_KIND},
+};
 
 #[derive(Debug, Serialize, Deserialize)]
 struct OSInstanceSpecPatch {
@@ -35,11 +39,7 @@ impl Default for OSInstanceSpecPatch {
         OSInstanceSpecPatch {
             api_version: OSINSTANCE_API_VERSION.to_string(),
             kind: OSINSTANCE_KIND.to_string(),
-            spec: OSInstanceSpec {
-                nodestatus: NODE_STATUS_IDLE.to_string(),
-                sysconfigs: None,
-                upgradeconfigs: None,
-            },
+            spec: OSInstanceSpec { nodestatus: NODE_STATUS_IDLE.to_string(), sysconfigs: None, upgradeconfigs: None },
         }
     }
 }
@@ -57,10 +57,7 @@ impl Default for OSInstanceStatusPatch {
         OSInstanceStatusPatch {
             api_version: OSINSTANCE_API_VERSION.to_string(),
             kind: OSINSTANCE_KIND.to_string(),
-            status: Some(OSInstanceStatus {
-                sysconfigs: None,
-                upgradeconfigs: None,
-            }),
+            status: Some(OSInstanceStatus { sysconfigs: None, upgradeconfigs: None }),
         }
     }
 }
@@ -105,11 +102,7 @@ impl ApplyApi for ControllerClient {
                 labels: Some(labels),
                 ..ObjectMeta::default()
             },
-            spec: OSInstanceSpec {
-                nodestatus: NODE_STATUS_IDLE.to_string(),
-                sysconfigs: None,
-                upgradeconfigs: None,
-            },
+            spec: OSInstanceSpec { nodestatus: NODE_STATUS_IDLE.to_string(), sysconfigs: None, upgradeconfigs: None },
             status: None,
         };
         let osi_api = Api::namespaced(self.client.clone(), namespace);
@@ -124,17 +117,8 @@ impl ApplyApi for ControllerClient {
         spec: &OSInstanceSpec,
     ) -> Result<(), Error> {
         let osi_api: Api<OSInstance> = Api::namespaced(self.client.clone(), namespace);
-        let osi_spec_patch = OSInstanceSpecPatch {
-            spec: spec.clone(),
-            ..Default::default()
-        };
-        osi_api
-            .patch(
-                node_name,
-                &PatchParams::default(),
-                &Patch::Merge(&osi_spec_patch),
-            )
-            .await?;
+        let osi_spec_patch = OSInstanceSpecPatch { spec: spec.clone(), ..Default::default() };
+        osi_api.patch(node_name, &PatchParams::default(), &Patch::Merge(&osi_spec_patch)).await?;
         Ok(())
     }
 
@@ -145,17 +129,8 @@ impl ApplyApi for ControllerClient {
         status: &Option<OSInstanceStatus>,
     ) -> Result<(), Error> {
         let osi_api: Api<OSInstance> = Api::namespaced(self.client.clone(), namespace);
-        let osi_status_patch = OSInstanceStatusPatch {
-            status: status.clone(),
-            ..Default::default()
-        };
-        osi_api
-            .patch_status(
-                node_name,
-                &PatchParams::default(),
-                &Patch::Merge(&osi_status_patch),
-            )
-            .await?;
+        let osi_status_patch = OSInstanceStatusPatch { status: status.clone(), ..Default::default() };
+        osi_api.patch_status(node_name, &PatchParams::default(), &Patch::Merge(&osi_status_patch)).await?;
         Ok(())
     }
 }

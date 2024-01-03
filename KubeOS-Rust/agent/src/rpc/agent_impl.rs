@@ -12,20 +12,18 @@
 
 use std::{sync::Mutex, thread, time::Duration};
 
-use anyhow::{anyhow, Result};
+use anyhow::{bail, Result};
 use log::{debug, error, info};
+use manager::{
+    api::{AgentStatus, ConfigureRequest, ImageType, Response, UpgradeRequest},
+    sys_mgmt::{CtrImageHandler, DiskImageHandler, DockerImageHandler, CONFIG_TEMPLATE, DEFAULT_GRUBENV_PATH},
+    utils::{clean_env, get_partition_info, switch_boot_menuentry, PreparePath, RealCommandExecutor},
+};
 use nix::{sys::reboot::RebootMode, unistd::sync};
 
 use super::{
     agent::Agent,
     function::{RpcFunction, RpcResult},
-};
-use manager::{
-    api::{AgentStatus, ConfigureRequest, ImageType, Response, UpgradeRequest},
-    sys_mgmt::{CtrImageHandler, CONFIG_TEMPLATE, DEFAULT_GRUBENV_PATH},
-    utils::{
-        clean_env, get_partition_info, switch_boot_menuentry, PreparePath, RealCommandExecutor,
-    },
 };
 
 pub struct AgentImpl {
@@ -57,10 +55,7 @@ impl Agent for AgentImpl {
 
 impl Default for AgentImpl {
     fn default() -> Self {
-        Self {
-            mutex: Mutex::new(()),
-            disable_reboot: false,
-        }
+        Self { mutex: Mutex::new(()), disable_reboot: false }
     }
 }
 
@@ -72,19 +67,16 @@ impl AgentImpl {
 
         let handler: Box<ImageType<RealCommandExecutor>> = match req.image_type.as_str() {
             "containerd" => Box::new(ImageType::Containerd(CtrImageHandler::default())),
-            _ => return Err(anyhow!("Invalid image type \"{}\"", req.image_type)),
+            "docker" => Box::new(ImageType::Docker(DockerImageHandler::default())),
+            "disk" => Box::new(ImageType::Disk(DiskImageHandler::default())),
+            _ => bail!("Invalid image type \"{}\"", req.image_type),
         };
 
         let image_manager = handler.download_image(&req)?;
-        info!(
-            "Ready to install image: {:?}",
-            image_manager.paths.image_path.display()
-        );
+        info!("Ready to install image: {:?}", image_manager.paths.image_path.display());
         image_manager.install()?;
 
-        Ok(Response {
-            status: AgentStatus::UpgradeReady,
-        })
+        Ok(Response { status: AgentStatus::UpgradeReady })
     }
 
     pub fn upgrade_impl(&self) -> Result<Response> {
@@ -97,14 +89,9 @@ impl AgentImpl {
         let device = next_partition_info.device.as_str();
         let menuentry = next_partition_info.menuentry.as_str();
         switch_boot_menuentry(&command_executor, DEFAULT_GRUBENV_PATH, menuentry)?;
-        info!(
-            "Switch to boot partition: {}, device: {}",
-            menuentry, device
-        );
+        info!("Switch to boot partition: {}, device: {}", menuentry, device);
         self.reboot()?;
-        Ok(Response {
-            status: AgentStatus::Upgraded,
-        })
+        Ok(Response { status: AgentStatus::Upgraded })
     }
 
     pub fn cleanup_impl(&self) -> Result<Response> {
@@ -112,9 +99,7 @@ impl AgentImpl {
         info!("Start to cleanup");
         let paths = PreparePath::default();
         clean_env(paths.update_path, paths.mount_path, paths.image_path)?;
-        Ok(Response {
-            status: AgentStatus::CleanedUp,
-        })
+        Ok(Response { status: AgentStatus::CleanedUp })
     }
 
     pub fn configure_impl(&self, mut req: ConfigureRequest) -> Result<Response> {
@@ -129,12 +114,10 @@ impl AgentImpl {
                 configuration.set_config(config)?;
             } else {
                 error!("Unknown configuration type: \"{}\"", config_type);
-                Err(anyhow!("Unknown configuration type: \"{}\"", config_type))?;
+                bail!("Unknown configuration type: \"{}\"", config_type);
             }
         }
-        Ok(Response {
-            status: AgentStatus::Configured,
-        })
+        Ok(Response { status: AgentStatus::Configured })
     }
 
     pub fn rollback_impl(&self) -> Result<Response> {
@@ -147,14 +130,9 @@ impl AgentImpl {
             manager::sys_mgmt::DEFAULT_GRUBENV_PATH,
             &next_partition_info.menuentry,
         )?;
-        info!(
-            "Switch to boot partition: {}, device: {}",
-            next_partition_info.menuentry, next_partition_info.device
-        );
+        info!("Switch to boot partition: {}, device: {}", next_partition_info.menuentry, next_partition_info.device);
         self.reboot()?;
-        Ok(Response {
-            status: AgentStatus::Rollbacked,
-        })
+        Ok(Response { status: AgentStatus::Rollbacked })
     }
 
     pub fn reboot(&self) -> Result<()> {
@@ -171,9 +149,11 @@ impl AgentImpl {
 
 #[cfg(test)]
 mod test {
-    use super::*;
-    use manager::api::Sysconfig;
     use std::collections::HashMap;
+
+    use manager::api::{CertsInfo, Sysconfig};
+
+    use super::*;
 
     #[test]
     fn configure_impl_tests() {
@@ -186,12 +166,7 @@ mod test {
             }],
         };
         let res = agent.configure_impl(req).unwrap();
-        assert_eq!(
-            res,
-            Response {
-                status: AgentStatus::Configured,
-            }
-        );
+        assert_eq!(res, Response { status: AgentStatus::Configured });
 
         let req = ConfigureRequest {
             configs: vec![Sysconfig {
@@ -217,6 +192,10 @@ mod test {
             check_sum: "xxx".into(),
             image_type: "xxx".into(),
             container_image: "xxx".into(),
+            image_url: "".to_string(),
+            flag_safe: false,
+            mtls: false,
+            certs: CertsInfo { ca_cert: "".to_string(), client_cert: "".to_string(), client_key: "".to_string() },
         };
         let res = agent.prepare_upgrade_impl(req);
         assert!(res.is_err());
