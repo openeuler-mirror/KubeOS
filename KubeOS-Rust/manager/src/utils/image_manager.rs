@@ -186,6 +186,7 @@ mod tests {
 
         let img_manager = UpgradeImageManager::new(
             PreparePath {
+                persist_path: "/tmp".into(),
                 update_path: tmp_dir.into(),
                 image_path: img_path.into(),
                 mount_path: "/tmp/update/mount".into(),

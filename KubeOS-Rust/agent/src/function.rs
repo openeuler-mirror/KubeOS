@@ -30,3 +30,26 @@ impl RpcFunction {
         })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_rpcfunction_call() {
+        // Define a mock function that returns a result
+        fn mock_ok_function() -> anyhow::Result<u32> {
+            Ok(42)
+        }
+        let result: RpcResult<u32> = RpcFunction::call(mock_ok_function);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), 42);
+
+        fn mock_err_function() -> anyhow::Result<u32> {
+            Err(anyhow::anyhow!("error"))
+        }
+        let result: RpcResult<u32> = RpcFunction::call(mock_err_function);
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err().code, ErrorCode::ServerError(RPC_OP_ERROR));
+    }
+}

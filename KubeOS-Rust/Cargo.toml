@@ -8,4 +8,5 @@ debug-assertions = false
 lto = true
 opt-level = 's'
 overflow-checks = false
+panic = "unwind"
 rpath = false

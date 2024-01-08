@@ -1,9 +1,9 @@
 use anyhow::Result;
-use log::{debug, info};
+use log::{debug, info, trace};
 
 use crate::{
     api::{ImageHandler, UpgradeRequest},
-    sys_mgmt::{IMAGE_PERMISSION, NEED_BYTES, PERSIST_DIR},
+    sys_mgmt::{IMAGE_PERMISSION, NEED_BYTES},
     utils::*,
 };
 
@@ -15,7 +15,7 @@ pub struct DockerImageHandler<T: CommandExecutor> {
 
 impl<T: CommandExecutor> ImageHandler<T> for DockerImageHandler<T> {
     fn download_image(&self, req: &UpgradeRequest) -> Result<UpgradeImageManager<T>> {
-        perpare_env(&self.paths, NEED_BYTES, PERSIST_DIR, IMAGE_PERMISSION)?;
+        perpare_env(&self.paths, NEED_BYTES, IMAGE_PERMISSION)?;
         self.get_image(req)?;
         self.get_rootfs_archive(req)?;
 
@@ -70,6 +70,7 @@ impl<T: CommandExecutor> DockerImageHandler<T> {
     }
 
     fn check_and_rm_container(&self) -> Result<()> {
+        trace!("Check and remove container {}", self.container_name);
         let docker_ps_cmd = format!("docker ps -a -f=name={} | awk 'NR==2' | awk '{{print $1}}'", self.container_name);
         let exist_id = self.executor.run_command_with_output("bash", &["-c", &docker_ps_cmd])?;
         if !exist_id.is_empty() {
@@ -85,6 +86,7 @@ mod tests {
     use mockall::mock;
 
     use super::*;
+    use crate::api::CertsInfo;
 
     mock! {
         pub CommandExec{}
@@ -126,6 +128,107 @@ mod tests {
 
         let result =
             DockerImageHandler::new(PreparePath::default(), "test".into(), mock_executor).check_and_rm_container();
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_get_image() {
+        init();
+        let mut mock_executor = MockCommandExec::new();
+        let image_name = "docker.io/library/busybox:latest";
+        let req = UpgradeRequest {
+            version: "KubeOS v2".to_string(),
+            image_type: "docker".to_string(),
+            container_image: image_name.to_string(),
+            check_sum: "22222".to_string(),
+            image_url: "".to_string(),
+            flag_safe: false,
+            mtls: false,
+            certs: CertsInfo { ca_cert: "".to_string(), client_cert: "".to_string(), client_key: "".to_string() },
+        };
+
+        // mock remove_image_if_exist
+        mock_executor
+            .expect_run_command()
+            .withf(|cmd, args| cmd == "docker" && args.contains(&"inspect")) // simplified with a closure
+            .times(1)
+            .returning(|_, _| Ok(()));
+        mock_executor
+            .expect_run_command()
+            .withf(|cmd, args| cmd == "docker" && args.contains(&"rmi")) // simplified with a closure
+            .times(1)
+            .returning(|_, _| Ok(()));
+        // mock pull_image
+        mock_executor
+            .expect_run_command()
+            .withf(|cmd, args| {
+                cmd == "docker" && args.contains(&"pull") && args.contains(&"docker.io/library/busybox:latest")
+            })
+            .times(1)
+            .returning(|_, _| Ok(()));
+        // mock get_oci_image_digest
+        let command_output2 = "[docker.io/library/busybox:latest@sha256:22222]";
+        mock_executor
+            .expect_run_command_with_output()
+            .withf(|cmd, args| cmd == "docker" && args.contains(&"inspect") && args.contains(&"{{.RepoDigests}}"))
+            .times(1)
+            .returning(|_, _| Ok(command_output2.to_string()));
+
+        let docker = DockerImageHandler::new(PreparePath::default(), "kubeos-temp".into(), mock_executor);
+        let result = docker.get_image(&req);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_get_rootfs_archive() {
+        init();
+        let mut mock_executor = MockCommandExec::new();
+        let image_name = "docker.io/library/busybox:latest";
+        let req = UpgradeRequest {
+            version: "KubeOS v2".to_string(),
+            image_type: "docker".to_string(),
+            container_image: image_name.to_string(),
+            check_sum: "22222".to_string(),
+            image_url: "".to_string(),
+            flag_safe: false,
+            mtls: false,
+            certs: CertsInfo { ca_cert: "".to_string(), client_cert: "".to_string(), client_key: "".to_string() },
+        };
+        // mock check_and_rm_container
+        mock_executor
+            .expect_run_command_with_output()
+            .withf(|cmd, args| {
+                cmd == "bash" && args.contains(&"docker ps -a -f=name=kubeos-temp | awk 'NR==2' | awk '{print $1}'")
+            }) // simplified with a closure
+            .times(1)
+            .returning(|_, _| Ok(String::new()));
+        // mock get_rootfs_archive
+        mock_executor
+            .expect_run_command_with_output()
+            .withf(|cmd, args| cmd == "docker" && args.contains(&"create")) // simplified with a closure
+            .times(1)
+            .returning(|_, _| Ok(String::from("1111")));
+        mock_executor
+            .expect_run_command()
+            .withf(|cmd, args| cmd == "docker" && args.contains(&"cp") && args.contains(&"1111:/os.tar"))
+            .times(1)
+            .returning(|_, _| Ok(()));
+        // mock check_and_rm_container
+        mock_executor
+            .expect_run_command_with_output()
+            .withf(|cmd, args| {
+                cmd == "bash" && args.contains(&"docker ps -a -f=name=kubeos-temp | awk 'NR==2' | awk '{print $1}'")
+            }) // simplified with a closure
+            .times(1)
+            .returning(|_, _| Ok(String::from("1111")));
+        mock_executor
+            .expect_run_command()
+            .withf(|cmd, args| cmd == "docker" && args.contains(&"rm") && args.contains(&"1111"))
+            .times(1)
+            .returning(|_, _| Ok(()));
+
+        let docker = DockerImageHandler::new(PreparePath::default(), "kubeos-temp".into(), mock_executor);
+        let result = docker.get_rootfs_archive(&req);
         assert!(result.is_ok());
     }
 }

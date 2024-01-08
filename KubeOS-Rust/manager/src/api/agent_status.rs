@@ -12,14 +12,6 @@
 
 use serde::{Deserialize, Serialize};
 
-const AGENT_STATUS_UNKNOWN: &str = "UNKNOWN";
-const AGENT_STATUS_NOT_APPLIED: &str = "NOT-APPLIED";
-const AGENT_STATUS_UPGRADEREADY: &str = "UPGRADE-READY";
-const AGENT_STATUS_UPGRADED: &str = "UPGRADED";
-const AGENT_STATUS_ROLLBACKED: &str = "ROLLBACKED";
-const AGENT_STATUS_CONFIGURED: &str = "CONFIGURED";
-const AGENT_STATUS_CLEANEDUP: &str = "CLEANEDUP";
-
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub enum AgentStatus {
     Unknown,
@@ -34,19 +26,5 @@ pub enum AgentStatus {
 impl Default for AgentStatus {
     fn default() -> Self {
         Self::Unknown
-    }
-}
-
-impl std::fmt::Display for AgentStatus {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(match self {
-            AgentStatus::Unknown => AGENT_STATUS_UNKNOWN,
-            AgentStatus::NotApplied => AGENT_STATUS_NOT_APPLIED,
-            AgentStatus::UpgradeReady => AGENT_STATUS_UPGRADEREADY,
-            AgentStatus::Upgraded => AGENT_STATUS_UPGRADED,
-            AgentStatus::Rollbacked => AGENT_STATUS_ROLLBACKED,
-            AgentStatus::Configured => AGENT_STATUS_CONFIGURED,
-            AgentStatus::CleanedUp => AGENT_STATUS_CLEANEDUP,
-        })
     }
 }
