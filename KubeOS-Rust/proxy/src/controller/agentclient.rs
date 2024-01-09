@@ -12,7 +12,6 @@
 
 use std::{collections::HashMap, path::Path};
 
-use agent_call::AgentCallClient;
 use agent_error::Error;
 use cli::{
     client::Client,
@@ -22,6 +21,13 @@ use cli::{
     },
 };
 use manager::api::{CertsInfo, ConfigureRequest, KeyInfo as AgentKeyInfo, Sysconfig as AgentSysconfig, UpgradeRequest};
+
+#[cfg(test)]
+use mockall::automock;
+#[cfg(test)]
+use mockall_double::double;
+#[cfg_attr(test, double)]
+use agent_call::AgentCallClient;
 
 pub struct UpgradeInfo {
     pub version: String,
@@ -45,6 +51,7 @@ pub struct KeyInfo {
     pub operation: String,
 }
 
+#[cfg_attr(test, automock)]
 pub trait AgentMethod {
     fn prepare_upgrade_method(&self, upgrade_info: UpgradeInfo, agent_call: AgentCallClient) -> Result<(), Error>;
     fn upgrade_method(&self, agent_call: AgentCallClient) -> Result<(), Error>;
@@ -54,9 +61,13 @@ pub trait AgentMethod {
 
 pub mod agent_call {
     use super::{Client, Error, RpcMethod};
+    #[cfg(test)]
+    use mockall::automock;
+    
     #[derive(Default)]
     pub struct AgentCallClient {}
-
+    
+    #[cfg_attr(test, automock)]
     impl AgentCallClient {
         pub fn call_agent<T: RpcMethod + 'static>(&self, client: &Client, method: T) -> Result<(), Error> {
             match method.call(client) {
