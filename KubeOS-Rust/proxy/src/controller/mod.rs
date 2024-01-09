@@ -12,6 +12,8 @@
 
 mod agentclient;
 mod apiclient;
+#[cfg(test)]
+mod apiserver_mock;
 mod controller;
 mod crd;
 mod drain;

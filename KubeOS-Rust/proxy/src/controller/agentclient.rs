@@ -12,7 +12,6 @@
 
 use std::{collections::HashMap, path::Path};
 
-use agent_call::AgentCallClient;
 use agent_error::Error;
 use cli::{
     client::Client,
@@ -23,11 +22,24 @@ use cli::{
 };
 use manager::api::{CertsInfo, ConfigureRequest, KeyInfo as AgentKeyInfo, Sysconfig as AgentSysconfig, UpgradeRequest};
 
+#[cfg_attr(test, double)]
+use agent_call::AgentCallClient;
+#[cfg(test)]
+use mockall::automock;
+#[cfg(test)]
+use mockall_double::double;
+
 pub struct UpgradeInfo {
     pub version: String,
     pub image_type: String,
     pub check_sum: String,
     pub container_image: String,
+    pub imageurl: String,
+    pub flagsafe: bool,
+    pub mtls: bool,
+    pub cacert: String,
+    pub clientcert: String,
+    pub clientkey: String,
 }
 
 pub struct ConfigInfo {
@@ -45,6 +57,7 @@ pub struct KeyInfo {
     pub operation: String,
 }
 
+#[cfg_attr(test, automock)]
 pub trait AgentMethod {
     fn prepare_upgrade_method(&self, upgrade_info: UpgradeInfo, agent_call: AgentCallClient) -> Result<(), Error>;
     fn upgrade_method(&self, agent_call: AgentCallClient) -> Result<(), Error>;
@@ -54,9 +67,13 @@ pub trait AgentMethod {
 
 pub mod agent_call {
     use super::{Client, Error, RpcMethod};
+    #[cfg(test)]
+    use mockall::automock;
+
     #[derive(Default)]
     pub struct AgentCallClient {}
 
+    #[cfg_attr(test, automock)]
     impl AgentCallClient {
         pub fn call_agent<T: RpcMethod + 'static>(&self, client: &Client, method: T) -> Result<(), Error> {
             match method.call(client) {
@@ -84,11 +101,14 @@ impl AgentMethod for AgentClient {
             image_type: upgrade_info.image_type,
             check_sum: upgrade_info.check_sum,
             container_image: upgrade_info.container_image,
-            // TODO: add image_url, flag_safe, mtls, certs
-            image_url: "".to_string(),
-            flag_safe: false,
-            mtls: false,
-            certs: CertsInfo { ca_cert: "".to_string(), client_cert: "".to_string(), client_key: "".to_string() },
+            image_url: upgrade_info.imageurl,
+            flag_safe: upgrade_info.flagsafe,
+            mtls: upgrade_info.mtls,
+            certs: CertsInfo {
+                ca_cert: upgrade_info.cacert,
+                client_cert: upgrade_info.clientcert,
+                client_key: upgrade_info.clientkey,
+            },
         };
         match agent_call.call_agent(&self.agent_client, PrepareUpgradeMethod::new(upgrade_request)) {
             Ok(_resp) => Ok(()),

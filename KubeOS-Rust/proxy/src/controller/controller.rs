@@ -23,8 +23,10 @@ use kube::{
 use log::{debug, error, info};
 use reconciler_error::Error;
 
+#[cfg_attr(test, double)]
+use super::agentclient::agent_call::AgentCallClient;
 use super::{
-    agentclient::{agent_call::AgentCallClient, AgentMethod, ConfigInfo, KeyInfo, Sysconfig, UpgradeInfo},
+    agentclient::{AgentMethod, ConfigInfo, KeyInfo, Sysconfig, UpgradeInfo},
     apiclient::ApplyApi,
     crd::{Configs, Content, OSInstance, OS},
     drain::drain_os,
@@ -34,6 +36,8 @@ use super::{
         REQUEUE_ERROR, REQUEUE_NORMAL,
     },
 };
+#[cfg(test)]
+use mockall_double::double;
 
 pub async fn reconcile(
     os: OS,
@@ -279,6 +283,12 @@ impl<T: ApplyApi, U: AgentMethod> ProxyController<T, U> {
                     image_type: os_cr.spec.imagetype.clone(),
                     check_sum: os_cr.spec.checksum.clone(),
                     container_image: os_cr.spec.containerimage.clone(),
+                    flagsafe: os_cr.spec.flagsafe.clone(),
+                    imageurl: os_cr.spec.imageurl.clone(),
+                    mtls: os_cr.spec.mtls.clone(),
+                    cacert: os_cr.spec.cacert.clone().unwrap_or_default(),
+                    clientcert: os_cr.spec.clientcert.clone().unwrap_or_default(),
+                    clientkey: os_cr.spec.clientkey.clone().unwrap_or_default(),
                 };
                 let agent_call_client = AgentCallClient::default();
                 match self.agent_client.prepare_upgrade_method(upgrade_info, agent_call_client) {
@@ -421,5 +431,123 @@ pub mod reconciler_error {
 
         #[error("Error when drain node, error reported: {}", value)]
         DrainNodeError { value: String },
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::{error_policy, reconcile, Context, OSInstance, ProxyController, OS};
+    use crate::controller::ControllerClient;
+    use crate::controller::{
+        agentclient::MockAgentMethod,
+        apiserver_mock::{timeout_after_5s, Testcases},
+    };
+    use std::env;
+
+    #[tokio::test]
+    async fn test_create_osinstance_with_no_upgrade_or_configuration() {
+        let (test_proxy_controller, fakeserver) = ProxyController::<ControllerClient, MockAgentMethod>::test();
+        env::set_var("NODE_NAME", "openeuler");
+        let os = OS::set_os_default();
+        let context = Context::new(test_proxy_controller);
+        let mocksrv =
+            fakeserver.run(Testcases::OSInstanceNotExist(OSInstance::set_osi_default("openeuler", "default")));
+        reconcile(os, context.clone()).await.expect("reconciler");
+        timeout_after_5s(mocksrv).await;
+    }
+    #[tokio::test]
+    async fn test_upgrade_normal() {
+        let (test_proxy_controller, fakeserver) = ProxyController::<ControllerClient, MockAgentMethod>::test();
+        env::set_var("NODE_NAME", "openeuler");
+        let os = OS::set_os_osversion_v2_upgradecon_v2();
+        let context = Context::new(test_proxy_controller);
+        let mocksrv = fakeserver.run(Testcases::UpgradeNormal(OSInstance::set_osi_nodestatus_upgrade_upgradecon_v2(
+            "openeuler",
+            "default",
+        )));
+        reconcile(os, context.clone()).await.expect("reconciler");
+        timeout_after_5s(mocksrv).await;
+    }
+
+    #[tokio::test]
+    async fn test_diff_osversion_opstype_config() {
+        let (test_proxy_controller, fakeserver) = ProxyController::<ControllerClient, MockAgentMethod>::test();
+        env::set_var("NODE_NAME", "openeuler");
+        let os = OS::set_os_osversion_v2_opstype_config();
+        let context = Context::new(test_proxy_controller);
+        let mocksrv = fakeserver.run(Testcases::UpgradeOSInstaceNodestatusConfig(
+            OSInstance::set_osi_nodestatus_upgrade_upgradecon_v2("openeuler", "default"),
+        ));
+        let res = reconcile(os, context.clone()).await;
+        timeout_after_5s(mocksrv).await;
+        assert!(res.is_err(), "upgrade fails due to opstype=config");
+        let err = res.unwrap_err();
+        assert!(err.to_string().contains("Expect OS Version is not same with Node OS Version, please upgrade first"));
+        error_policy(&err, context);
+    }
+
+    #[tokio::test]
+    async fn test_upgradeconfigs_version_mismatch() {
+        let (test_proxy_controller, fakeserver) = ProxyController::<ControllerClient, MockAgentMethod>::test();
+        env::set_var("NODE_NAME", "openeuler");
+        let os = OS::set_os_osversion_v2_upgradecon_v2();
+        let context = Context::new(test_proxy_controller);
+        let mocksrv = fakeserver.run(Testcases::UpgradeUpgradeconfigsVersionMismatch(
+            OSInstance::set_osi_nodestatus_upgrade("openeuler", "default"),
+        ));
+        reconcile(os, context.clone()).await.expect("reconciler");
+        timeout_after_5s(mocksrv).await;
+    }
+
+    #[tokio::test]
+    async fn test_upgrade_nodestatus_idle() {
+        let (test_proxy_controller, fakeserver) = ProxyController::<ControllerClient, MockAgentMethod>::test();
+        env::set_var("NODE_NAME", "openeuler");
+        let os = OS::set_os_osversion_v2_upgradecon_v2();
+        let context = Context::new(test_proxy_controller);
+        let mocksrv = fakeserver
+            .run(Testcases::UpgradeOSInstaceNodestatusIdle(OSInstance::set_osi_upgradecon_v2("openeuler", "default")));
+        reconcile(os, context.clone()).await.expect("reconciler");
+        timeout_after_5s(mocksrv).await;
+    }
+
+    #[tokio::test]
+    async fn test_config_normal() {
+        let (test_proxy_controller, fakeserver) = ProxyController::<ControllerClient, MockAgentMethod>::test();
+        env::set_var("NODE_NAME", "openeuler");
+        let os = OS::set_os_syscon_v2_opstype_config();
+        let context = Context::new(test_proxy_controller);
+        let mocksrv = fakeserver
+            .run(Testcases::ConfigNormal(OSInstance::set_osi_nodestatus_config_syscon_v2("openeuler", "default")));
+        reconcile(os, context.clone()).await.expect("reconciler");
+        timeout_after_5s(mocksrv).await;
+    }
+
+    #[tokio::test]
+    async fn test_sysconfig_version_mismatch_reassign() {
+        let (test_proxy_controller, fakeserver) = ProxyController::<ControllerClient, MockAgentMethod>::test();
+        env::set_var("NODE_NAME", "openeuler");
+        let os = OS::set_os_syscon_v2_opstype_config();
+        let context = Context::new(test_proxy_controller);
+        let mocksrv = fakeserver.run(Testcases::ConfigVersionMismatchReassign(OSInstance::set_osi_nodestatus_config(
+            "openeuler",
+            "default",
+        )));
+        reconcile(os, context.clone()).await.expect("reconciler");
+        timeout_after_5s(mocksrv).await;
+    }
+
+    #[tokio::test]
+    async fn test_sysconfig_version_mismatch_update() {
+        let (test_proxy_controller, fakeserver) = ProxyController::<ControllerClient, MockAgentMethod>::test();
+        env::set_var("NODE_NAME", "openeuler");
+        let os = OS::set_os_syscon_v2_opstype_config();
+        let context = Context::new(test_proxy_controller);
+        let mocksrv = fakeserver.run(Testcases::ConfigVersionMismatchUpdate(OSInstance::set_osi_nodestatus_upgrade(
+            "openeuler",
+            "default",
+        )));
+        reconcile(os, context.clone()).await.expect("reconciler");
+        timeout_after_5s(mocksrv).await;
     }
 }
