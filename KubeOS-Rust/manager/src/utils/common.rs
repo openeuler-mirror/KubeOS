@@ -25,18 +25,20 @@ use crate::sys_mgmt::{MOUNT_DIR, OS_IMAGE_NAME, PERSIST_DIR, ROOTFS_ARCHIVE, UPD
 
 #[derive(Clone)]
 pub struct PreparePath {
-    pub update_path: PathBuf, // update_path: /persist/KubeOS-Update
-    pub mount_path: PathBuf,  // mount_path: /persist/KubeOS-Update/kubeos-update
-    pub tar_path: PathBuf,    // tar_path: /persist/KubeOS-Update/os.tar
-    pub image_path: PathBuf,  // image_path: /persist/update.img
-    pub rootfs_file: String,  // rootfs_file: os.tar
+    pub persist_path: PathBuf, // persist_path: /persist
+    pub update_path: PathBuf,  // update_path: /persist/KubeOS-Update
+    pub mount_path: PathBuf,   // mount_path: /persist/KubeOS-Update/kubeos-update
+    pub tar_path: PathBuf,     // tar_path: /persist/KubeOS-Update/os.tar
+    pub image_path: PathBuf,   // image_path: /persist/update.img
+    pub rootfs_file: String,   // rootfs_file: os.tar
 }
 
 impl Default for PreparePath {
     fn default() -> Self {
-        let update_pathbuf = Path::new(PERSIST_DIR).join(UPDATE_DIR);
         let persist_dir = Path::new(PERSIST_DIR);
+        let update_pathbuf = persist_dir.join(UPDATE_DIR);
         Self {
+            persist_path: persist_dir.to_path_buf(),
             update_path: update_pathbuf.clone(),
             mount_path: update_pathbuf.join(MOUNT_DIR),
             tar_path: update_pathbuf.join(ROOTFS_ARCHIVE),
@@ -50,9 +52,9 @@ pub fn is_file_exist<P: AsRef<Path>>(path: P) -> bool {
     path.as_ref().exists()
 }
 
-pub fn perpare_env(prepare_path: &PreparePath, need_bytes: i64, persist_path: &str, permission: u32) -> Result<()> {
+pub fn perpare_env(prepare_path: &PreparePath, need_bytes: i64, permission: u32) -> Result<()> {
     info!("Prepare environment to upgrade");
-    check_disk_size(need_bytes, persist_path)?;
+    check_disk_size(need_bytes, &prepare_path.persist_path)?;
     clean_env(&prepare_path.update_path, &prepare_path.mount_path, &prepare_path.image_path)?;
     fs::DirBuilder::new().recursive(true).mode(permission).create(&prepare_path.mount_path)?;
     Ok(())
@@ -196,13 +198,14 @@ mod tests {
     fn test_prepare_env() {
         init();
         let paths = PreparePath {
+            persist_path: PathBuf::from("/tmp"),
             update_path: PathBuf::from("/tmp/test_prepare_env"),
             mount_path: PathBuf::from("/tmp/test_prepare_env/kubeos-update"),
             tar_path: PathBuf::from("/tmp/test_prepare_env/os.tar"),
             image_path: PathBuf::from("/tmp/test_prepare_env/update.img"),
             rootfs_file: "os.tar".to_string(),
         };
-        perpare_env(&paths, 1 * 1024 * 1024 * 1024, "/home", 0o700).unwrap();
+        perpare_env(&paths, 1 * 1024 * 1024 * 1024, 0o700).unwrap();
     }
 
     #[test]

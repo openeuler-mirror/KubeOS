@@ -17,7 +17,7 @@ use log::{debug, info};
 
 use crate::{
     api::{ImageHandler, UpgradeRequest},
-    sys_mgmt::{IMAGE_PERMISSION, NEED_BYTES, PERSIST_DIR},
+    sys_mgmt::{IMAGE_PERMISSION, NEED_BYTES},
     utils::*,
 };
 
@@ -30,7 +30,7 @@ const DEFAULT_NAMESPACE: &str = "k8s.io";
 
 impl<T: CommandExecutor> ImageHandler<T> for CtrImageHandler<T> {
     fn download_image(&self, req: &UpgradeRequest) -> Result<UpgradeImageManager<T>> {
-        perpare_env(&self.paths, NEED_BYTES, PERSIST_DIR, IMAGE_PERMISSION)?;
+        perpare_env(&self.paths, NEED_BYTES, IMAGE_PERMISSION)?;
         self.get_image(req)?;
         self.get_rootfs_archive(req, IMAGE_PERMISSION)?;
 
@@ -228,6 +228,7 @@ mod tests {
         let dst_path = dst_file.path().to_path_buf();
 
         let paths = PreparePath {
+            persist_path: "/tmp".into(),
             update_path: PathBuf::new(),
             image_path: PathBuf::new(),
             mount_path: src_dir.to_path_buf(),
