@@ -1,21 +1,26 @@
 use self::mock_error::Error;
+use super::{
+    agentclient::*,
+    crd::{Configs, OSInstanceStatus},
+    values::{NODE_STATUS_CONFIG, NODE_STATUS_UPGRADE},
+};
 use crate::controller::{
     apiclient::{ApplyApi, ControllerClient},
     crd::{OSInstance, OSInstanceSpec, OSSpec, OS},
-    values::{LABEL_OSINSTANCE, NODE_STATUS_IDLE,LABEL_UPGRADING},
+    values::{LABEL_OSINSTANCE, LABEL_UPGRADING, NODE_STATUS_IDLE},
     ProxyController,
-
 };
-use super::{agentclient::*, values::{NODE_STATUS_UPGRADE, NODE_STATUS_CONFIG}, crd::{Configs, OSInstanceStatus}};
 use anyhow::Result;
 use http::{Request, Response};
 use hyper::{body::to_bytes, Body};
-use kube::{api::ObjectMeta, core::{ObjectList, ListMeta}};
+use k8s_openapi::api::core::v1::Pod;
+use k8s_openapi::api::core::v1::{Node, NodeSpec, NodeStatus, NodeSystemInfo};
+use kube::{
+    api::ObjectMeta,
+    core::{ListMeta, ObjectList},
+};
 use kube::{Client, Resource, ResourceExt};
 use std::collections::BTreeMap;
-use k8s_openapi::api::core::v1::{Node, NodeStatus, NodeSystemInfo, NodeSpec};
-use k8s_openapi::api::core::v1::Pod;
-
 
 type ApiServerHandle = tower_test::mock::Handle<Request<Body>, Response<Body>>;
 pub struct ApiServerVerifier(ApiServerHandle);
@@ -43,95 +48,142 @@ impl ApiServerVerifier {
         tokio::spawn(async move {
             match cases {
                 Testcases::OSInstanceNotExist(osi) => {
-                    self.handler_osinstance_get_not_exist(osi.clone()).await.unwrap()
-                    .handler_osinstance_creation(osi.clone()).await.unwrap()
-                    .handler_osinstance_get_exist(osi.clone()).await.unwrap()
-                    .handler_node_get(osi).await
+                    self.handler_osinstance_get_not_exist(osi.clone())
+                        .await
+                        .unwrap()
+                        .handler_osinstance_creation(osi.clone())
+                        .await
+                        .unwrap()
+                        .handler_osinstance_get_exist(osi.clone())
+                        .await
+                        .unwrap()
+                        .handler_node_get(osi)
+                        .await
                 },
                 Testcases::UpgradeNormal(osi) => {
                     self.handler_osinstance_get_exist(osi.clone())
-                    .await.unwrap().handler_osinstance_get_exist(osi.clone())
-                    .await.unwrap().handler_node_get_with_label(osi.clone())
-                    .await.unwrap().handler_osinstance_patch_upgradeconfig_v2(osi.clone())
-                    .await.unwrap().handler_node_cordon(osi.clone())
-                    .await.unwrap().handler_node_pod_list_get(osi).await
+                        .await
+                        .unwrap()
+                        .handler_osinstance_get_exist(osi.clone())
+                        .await
+                        .unwrap()
+                        .handler_node_get_with_label(osi.clone())
+                        .await
+                        .unwrap()
+                        .handler_osinstance_patch_upgradeconfig_v2(osi.clone())
+                        .await
+                        .unwrap()
+                        .handler_node_cordon(osi.clone())
+                        .await
+                        .unwrap()
+                        .handler_node_pod_list_get(osi)
+                        .await
                 },
                 Testcases::UpgradeUpgradeconfigsVersionMismatch(osi) => {
                     self.handler_osinstance_get_exist(osi.clone())
-                    .await.unwrap().handler_osinstance_get_exist(osi.clone())
-                    .await.unwrap().handler_node_get_with_label(osi.clone())
-                    .await.unwrap().handler_node_update_delete_label(osi.clone())
-                    .await.unwrap().handler_node_uncordon(osi.clone())
-                    .await.unwrap().handler_osinstance_patch_nodestatus_idle(osi)
-                    .await
+                        .await
+                        .unwrap()
+                        .handler_osinstance_get_exist(osi.clone())
+                        .await
+                        .unwrap()
+                        .handler_node_get_with_label(osi.clone())
+                        .await
+                        .unwrap()
+                        .handler_node_update_delete_label(osi.clone())
+                        .await
+                        .unwrap()
+                        .handler_node_uncordon(osi.clone())
+                        .await
+                        .unwrap()
+                        .handler_osinstance_patch_nodestatus_idle(osi)
+                        .await
                 },
                 Testcases::UpgradeOSInstaceNodestatusConfig(osi) => {
                     self.handler_osinstance_get_exist(osi.clone())
-                    .await.unwrap().handler_osinstance_get_exist(osi.clone())
-                    .await.unwrap().handler_node_get_with_label(osi.clone())
-                    .await
+                        .await
+                        .unwrap()
+                        .handler_osinstance_get_exist(osi.clone())
+                        .await
+                        .unwrap()
+                        .handler_node_get_with_label(osi.clone())
+                        .await
                 },
                 Testcases::UpgradeOSInstaceNodestatusIdle(osi) => {
                     self.handler_osinstance_get_exist(osi.clone())
-                    .await.unwrap().handler_osinstance_get_exist(osi.clone())
-                    .await.unwrap().handler_node_get_with_label(osi.clone())
-                    .await.unwrap().handler_node_update_delete_label(osi.clone())
-                    .await.unwrap().handler_node_uncordon(osi)
-                    .await
+                        .await
+                        .unwrap()
+                        .handler_osinstance_get_exist(osi.clone())
+                        .await
+                        .unwrap()
+                        .handler_node_get_with_label(osi.clone())
+                        .await
+                        .unwrap()
+                        .handler_node_update_delete_label(osi.clone())
+                        .await
+                        .unwrap()
+                        .handler_node_uncordon(osi)
+                        .await
                 },
                 Testcases::ConfigNormal(osi) => {
                     self.handler_osinstance_get_exist(osi.clone())
-                    .await.unwrap().handler_osinstance_get_exist(osi.clone())
-                    .await.unwrap().handler_node_get(osi.clone())
-                    .await.unwrap().handler_osinstance_patch_sysconfig_v2(osi.clone())
-                    .await.unwrap().handler_osinstance_patch_nodestatus_idle(osi)
-                    .await
+                        .await
+                        .unwrap()
+                        .handler_osinstance_get_exist(osi.clone())
+                        .await
+                        .unwrap()
+                        .handler_node_get(osi.clone())
+                        .await
+                        .unwrap()
+                        .handler_osinstance_patch_sysconfig_v2(osi.clone())
+                        .await
+                        .unwrap()
+                        .handler_osinstance_patch_nodestatus_idle(osi)
+                        .await
                 },
                 Testcases::ConfigVersionMismatchReassign(osi) => {
                     self.handler_osinstance_get_exist(osi.clone())
-                    .await.unwrap().handler_osinstance_get_exist(osi.clone())
-                    .await.unwrap().handler_node_get(osi.clone())
-                    .await.unwrap().handler_osinstance_patch_nodestatus_idle(osi)
-                    .await
+                        .await
+                        .unwrap()
+                        .handler_osinstance_get_exist(osi.clone())
+                        .await
+                        .unwrap()
+                        .handler_node_get(osi.clone())
+                        .await
+                        .unwrap()
+                        .handler_osinstance_patch_nodestatus_idle(osi)
+                        .await
                 },
                 Testcases::ConfigVersionMismatchUpdate(osi) => {
                     self.handler_osinstance_get_exist(osi.clone())
-                    .await.unwrap().handler_osinstance_get_exist(osi.clone())
-                    .await.unwrap().handler_node_get(osi.clone())
-                    .await.unwrap().handler_osinstance_patch_spec_sysconfig_v2(osi)
-                    .await
+                        .await
+                        .unwrap()
+                        .handler_osinstance_get_exist(osi.clone())
+                        .await
+                        .unwrap()
+                        .handler_node_get(osi.clone())
+                        .await
+                        .unwrap()
+                        .handler_osinstance_patch_spec_sysconfig_v2(osi)
+                        .await
                 },
-
-
-
-        }.expect("Case completed without errors");
+            }
+            .expect("Case completed without errors");
         })
     }
 
-    async fn handler_osinstance_get_not_exist(
-        mut self,
-        osinstance: OSInstance,
-    ) -> Result<Self, Error> {
+    async fn handler_osinstance_get_not_exist(mut self, osinstance: OSInstance) -> Result<Self, Error> {
         let (request, send) = self.0.next_request().await.expect("service not called");
         assert_eq!(request.method(), http::Method::GET);
         assert_eq!(
             request.uri().to_string(),
-            format!(
-                "/apis/upgrade.openeuler.org/v1alpha1/namespaces/default/osinstances/{}",
-                osinstance.name()
-            )
+            format!("/apis/upgrade.openeuler.org/v1alpha1/namespaces/default/osinstances/{}", osinstance.name())
         );
         let response_json = serde_json::json!(
             { "status": "Failure", "message": "osinstances.upgrade.openeuler.org \"openeuler\" not found", "reason": "NotFound", "code": 404 }
         );
         dbg!("handler_osinstance_get_not_exist");
         let response = serde_json::to_vec(&response_json).unwrap();
-        send.send_response(
-            Response::builder()
-                .status(404)
-                .body(Body::from(response))
-                .unwrap(),
-        );
+        send.send_response(Response::builder().status(404).body(Body::from(response)).unwrap());
         Ok(self)
     }
     async fn handler_osinstance_get_exist(mut self, osinstance: OSInstance) -> Result<Self, Error> {
@@ -139,10 +191,7 @@ impl ApiServerVerifier {
         assert_eq!(request.method(), http::Method::GET);
         assert_eq!(
             request.uri().to_string(),
-            format!(
-                "/apis/upgrade.openeuler.org/v1alpha1/namespaces/default/osinstances/{}",
-                osinstance.name()
-            )
+            format!("/apis/upgrade.openeuler.org/v1alpha1/namespaces/default/osinstances/{}", osinstance.name())
         );
         dbg!("handler_osinstance_get_exist");
         let response = serde_json::to_vec(&osinstance).unwrap();
@@ -167,16 +216,15 @@ impl ApiServerVerifier {
         assert_eq!(request.method(), http::Method::PATCH);
         assert_eq!(
             request.uri().to_string(),
-            format!("/apis/upgrade.openeuler.org/v1alpha1/namespaces/default/osinstances/{}?",osinstance.name())
+            format!("/apis/upgrade.openeuler.org/v1alpha1/namespaces/default/osinstances/{}?", osinstance.name())
         );
 
         let req_body = to_bytes(request.into_body()).await.unwrap();
-        let body_json:serde_json::Value=
-            serde_json::from_slice(&req_body).expect("valid document from runtime");
+        let body_json: serde_json::Value = serde_json::from_slice(&req_body).expect("valid document from runtime");
         let spec_json = body_json.get("spec").expect("spec object").clone();
-        let spec:OSInstanceSpec = serde_json::from_value(spec_json).expect("valid spec");
+        let spec: OSInstanceSpec = serde_json::from_value(spec_json).expect("valid spec");
         assert_eq!(spec.nodestatus.clone(), NODE_STATUS_IDLE.to_string());
-        
+
         dbg!("handler_osinstance_patch_nodestatus_idle");
         osinstance.spec.nodestatus = NODE_STATUS_IDLE.to_string();
         let response = serde_json::to_vec(&osinstance).unwrap();
@@ -189,17 +237,21 @@ impl ApiServerVerifier {
         assert_eq!(request.method(), http::Method::PATCH);
         assert_eq!(
             request.uri().to_string(),
-            format!("/apis/upgrade.openeuler.org/v1alpha1/namespaces/default/osinstances/{}/status?",osinstance.name())
+            format!(
+                "/apis/upgrade.openeuler.org/v1alpha1/namespaces/default/osinstances/{}/status?",
+                osinstance.name()
+            )
         );
 
         let req_body = to_bytes(request.into_body()).await.unwrap();
-        let body_json:serde_json::Value=
-            serde_json::from_slice(&req_body).expect("valid document from runtime");
+        let body_json: serde_json::Value = serde_json::from_slice(&req_body).expect("valid document from runtime");
         let status_json = body_json.get("status").expect("status object").clone();
-        let status:OSInstanceStatus = serde_json::from_value(status_json).expect("valid status");
-        
-        assert_eq!(status.upgradeconfigs.expect("upgradeconfigs is not None").clone(), 
-        osinstance.spec.clone().upgradeconfigs.expect("upgradeconfig is not None"));
+        let status: OSInstanceStatus = serde_json::from_value(status_json).expect("valid status");
+
+        assert_eq!(
+            status.upgradeconfigs.expect("upgradeconfigs is not None").clone(),
+            osinstance.spec.clone().upgradeconfigs.expect("upgradeconfig is not None")
+        );
 
         osinstance.status.as_mut().unwrap().upgradeconfigs = osinstance.spec.upgradeconfigs.clone();
 
@@ -214,17 +266,21 @@ impl ApiServerVerifier {
         assert_eq!(request.method(), http::Method::PATCH);
         assert_eq!(
             request.uri().to_string(),
-            format!("/apis/upgrade.openeuler.org/v1alpha1/namespaces/default/osinstances/{}/status?",osinstance.name())
+            format!(
+                "/apis/upgrade.openeuler.org/v1alpha1/namespaces/default/osinstances/{}/status?",
+                osinstance.name()
+            )
         );
 
         let req_body = to_bytes(request.into_body()).await.unwrap();
-        let body_json:serde_json::Value=
-            serde_json::from_slice(&req_body).expect("valid osinstance");
+        let body_json: serde_json::Value = serde_json::from_slice(&req_body).expect("valid osinstance");
         let status_json = body_json.get("status").expect("status object").clone();
-        let status:OSInstanceStatus = serde_json::from_value(status_json).expect("valid status");
-        
-        assert_eq!(status.sysconfigs.expect("sysconfigs is not None").clone(), 
-        osinstance.spec.clone().sysconfigs.expect("sysconfig is not None"));
+        let status: OSInstanceStatus = serde_json::from_value(status_json).expect("valid status");
+
+        assert_eq!(
+            status.sysconfigs.expect("sysconfigs is not None").clone(),
+            osinstance.spec.clone().sysconfigs.expect("sysconfig is not None")
+        );
 
         osinstance.status.as_mut().unwrap().sysconfigs = osinstance.spec.sysconfigs.clone();
 
@@ -239,17 +295,18 @@ impl ApiServerVerifier {
         assert_eq!(request.method(), http::Method::PATCH);
         assert_eq!(
             request.uri().to_string(),
-            format!("/apis/upgrade.openeuler.org/v1alpha1/namespaces/default/osinstances/{}?",osinstance.name())
+            format!("/apis/upgrade.openeuler.org/v1alpha1/namespaces/default/osinstances/{}?", osinstance.name())
         );
 
         let req_body = to_bytes(request.into_body()).await.unwrap();
-        let body_json:serde_json::Value=
-            serde_json::from_slice(&req_body).expect("valid osinstance");
+        let body_json: serde_json::Value = serde_json::from_slice(&req_body).expect("valid osinstance");
         let spec_json = body_json.get("spec").expect("spec object").clone();
-        let spec:OSInstanceSpec = serde_json::from_value(spec_json).expect("valid spec");
-        
-        assert_eq!(spec.sysconfigs.expect("upgradeconfigs is not None").clone().version.clone().unwrap(), 
-        String::from("v2"));
+        let spec: OSInstanceSpec = serde_json::from_value(spec_json).expect("valid spec");
+
+        assert_eq!(
+            spec.sysconfigs.expect("upgradeconfigs is not None").clone().version.clone().unwrap(),
+            String::from("v2")
+        );
 
         osinstance.spec.sysconfigs.as_mut().unwrap().version = Some(String::from("v2"));
 
@@ -259,65 +316,44 @@ impl ApiServerVerifier {
         Ok(self)
     }
 
-
-    async fn handler_node_get(mut self,osinstance: OSInstance) -> Result<Self, Error>{
+    async fn handler_node_get(mut self, osinstance: OSInstance) -> Result<Self, Error> {
         // return node with name = openeuler, osimage = KubeOS v1，no upgrade label
         let (request, send) = self.0.next_request().await.expect("service not called");
         assert_eq!(request.method(), http::Method::GET);
-        assert_eq!(
-            request.uri().to_string(),
-            format!(
-                "/api/v1/nodes/{}",
-                osinstance.name()
-          )
-        );
-        let node = Node{
-            metadata:ObjectMeta { name:Some(String::from("openeuler")),
-                    ..Default::default()},
-            spec:None,
-            status:Some(NodeStatus{
-                node_info:Some(NodeSystemInfo{
-                    os_image: String::from("KubeOS v1"),
-                    ..Default::default()
-                }),
+        assert_eq!(request.uri().to_string(), format!("/api/v1/nodes/{}", osinstance.name()));
+        let node = Node {
+            metadata: ObjectMeta { name: Some(String::from("openeuler")), ..Default::default() },
+            spec: None,
+            status: Some(NodeStatus {
+                node_info: Some(NodeSystemInfo { os_image: String::from("KubeOS v1"), ..Default::default() }),
                 ..Default::default()
-            })
+            }),
         };
-        assert_eq!(node.name(),String::from("openeuler"));
-        assert_eq!(node.status.as_ref().unwrap().node_info.as_ref().unwrap().os_image,String::from("KubeOS v1"));
+        assert_eq!(node.name(), String::from("openeuler"));
+        assert_eq!(node.status.as_ref().unwrap().node_info.as_ref().unwrap().os_image, String::from("KubeOS v1"));
         dbg!("handler_node_get");
         let response = serde_json::to_vec(&node.clone()).unwrap();
         send.send_response(Response::builder().body(Body::from(response)).unwrap());
         Ok(self)
     }
 
-    async fn handler_node_get_with_label(mut self,osinstance: OSInstance) -> Result<Self, Error>{
+    async fn handler_node_get_with_label(mut self, osinstance: OSInstance) -> Result<Self, Error> {
         // return node with name = openeuler, osimage = KubeOS v1，has upgrade label
         let (request, send) = self.0.next_request().await.expect("service not called");
         assert_eq!(request.method(), http::Method::GET);
-        assert_eq!(
-            request.uri().to_string(),
-            format!(
-                "/api/v1/nodes/{}",
-                osinstance.name()
-          )
-        );
-        let mut node = Node{
-            metadata:ObjectMeta { name:Some(String::from("openeuler")),
-                    ..Default::default()},
-            spec:None,
-            status:Some(NodeStatus{
-                node_info:Some(NodeSystemInfo{
-                    os_image: String::from("KubeOS v1"),
-                    ..Default::default()
-                }),
+        assert_eq!(request.uri().to_string(), format!("/api/v1/nodes/{}", osinstance.name()));
+        let mut node = Node {
+            metadata: ObjectMeta { name: Some(String::from("openeuler")), ..Default::default() },
+            spec: None,
+            status: Some(NodeStatus {
+                node_info: Some(NodeSystemInfo { os_image: String::from("KubeOS v1"), ..Default::default() }),
                 ..Default::default()
-            })
+            }),
         };
         let node_labels = node.labels_mut();
         node_labels.insert(LABEL_UPGRADING.to_string(), "".to_string());
-        assert_eq!(node.name(),String::from("openeuler"));
-        assert_eq!(node.status.as_ref().unwrap().node_info.as_ref().unwrap().os_image,String::from("KubeOS v1"));
+        assert_eq!(node.name(), String::from("openeuler"));
+        assert_eq!(node.status.as_ref().unwrap().node_info.as_ref().unwrap().os_image, String::from("KubeOS v1"));
         assert!(node.labels().contains_key(LABEL_UPGRADING));
         dbg!("handler_node_get_with_label");
         let response = serde_json::to_vec(&node.clone()).unwrap();
@@ -325,32 +361,19 @@ impl ApiServerVerifier {
         Ok(self)
     }
 
-    async fn handler_node_update_delete_label(mut self,osinstance: OSInstance) -> Result<Self, Error>{
+    async fn handler_node_update_delete_label(mut self, osinstance: OSInstance) -> Result<Self, Error> {
         // return node with name = openeuler, osimage = KubeOS v1，no upgrade label
         let (request, send) = self.0.next_request().await.expect("service not called");
         assert_eq!(request.method(), http::Method::PUT);
-        assert_eq!(
-            request.uri().to_string(),
-            format!(
-                "/api/v1/nodes/{}?",
-                osinstance.name()
-          )
-        );
+        assert_eq!(request.uri().to_string(), format!("/api/v1/nodes/{}?", osinstance.name()));
         // check request body has upgrade label
-        let node = Node{
-            metadata:ObjectMeta { name:Some(String::from("openeuler")),
-                    ..Default::default()},
-            spec:Some(NodeSpec{
-                unschedulable:Some(true),
+        let node = Node {
+            metadata: ObjectMeta { name: Some(String::from("openeuler")), ..Default::default() },
+            spec: Some(NodeSpec { unschedulable: Some(true), ..Default::default() }),
+            status: Some(NodeStatus {
+                node_info: Some(NodeSystemInfo { os_image: String::from("KubeOS v1"), ..Default::default() }),
                 ..Default::default()
             }),
-            status:Some(NodeStatus{
-                node_info:Some(NodeSystemInfo{
-                    os_image: String::from("KubeOS v1"),
-                    ..Default::default()
-                }),
-                ..Default::default()
-            })
         };
         dbg!("handler_node_update_delete_label");
         let response = serde_json::to_vec(&node.clone()).unwrap();
@@ -358,31 +381,18 @@ impl ApiServerVerifier {
         Ok(self)
     }
 
-    async fn handler_node_cordon(mut self,osinstance: OSInstance) -> Result<Self, Error>{
+    async fn handler_node_cordon(mut self, osinstance: OSInstance) -> Result<Self, Error> {
         let (request, send) = self.0.next_request().await.expect("service not called");
         assert_eq!(request.method(), http::Method::PATCH);
-        assert_eq!(
-            request.uri().to_string(),
-            format!(
-                "/api/v1/nodes/{}?",
-                osinstance.name()
-          )
-        );
-        assert_eq!(request.extensions().get(),Some(&"cordon"));
-        let node = Node{
-            metadata:ObjectMeta { name:Some(String::from("openeuler")),
-                    ..Default::default()},
-            spec:Some(NodeSpec{
-                unschedulable:Some(true),
+        assert_eq!(request.uri().to_string(), format!("/api/v1/nodes/{}?", osinstance.name()));
+        assert_eq!(request.extensions().get(), Some(&"cordon"));
+        let node = Node {
+            metadata: ObjectMeta { name: Some(String::from("openeuler")), ..Default::default() },
+            spec: Some(NodeSpec { unschedulable: Some(true), ..Default::default() }),
+            status: Some(NodeStatus {
+                node_info: Some(NodeSystemInfo { os_image: String::from("KubeOS v1"), ..Default::default() }),
                 ..Default::default()
             }),
-            status:Some(NodeStatus{
-                node_info:Some(NodeSystemInfo{
-                    os_image: String::from("KubeOS v1"),
-                    ..Default::default()
-                }),
-                ..Default::default()
-            })
         };
         dbg!("handler_node_cordon");
         let response = serde_json::to_vec(&node.clone()).unwrap();
@@ -390,31 +400,18 @@ impl ApiServerVerifier {
         Ok(self)
     }
 
-    async fn handler_node_uncordon(mut self,osinstance: OSInstance) -> Result<Self, Error>{
+    async fn handler_node_uncordon(mut self, osinstance: OSInstance) -> Result<Self, Error> {
         let (request, send) = self.0.next_request().await.expect("service not called");
         assert_eq!(request.method(), http::Method::PATCH);
-        assert_eq!(
-            request.uri().to_string(),
-            format!(
-                "/api/v1/nodes/{}?",
-                osinstance.name()
-          )
-        );
-        assert_eq!(request.extensions().get(),Some(&"cordon"));
-        let node = Node{
-            metadata:ObjectMeta { name:Some(String::from("openeuler")),
-                    ..Default::default()},
-            spec:Some(NodeSpec{
-                unschedulable:Some(false),
+        assert_eq!(request.uri().to_string(), format!("/api/v1/nodes/{}?", osinstance.name()));
+        assert_eq!(request.extensions().get(), Some(&"cordon"));
+        let node = Node {
+            metadata: ObjectMeta { name: Some(String::from("openeuler")), ..Default::default() },
+            spec: Some(NodeSpec { unschedulable: Some(false), ..Default::default() }),
+            status: Some(NodeStatus {
+                node_info: Some(NodeSystemInfo { os_image: String::from("KubeOS v1"), ..Default::default() }),
                 ..Default::default()
             }),
-            status:Some(NodeStatus{
-                node_info:Some(NodeSystemInfo{
-                    os_image: String::from("KubeOS v1"),
-                    ..Default::default()
-                }),
-                ..Default::default()
-            })
         };
         dbg!("handler_node_uncordon");
         let response = serde_json::to_vec(&node.clone()).unwrap();
@@ -422,21 +419,15 @@ impl ApiServerVerifier {
         Ok(self)
     }
 
-    async fn handler_node_pod_list_get(mut self,osinstance: OSInstance) -> Result<Self, Error>{
+    async fn handler_node_pod_list_get(mut self, osinstance: OSInstance) -> Result<Self, Error> {
         let (request, send) = self.0.next_request().await.expect("service not called");
         assert_eq!(request.method(), http::Method::GET);
         assert_eq!(
             request.uri().to_string(),
-            format!(
-                "/api/v1/pods?&fieldSelector=spec.nodeName%3D{}",
-                osinstance.name()
-          )
+            format!("/api/v1/pods?&fieldSelector=spec.nodeName%3D{}", osinstance.name())
         );
-        assert_eq!(request.extensions().get(),Some(&"list"));
-        let pods_list = ObjectList::<Pod>{
-            metadata:ListMeta::default(),
-            items:vec![]
-        };
+        assert_eq!(request.extensions().get(), Some(&"list"));
+        let pods_list = ObjectList::<Pod> { metadata: ListMeta::default(), items: vec![] };
         dbg!("handler_node_pod_list_get");
         let response = serde_json::to_vec(&pods_list).unwrap();
         send.send_response(Response::builder().body(Body::from(response)).unwrap());
@@ -456,16 +447,16 @@ pub mod mock_error {
     }
 }
 
-impl<T: ApplyApi,U:AgentMethod> ProxyController<T,U> {
-    pub fn test() -> (ProxyController<impl ApplyApi,impl AgentMethod>, ApiServerVerifier) {
+impl<T: ApplyApi, U: AgentMethod> ProxyController<T, U> {
+    pub fn test() -> (ProxyController<impl ApplyApi, impl AgentMethod>, ApiServerVerifier) {
         let (mock_service, handle) = tower_test::mock::pair::<Request<Body>, Response<Body>>();
         let mock_k8s_client = Client::new(mock_service, "default");
         let mock_api_client = ControllerClient::new(mock_k8s_client.clone());
-        let mut mock_agent_client: MockAgentMethod  = MockAgentMethod::new();
+        let mut mock_agent_client: MockAgentMethod = MockAgentMethod::new();
         mock_agent_client.expect_rollback_method().returning(|_x| Ok(()));
-        mock_agent_client.expect_prepare_upgrade_method().returning(|_x,_y| Ok(()));
+        mock_agent_client.expect_prepare_upgrade_method().returning(|_x, _y| Ok(()));
         mock_agent_client.expect_upgrade_method().returning(|_x| Ok(()));
-        mock_agent_client.expect_configure_method().returning(|_x,_y| Ok(()));
+        mock_agent_client.expect_configure_method().returning(|_x, _y| Ok(()));
         let proxy_controller: ProxyController<ControllerClient, MockAgentMethod> =
             ProxyController::new(mock_k8s_client, mock_api_client, mock_agent_client);
         (proxy_controller, ApiServerVerifier(handle))
@@ -486,52 +477,40 @@ impl OSInstance {
             },
             spec: OSInstanceSpec {
                 nodestatus: NODE_STATUS_IDLE.to_string(),
-                sysconfigs: Some(Configs{
-                    version: Some(String::from("v1")),
-                    configs: None
-                }),
-                upgradeconfigs: Some(Configs{
-                    version: Some(String::from("v1")),
-                    configs: None
-                }),
+                sysconfigs: Some(Configs { version: Some(String::from("v1")), configs: None }),
+                upgradeconfigs: Some(Configs { version: Some(String::from("v1")), configs: None }),
             },
-            status: Some(OSInstanceStatus{
-                sysconfigs: Some(Configs{
-                    version: Some(String::from("v1")),
-                    configs: None
-                }),
-                upgradeconfigs: Some(Configs{
-                    version: Some(String::from("v1")),
-                    configs: None
-                }),
+            status: Some(OSInstanceStatus {
+                sysconfigs: Some(Configs { version: Some(String::from("v1")), configs: None }),
+                upgradeconfigs: Some(Configs { version: Some(String::from("v1")), configs: None }),
             }),
         }
     }
 
     pub fn set_osi_nodestatus_upgrade(node_name: &str, namespace: &str) -> Self {
         // return osinstance with nodestatus = upgrade, upgradeconfig.version=v1, sysconfig.version=v1
-        let mut osinstance  = OSInstance::set_osi_default(node_name, namespace);
+        let mut osinstance = OSInstance::set_osi_default(node_name, namespace);
         osinstance.spec.nodestatus = NODE_STATUS_UPGRADE.to_string();
         osinstance
     }
 
     pub fn set_osi_nodestatus_config(node_name: &str, namespace: &str) -> Self {
         // return osinstance with nodestatus = upgrade, upgradeconfig.version=v1, sysconfig.version=v1
-        let mut osinstance  = OSInstance::set_osi_default(node_name, namespace);
+        let mut osinstance = OSInstance::set_osi_default(node_name, namespace);
         osinstance.spec.nodestatus = NODE_STATUS_CONFIG.to_string();
         osinstance
     }
 
     pub fn set_osi_upgradecon_v2(node_name: &str, namespace: &str) -> Self {
         // return osinstance with nodestatus = idle, upgradeconfig.version=v1, sysconfig.version=v1
-        let mut osinstance  = OSInstance::set_osi_default(node_name, namespace);
+        let mut osinstance = OSInstance::set_osi_default(node_name, namespace);
         osinstance.spec.upgradeconfigs.as_mut().unwrap().version = Some(String::from("v2"));
         osinstance
     }
 
     pub fn set_osi_nodestatus_upgrade_upgradecon_v2(node_name: &str, namespace: &str) -> Self {
         // return osinstance with nodestatus = upgrade, upgradeconfig.version=v2, sysconfig.version=v1
-        let mut osinstance  = OSInstance::set_osi_default(node_name, namespace);
+        let mut osinstance = OSInstance::set_osi_default(node_name, namespace);
         osinstance.spec.nodestatus = NODE_STATUS_UPGRADE.to_string();
         osinstance.spec.upgradeconfigs.as_mut().unwrap().version = Some(String::from("v2"));
         osinstance
@@ -539,13 +518,12 @@ impl OSInstance {
 
     pub fn set_osi_nodestatus_config_syscon_v2(node_name: &str, namespace: &str) -> Self {
         // return osinstance with nodestatus = upgrade, upgradeconfig.version=v2, sysconfig.version=v1
-        let mut osinstance  = OSInstance::set_osi_default(node_name, namespace);
+        let mut osinstance = OSInstance::set_osi_default(node_name, namespace);
         osinstance.spec.nodestatus = NODE_STATUS_CONFIG.to_string();
         osinstance.spec.sysconfigs.as_mut().unwrap().version = Some(String::from("v2"));
         osinstance
     }
 }
-
 
 impl OS {
     pub fn set_os_default() -> Self {
@@ -564,44 +542,36 @@ impl OS {
     pub fn set_os_osversion_v2_upgradecon_v2() -> Self {
         let mut os = OS::set_os_default();
         os.spec.osversion = String::from("KubeOS v2");
-        os.spec.upgradeconfigs = Some(Configs{
-            version: Some(String::from("v2")),
-            configs: None
-        });
+        os.spec.upgradeconfigs = Some(Configs { version: Some(String::from("v2")), configs: None });
         os
     }
 
-    pub fn set_os_syscon_v2_opstype_config()-> Self {
+    pub fn set_os_syscon_v2_opstype_config() -> Self {
         let mut os = OS::set_os_default();
         os.spec.opstype = String::from("config");
-        os.spec.sysconfigs = Some(Configs{
-            version: Some(String::from("v2")),
-            configs: None
-        });
+        os.spec.sysconfigs = Some(Configs { version: Some(String::from("v2")), configs: None });
         os
     }
-
 }
 
-impl Default for OSSpec{
+impl Default for OSSpec {
     fn default() -> Self {
-        OSSpec { 
-            osversion: String::from("KubeOS v1"), 
-            maxunavailable: 2, 
-            checksum: String::from("test"), 
-            imagetype: String::from("containerd"), 
+        OSSpec {
+            osversion: String::from("KubeOS v1"),
+            maxunavailable: 2,
+            checksum: String::from("test"),
+            imagetype: String::from("containerd"),
             containerimage: String::from("test"),
-            opstype: String::from("upgrade"), 
-            evictpodforce: true, 
-            sysconfigs: Some(Configs{
-                version: Some(String::from("v1")),
-                configs: None
-            }), 
-            upgradeconfigs: Some(Configs{
-                version: Some(String::from("v1")),
-                configs: None
-            })
+            opstype: String::from("upgrade"),
+            evictpodforce: true,
+            imageurl: String::from(""),
+            flagsafe: false,
+            mtls: false,
+            cacert: Some(String::from("")),
+            clientcert: Some(String::from("")),
+            clientkey: Some(String::from("")),
+            sysconfigs: Some(Configs { version: Some(String::from("v1")), configs: None }),
+            upgradeconfigs: Some(Configs { version: Some(String::from("v1")), configs: None }),
         }
     }
 }
-

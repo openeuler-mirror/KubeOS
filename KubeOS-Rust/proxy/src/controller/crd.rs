@@ -23,6 +23,13 @@ pub struct OSSpec {
     pub containerimage: String,
     pub opstype: String,
     pub evictpodforce: bool,
+    pub imageurl: String,
+    #[serde(rename = "flagSafe")]
+    pub flagsafe: bool,
+    pub mtls: bool,
+    pub cacert: Option<String>,
+    pub clientcert: Option<String>,
+    pub clientkey: Option<String>,
     pub sysconfigs: Option<Configs>,
     pub upgradeconfigs: Option<Configs>,
 }
