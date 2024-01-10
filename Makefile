@@ -46,7 +46,9 @@ GO_BUILD_CGO = CGO_ENABLED=1 \
 	CGO_LDFLAGS="-Wl,-z,relro,-z,now -Wl,-z,noexecstack" \
 	${GO_BUILD} -buildmode=pie -trimpath -tags "seccomp selinux static_build cgo netgo osusergo"
 
-all: proxy operator agent hostshell
+RUSTFLAGS := RUSTFLAGS="-C relocation_model=pic -D warnings -W unsafe_code -W rust_2021_incompatible_closure_captures -C link-arg=-s"
+
+all: proxy operator agent hostshell rust-kubeos
 
 # Build binary
 proxy:
@@ -64,6 +66,15 @@ agent:
 hostshell:
 	${GO_BUILD_CGO} ${LD_FLAGS} -o bin/hostshell cmd/admin-container/main.go
 	strip bin/hostshell
+
+rust-kubeos:
+	cd KubeOS-Rust && ${RUSTFLAGS} cargo build --profile release --target-dir ../bin/rust
+
+rust-proxy:
+	cd KubeOS-Rust && ${RUSTFLAGS} cargo build --profile release --target-dir ../bin/rust --package proxy
+
+rust-agent:
+	cd KubeOS-Rust && ${RUSTFLAGS} cargo build --profile release --target-dir ../bin/rust --package os-agent
 
 # Install CRDs into a cluster
 install: manifests
