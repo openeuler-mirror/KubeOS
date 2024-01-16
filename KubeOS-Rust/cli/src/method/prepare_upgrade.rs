@@ -39,3 +39,40 @@ impl RpcMethod for PrepareUpgradeMethod {
         vec![to_raw_value(&self.req).unwrap()]
     }
 }
+#[cfg(test)]
+mod tests {
+    use kubeos_manager::api::{CertsInfo, UpgradeRequest};
+
+    use super::*;
+
+    #[test]
+    fn test_prepare_upgrade_method() {
+        let req = UpgradeRequest {
+            version: "v1".into(),
+            check_sum: "".into(),
+            image_type: "".into(),
+            container_image: "".into(),
+            image_url: "".to_string(),
+            flag_safe: false,
+            mtls: false,
+            certs: CertsInfo { ca_cert: "".to_string(), client_cert: "".to_string(), client_key: "".to_string() },
+        };
+        let mut method = PrepareUpgradeMethod::new(req);
+        let new_req = UpgradeRequest {
+            version: "v2".into(),
+            check_sum: "xxx".into(),
+            image_type: "xxx".into(),
+            container_image: "xxx".into(),
+            image_url: "".to_string(),
+            flag_safe: false,
+            mtls: false,
+            certs: CertsInfo { ca_cert: "".to_string(), client_cert: "".to_string(), client_key: "".to_string() },
+        };
+        method.set_prepare_upgrade_request(new_req);
+        assert_eq!(method.command_name(), "prepare_upgrade");
+
+        let expected_params = "RawValue({\"version\":\"v2\",\"check_sum\":\"xxx\",\"image_type\":\"xxx\",\"container_image\":\"xxx\",\"image_url\":\"\",\"flag_safe\":false,\"mtls\":false,\"certs\":{\"ca_cert\":\"\",\"client_cert\":\"\",\"client_key\":\"\"}})";
+        let actual_params = format!("{:?}", method.command_params()[0]);
+        assert_eq!(actual_params, expected_params);
+    }
+}

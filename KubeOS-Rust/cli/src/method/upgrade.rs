@@ -27,3 +27,16 @@ impl RpcMethod for UpgradeMethod {
         vec![]
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn test_upgrade_method() {
+        let method = UpgradeMethod::default();
+        assert_eq!(method.command_name(), "upgrade");
+        let expected_params = "[]";
+        let actual_params = format!("{:?}", method.command_params());
+        assert_eq!(actual_params, expected_params);
+    }
+}

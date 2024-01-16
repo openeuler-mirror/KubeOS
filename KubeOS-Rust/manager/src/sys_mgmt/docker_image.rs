@@ -33,7 +33,7 @@ impl Default for DockerImageHandler<RealCommandExecutor> {
 
 impl<T: CommandExecutor> DockerImageHandler<T> {
     #[cfg(test)]
-    fn new(paths: PreparePath, container_name: String, executor: T) -> Self {
+    pub fn new(paths: PreparePath, container_name: String, executor: T) -> Self {
         Self { paths, container_name, executor }
     }
 
@@ -129,6 +129,8 @@ mod tests {
         let result =
             DockerImageHandler::new(PreparePath::default(), "test".into(), mock_executor).check_and_rm_container();
         assert!(result.is_ok());
+
+        assert_eq!(DockerImageHandler::default().container_name, "kubeos-temp");
     }
 
     #[test]

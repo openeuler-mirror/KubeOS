@@ -39,3 +39,34 @@ impl RpcMethod for ConfigureMethod {
         vec![to_raw_value(&self.req).unwrap()]
     }
 }
+#[cfg(test)]
+mod tests {
+    use kubeos_manager::api::{ConfigureRequest, Sysconfig};
+
+    use super::*;
+
+    #[test]
+    fn test_configure_method() {
+        let req = ConfigureRequest { configs: vec![] };
+        let mut method = ConfigureMethod::new(req);
+
+        // Test set_configure_request method
+        let new_req = ConfigureRequest {
+            configs: vec![Sysconfig {
+                model: "model".to_string(),
+                config_path: "config_path".to_string(),
+                contents: Default::default(),
+            }],
+        };
+        method.set_configure_request(new_req);
+
+        // Test command_name method
+        assert_eq!(method.command_name(), "configure");
+
+        // Test command_params method
+        let expected_params =
+            "RawValue({\"configs\":[{\"model\":\"model\",\"config_path\":\"config_path\",\"contents\":{}}]})";
+        let actual_params = format!("{:?}", method.command_params()[0]);
+        assert_eq!(actual_params, expected_params);
+    }
+}

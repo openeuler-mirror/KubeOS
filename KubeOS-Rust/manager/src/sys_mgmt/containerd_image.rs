@@ -48,7 +48,7 @@ impl Default for CtrImageHandler<RealCommandExecutor> {
 
 impl<T: CommandExecutor> CtrImageHandler<T> {
     #[cfg(test)]
-    fn new(paths: PreparePath, executor: T) -> Self {
+    pub fn new(paths: PreparePath, executor: T) -> Self {
         Self { paths, executor }
     }
 
@@ -300,25 +300,5 @@ mod tests {
         let result = CtrImageHandler::new(PreparePath::default(), mock_executor).check_and_unmount("test_mount_path");
 
         assert!(result.is_ok());
-    }
-
-    #[test]
-    #[ignore]
-    fn test_download_image() {
-        init();
-        let ctr = CtrImageHandler { paths: PreparePath::default(), executor: RealCommandExecutor {} };
-        let update_req = UpgradeRequest {
-            version: "KubeOS v2".to_string(),
-            image_type: "containerd".to_string(),
-            container_image: "docker.io/library/busybox:latest".to_string(),
-            check_sum: "".to_string(),
-            image_url: "".to_string(),
-            flag_safe: false,
-            mtls: false,
-            certs: CertsInfo { ca_cert: "".to_string(), client_cert: "".to_string(), client_key: "".to_string() },
-        };
-        ctr.download_image(&update_req).unwrap();
-        let tar_path = "/persist/KubeOS-Update/os.tar";
-        assert_eq!(true, Path::new(tar_path).exists());
     }
 }

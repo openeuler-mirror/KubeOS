@@ -197,12 +197,24 @@ mod tests {
         let out1 = get_oci_image_digest(container_runtime, image_name, &mock).unwrap();
         let expect_output = "1111";
         assert_eq!(out1, expect_output);
+        mock.expect_run_command_with_output().times(1).returning(|_, _| Ok("invalid output".to_string()));
+        let out2 = get_oci_image_digest(container_runtime, image_name, &mock);
+        assert!(out2.is_err());
 
         let container_runtime = "crictl";
         let command_output2 = "[docker.io/nginx@sha256:1111]";
         mock.expect_run_command_with_output().times(1).returning(|_, _| Ok(command_output2.to_string()));
-        let out2 = get_oci_image_digest(container_runtime, image_name, &mock).unwrap();
-        assert_eq!(out2, expect_output);
+        let out3 = get_oci_image_digest(container_runtime, image_name, &mock).unwrap();
+        assert_eq!(out3, expect_output);
+
+        let out4 = get_oci_image_digest("invalid", image_name, &mock);
+        assert!(out4.is_err());
+
+        let container_runtime = "crictl";
+        let command_output3 = "[docker.io/nginx:sha256:1111]";
+        mock.expect_run_command_with_output().times(1).returning(|_, _| Ok(command_output3.to_string()));
+        let out5 = get_oci_image_digest(container_runtime, image_name, &mock);
+        assert!(out5.is_err());
     }
 
     #[test]
@@ -211,11 +223,13 @@ mod tests {
         let mut mock = MockCommandExec::new();
         let image_name = "docker.io/nginx:latest";
         let container_runtime = "crictl";
-        let command_output = "[docker.io/nginx@sha256:1111]";
-        let check_sum = "1111";
-        mock.expect_run_command_with_output().times(1).returning(|_, _| Ok(command_output.to_string()));
+        let command_output = "[docker.io/nginx@sha256:1a2b]";
+        let check_sum = "1A2B";
+        mock.expect_run_command_with_output().times(2).returning(|_, _| Ok(command_output.to_string()));
         let result = check_oci_image_digest(container_runtime, image_name, check_sum, &mock);
         assert!(result.is_ok());
+        let result = check_oci_image_digest(container_runtime, image_name, "1111", &mock);
+        assert!(result.is_err());
     }
 
     #[test]
@@ -250,5 +264,27 @@ mod tests {
         assert!(result.is_ok());
         let result = pull_image("aaa", image_name, &mock_executor);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_remove_image_if_exist() {
+        init();
+        let mut mock_executor = MockCommandExec::new();
+        mock_executor
+            .expect_run_command_with_output()
+            .withf(|cmd, args| cmd == "ctr" && args.contains(&"check")) // simplified with a closure
+            .times(1)
+            .returning(|_, _| Ok(String::from("something")));
+        mock_executor
+            .expect_run_command()
+            .withf(|cmd, args| cmd == "ctr" && args.contains(&"rm")) // simplified with a closure
+            .times(1)
+            .returning(|_, _| Ok(()));
+        let image_name = "docker.io/nginx:latest";
+        let res = remove_image_if_exist("ctr", image_name, &mock_executor);
+        assert!(res.is_ok());
+
+        let res = remove_image_if_exist("invalid", image_name, &mock_executor);
+        assert!(res.is_err());
     }
 }
