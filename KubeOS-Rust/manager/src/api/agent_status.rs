@@ -12,19 +12,10 @@
 
 use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
 pub enum AgentStatus {
-    Unknown,
-    NotApplied,
     UpgradeReady,
     Upgraded,
     Rollbacked,
     Configured,
-    CleanedUp,
-}
-
-impl Default for AgentStatus {
-    fn default() -> Self {
-        Self::Unknown
-    }
 }

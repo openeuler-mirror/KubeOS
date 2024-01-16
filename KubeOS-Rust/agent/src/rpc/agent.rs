@@ -22,9 +22,6 @@ pub trait Agent {
     #[rpc(name = "upgrade")]
     fn upgrade(&self) -> RpcResult<Response>;
 
-    #[rpc(name = "cleanup")]
-    fn cleanup(&self) -> RpcResult<Response>;
-
     #[rpc(name = "configure")]
     fn configure(&self, req: ConfigureRequest) -> RpcResult<Response>;
 

@@ -17,7 +17,7 @@ use log::{debug, error, info};
 use manager::{
     api::{AgentStatus, ConfigureRequest, ImageType, Response, UpgradeRequest},
     sys_mgmt::{CtrImageHandler, DiskImageHandler, DockerImageHandler, CONFIG_TEMPLATE, DEFAULT_GRUBENV_PATH},
-    utils::{clean_env, get_partition_info, switch_boot_menuentry, PreparePath, RealCommandExecutor},
+    utils::{get_partition_info, switch_boot_menuentry, RealCommandExecutor},
 };
 use nix::{sys::reboot::RebootMode, unistd::sync};
 
@@ -38,10 +38,6 @@ impl Agent for AgentImpl {
 
     fn upgrade(&self) -> RpcResult<Response> {
         RpcFunction::call(|| self.upgrade_impl())
-    }
-
-    fn cleanup(&self) -> RpcResult<Response> {
-        RpcFunction::call(|| self.cleanup_impl())
     }
 
     fn configure(&self, req: ConfigureRequest) -> RpcResult<Response> {
@@ -92,14 +88,6 @@ impl AgentImpl {
         info!("Switch to boot partition: {}, device: {}", menuentry, device);
         self.reboot()?;
         Ok(Response { status: AgentStatus::Upgraded })
-    }
-
-    pub fn cleanup_impl(&self) -> Result<Response> {
-        let _lock = self.mutex.lock().unwrap();
-        info!("Start to cleanup");
-        let paths = PreparePath::default();
-        clean_env(paths.update_path, paths.mount_path, paths.image_path)?;
-        Ok(Response { status: AgentStatus::CleanedUp })
     }
 
     pub fn configure_impl(&self, mut req: ConfigureRequest) -> Result<Response> {
