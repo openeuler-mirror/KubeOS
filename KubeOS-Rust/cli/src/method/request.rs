@@ -36,13 +36,12 @@ pub fn parse_error(error: Error) -> anyhow::Error {
             debug!("Json parse error: {:?}", e);
             anyhow!("Failed to parse response")
         },
-        Error::Rpc(ref e) => match e.message == "Method not found" {
-            true => {
+        Error::Rpc(ref e) => {
+            if e.message == "Method not found" {
                 anyhow!("Method is unimplemented")
-            },
-            false => {
+            } else {
                 anyhow!("{}", e.message)
-            },
+            }
         },
         _ => {
             debug!("{:?}", error);
