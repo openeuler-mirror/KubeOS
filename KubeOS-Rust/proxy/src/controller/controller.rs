@@ -13,6 +13,7 @@
 use std::{collections::HashMap, env};
 
 use anyhow::Result;
+use drain::drain_os;
 use k8s_openapi::api::core::v1::Node;
 use kube::{
     api::{Api, PostParams},
@@ -29,7 +30,6 @@ use super::{
     agentclient::{AgentMethod, ConfigInfo, KeyInfo, Sysconfig, UpgradeInfo},
     apiclient::ApplyApi,
     crd::{Configs, Content, OSInstance, OS},
-    drain::drain_os,
     utils::{check_version, get_config_version, ConfigOperation, ConfigType},
     values::{
         LABEL_UPGRADING, NODE_STATUS_CONFIG, NODE_STATUS_IDLE, OPERATION_TYPE_ROLLBACK, OPERATION_TYPE_UPGRADE,
@@ -340,7 +340,7 @@ impl<T: ApplyApi, U: AgentMethod> ProxyController<T, U> {
     }
 
     async fn drain_node(&self, node_name: &str, force: bool) -> Result<(), Error> {
-        use crate::controller::drain::error::DrainError::*;
+        use drain::error::DrainError::*;
         match drain_os(&self.k8s_client.clone(), node_name, force).await {
             Err(DeletePodsError { errors, .. }) => Err(Error::DrainNodeError { value: errors.join("; ") }),
             _ => Ok(()),

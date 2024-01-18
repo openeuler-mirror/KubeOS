@@ -16,7 +16,6 @@ mod apiclient;
 mod apiserver_mock;
 mod controller;
 mod crd;
-mod drain;
 mod utils;
 mod values;
 
