@@ -189,7 +189,7 @@ dependencies = [
 
 [[package]]
 name = "cli"
-version = "0.1.0"
+version = "1.0.5"
 dependencies = [
  "anyhow",
  "jsonrpc",
@@ -1092,7 +1092,7 @@ dependencies = [
 
 [[package]]
 name = "manager"
-version = "0.1.0"
+version = "1.0.5"
 dependencies = [
  "anyhow",
  "env_logger",
@@ -1335,7 +1335,7 @@ dependencies = [
 
 [[package]]
 name = "os-agent"
-version = "0.1.0"
+version = "1.0.5"
 dependencies = [
  "anyhow",
  "env_logger",
@@ -1498,7 +1498,7 @@ dependencies = [
 
 [[package]]
 name = "proxy"
-version = "0.1.0"
+version = "1.0.5"
 dependencies = [
  "anyhow",
  "assert-json-diff",
