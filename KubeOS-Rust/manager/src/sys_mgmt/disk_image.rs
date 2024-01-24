@@ -72,13 +72,14 @@ impl<T: CommandExecutor> DiskImageHandler<T> {
 
     fn checksum_match(&self, file_path: &str, check_sum: &str) -> Result<()> {
         trace!("Start to check checksum");
+        let check_sum = check_sum.to_ascii_lowercase();
         let file = fs::read(file_path)?;
         let mut hasher = Sha256::new();
         hasher.update(file);
         let hash = hasher.finalize();
         // sha256sum -b /persist/update.img
-        let cal_sum = format!("{:X}", hash);
-        if cal_sum.to_lowercase() != check_sum.to_lowercase() {
+        let cal_sum = format!("{:X}", hash).to_ascii_lowercase();
+        if cal_sum != check_sum {
             delete_file_or_dir(file_path)?;
             bail!("Checksum {} mismatch to {}", cal_sum, check_sum);
         }
@@ -302,7 +303,7 @@ mod tests {
         handler.paths.image_path = tmp_file.path().to_path_buf();
         let mut req = UpgradeRequest {
             version: "v2".into(),
-            check_sum: "98ea7aff44631d183e6df3488f1107357d7503e11e5f146effdbfd11810cd4a2".into(),
+            check_sum: "98Ea7aff44631D183e6df3488f1107357d7503e11e5f146effdbfd11810cd4a2".into(),
             image_type: "disk".into(),
             container_image: "".into(),
             image_url: "http://localhost:8080/aaa.txt".to_string(),
@@ -313,7 +314,7 @@ mod tests {
         assert_eq!(handler.paths.image_path.exists(), true);
         handler.checksum_match(handler.paths.image_path.to_str().unwrap(), &req.check_sum).unwrap();
 
-        req.check_sum = "1234567890".into();
+        req.check_sum = "1234567Abc".into();
         let res = handler.checksum_match(handler.paths.image_path.to_str().unwrap(), &req.check_sum);
         assert!(res.is_err());
     }
