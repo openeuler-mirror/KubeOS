@@ -42,16 +42,16 @@ impl<T: CommandExecutor> DockerImageHandler<T> {
         is_valid_image_name(image_name)?;
         let cli = "docker";
         remove_image_if_exist(cli, image_name, &self.executor)?;
-        info!("Start pull image {}", image_name);
+        info!("Start pulling image {}", image_name);
         pull_image(cli, image_name, &self.executor)?;
-        info!("Start check image digest");
+        info!("Start checking image digest");
         check_oci_image_digest(cli, image_name, &req.check_sum, &self.executor)?;
         Ok(())
     }
 
     fn get_rootfs_archive(&self, req: &UpgradeRequest) -> Result<()> {
         let image_name = &req.container_image;
-        info!("Start get rootfs {}", image_name);
+        info!("Start getting rootfs {}", image_name);
         self.check_and_rm_container()?;
         debug!("Create container {}", self.container_name);
         let container_id =

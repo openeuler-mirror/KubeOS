@@ -71,7 +71,7 @@ impl<T: CommandExecutor> DiskImageHandler<T> {
     }
 
     fn checksum_match(&self, file_path: &str, check_sum: &str) -> Result<()> {
-        trace!("Start to check checksum");
+        info!("Start checking image checksum");
         let check_sum = check_sum.to_ascii_lowercase();
         let file = fs::read(file_path)?;
         let mut hasher = Sha256::new();

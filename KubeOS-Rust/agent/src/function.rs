@@ -25,7 +25,8 @@ impl RpcFunction {
         F: FnOnce() -> anyhow::Result<T>,
     {
         (f)().map_err(|e| {
-            error!("{:?}", e);
+            let error_message = format!("{:#}", e);
+            error!("{}", error_message.replace('\n', " ").replace('\r', ""));
             Error { code: ErrorCode::ServerError(RPC_OP_ERROR), message: format!("{:?}", e), data: None }
         })
     }

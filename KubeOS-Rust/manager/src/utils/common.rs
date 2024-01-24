@@ -79,7 +79,6 @@ pub fn check_disk_size<P: AsRef<Path>>(need_bytes: i64, path: P) -> Result<()> {
     if available_space < need_bytes {
         bail!("Space is not enough for downloading");
     }
-    info!("There is enough disk space to upgrade");
     Ok(())
 }
 
@@ -88,9 +87,8 @@ pub fn clean_env<P>(update_path: P, mount_path: P, image_path: P) -> Result<()>
 where
     P: AsRef<Path>,
 {
-    info!("Clean up the residual upgrade environment");
     if is_mounted(&mount_path)? {
-        debug!("Umount {}", mount_path.as_ref().display());
+        debug!("Umount \"{}\"", mount_path.as_ref().display());
         if let Err(errno) = mount::umount2(mount_path.as_ref(), MntFlags::MNT_FORCE) {
             bail!("Failed to umount {} in clean_env: {}", mount_path.as_ref().display(), errno);
         }
@@ -104,10 +102,10 @@ where
 pub fn delete_file_or_dir<P: AsRef<Path>>(path: P) -> Result<()> {
     if is_file_exist(&path) {
         if fs::metadata(&path)?.is_file() {
-            debug!("Delete file {}", path.as_ref().display());
+            info!("Delete file \"{}\"", path.as_ref().display());
             fs::remove_file(&path)?;
         } else {
-            debug!("Delete directory {}", path.as_ref().display());
+            info!("Delete directory \"{}\"", path.as_ref().display());
             fs::remove_dir_all(&path)?;
         }
     }

@@ -28,8 +28,9 @@ impl CommandExecutor for RealCommandExecutor {
         trace!("run_command: {} {:?}", name, args);
         let output = Command::new(name).args(args).output()?;
         if !output.status.success() {
+            let stdout = String::from_utf8_lossy(&output.stdout);
             let error_message = String::from_utf8_lossy(&output.stderr);
-            bail!("Failed to run command: {} {:?}, stderr: {}", name, args, error_message);
+            bail!("Failed to run command: {} {:?}, stdout: \"{}\", stderr: \"{}\"", name, args, stdout, error_message);
         }
         debug!("run_command: {} {:?} done", name, args);
         Ok(())
@@ -38,11 +39,11 @@ impl CommandExecutor for RealCommandExecutor {
     fn run_command_with_output<'a>(&self, name: &'a str, args: &[&'a str]) -> Result<String> {
         trace!("run_command_with_output: {} {:?}", name, args);
         let output = Command::new(name).args(args).output()?;
+        let stdout = String::from_utf8_lossy(&output.stdout).to_string();
         if !output.status.success() {
             let error_message = String::from_utf8_lossy(&output.stderr);
-            bail!("Failed to run command: {} {:?}, stderr: {}", name, args, error_message);
+            bail!("Failed to run command: {} {:?}, stdout: \"{}\", stderr: \"{}\"", name, args, stdout, error_message);
         }
-        let stdout = String::from_utf8_lossy(&output.stdout).to_string();
         debug!("run_command_with_output: {} {:?} done", name, args);
         Ok(stdout.trim_end_matches('\n').to_string())
     }

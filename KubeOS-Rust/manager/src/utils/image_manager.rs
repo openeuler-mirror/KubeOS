@@ -89,7 +89,7 @@ impl<T: CommandExecutor> UpgradeImageManager<T> {
         self.format_image()?;
         self.mount_image()?;
         self.extract_tar_to_image()?;
-        // Pass empty image_path to clean_env to avoid delete image file
+        // Pass empty image_path to clean_env but avoid deleting the upgrade image
         clean_env(&self.paths.update_path, &self.paths.mount_path, &PathBuf::new())?;
         Ok(self)
     }
