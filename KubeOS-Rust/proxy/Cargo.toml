@@ -6,6 +6,13 @@ name = "proxy"
 version = "0.1.0"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[lib]
+name = "drain"
+path = "src/drain.rs"
+
+[[bin]]
+name = "proxy"
+path = "src/main.rs"
 
 [dependencies]
 anyhow = "1.0.44"

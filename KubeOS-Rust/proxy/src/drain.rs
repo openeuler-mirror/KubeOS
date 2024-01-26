@@ -29,10 +29,14 @@ use self::error::{
     DrainError::{DeletePodsError, GetPodListsError, WaitDeletionError},
     EvictionError::{EvictionErrorNoRetry, EvictionErrorRetry},
 };
-use super::values::{
-    EVERY_DELETION_CHECK, EVERY_EVICTION_RETRY, MAX_EVICT_POD_NUM, MAX_RETRIES_TIMES, RETRY_BASE_DELAY,
-    RETRY_MAX_DELAY, TIMEOUT,
-};
+
+pub const MAX_EVICT_POD_NUM: usize = 5;
+pub const EVERY_EVICTION_RETRY: Duration = Duration::from_secs(5);
+pub const EVERY_DELETION_CHECK: Duration = Duration::from_secs(5);
+pub const TIMEOUT: Duration = Duration::from_secs(u64::MAX);
+pub const RETRY_BASE_DELAY: Duration = Duration::from_millis(100);
+pub const RETRY_MAX_DELAY: Duration = Duration::from_secs(20);
+pub const MAX_RETRIES_TIMES: usize = 10;
 
 pub async fn drain_os(client: &Client, node_name: &str, force: bool) -> Result<(), error::DrainError> {
     let pods_list = get_pods_deleted(client, node_name, force).await?;
