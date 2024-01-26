@@ -11,7 +11,6 @@
  */
 
 pub mod callable_method;
-pub mod cleanup;
 pub mod configure;
 pub mod prepare_upgrade;
 pub mod request;

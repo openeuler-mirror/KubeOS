@@ -186,7 +186,7 @@ fn handle_delete_key(config_kv: &Vec<&str>, new_config_info: &KeyInfo) -> String
         return config_kv.join("=");
     }
     info!("Delete configuration {}={}", key, old_value);
-    String::from("")
+    String::new()
 }
 
 fn handle_update_key(config_kv: &Vec<&str>, new_config_info: &KeyInfo) -> String {
@@ -413,11 +413,20 @@ mod tests {
         let mut tmp_file = tempfile::NamedTempFile::new().unwrap();
         writeln!(tmp_file, "{}", comment).unwrap();
         writeln!(tmp_file, "a=0").unwrap();
+        writeln!(tmp_file, "d=4").unwrap();
+        writeln!(tmp_file, "e=5").unwrap();
+        writeln!(tmp_file, "g=7").unwrap();
         let kernel_sysctl_persist = KernelSysctlPersist {};
         let config_detail = HashMap::from([
             ("a".to_string(), KeyInfo { value: "1".to_string(), operation: "".to_string() }),
             ("b".to_string(), KeyInfo { value: "2".to_string(), operation: "delete".to_string() }),
             ("c".to_string(), KeyInfo { value: "3".to_string(), operation: "add".to_string() }),
+            ("d".to_string(), KeyInfo { value: "".to_string(), operation: "".to_string() }),
+            ("e".to_string(), KeyInfo { value: "".to_string(), operation: "delete".to_string() }),
+            ("f".to_string(), KeyInfo { value: "".to_string(), operation: "add".to_string() }),
+            ("g".to_string(), KeyInfo { value: "7".to_string(), operation: "delete".to_string() }),
+            ("".to_string(), KeyInfo { value: "8".to_string(), operation: "".to_string() }),
+            ("s=x".to_string(), KeyInfo { value: "8".to_string(), operation: "".to_string() }),
         ]);
         let mut config = Sysconfig {
             model: KERNEL_SYSCTL_PERSIST.to_string(),
@@ -426,33 +435,16 @@ mod tests {
         };
         kernel_sysctl_persist.set_config(&mut config).unwrap();
         let result = fs::read_to_string(tmp_file.path().to_str().unwrap()).unwrap();
-        let expected_res = format!("{}\n{}\n{}\n", comment, "a=1", "c=3");
+        let expected_res = format!("{}\n{}\n{}\n{}\n{}\n", comment, "a=1", "d=4", "e=5", "c=3");
         assert_eq!(result, expected_res);
-
-        // test config_path is empty
-        // remember modify DEFAULT_KERNEL_CONFIG_PATH first
-        // let config_detail = HashMap::from([
-        //     (
-        //         "aaa".to_string(),
-        //         KeyInfo {
-        //             value: "3".to_string(),
-        //             operation: "add".to_string(),
-        //         },
-        //     ),
-        //     (
-        //         "bbb".to_string(),
-        //         KeyInfo {
-        //             value: "1".to_string(),
-        //             operation: "delete".to_string(),
-        //         },
-        //     ),
-        // ]);
-        // config.config_path = "".to_string();
-        // config.contents = config_detail;
-        // kernel_sysctl_persist.set_config(&mut config).unwrap();
-        // let result = fs::read_to_string(crate::sys_mgmt::DEFAULT_KERNEL_CONFIG_PATH).unwrap();
-        // let expected_res = format!("{}\n", "aaa=3",);
-        // assert_eq!(result, expected_res);
+        let mut config = Sysconfig {
+            model: KERNEL_SYSCTL_PERSIST.to_string(),
+            config_path: String::from("/tmp/kubeos-test-kernel-sysctl-persist.txt"),
+            contents: HashMap::new(),
+        };
+        kernel_sysctl_persist.set_config(&mut config).unwrap();
+        assert!(is_file_exist(&config.config_path));
+        delete_file_or_dir(&config.config_path).unwrap();
     }
 
     #[test]
@@ -492,7 +484,7 @@ menuentry 'B' --class KubeOS --class gnu-linux --class gnu --class os --unrestri
         initrd  /boot/initramfs.img
 }";
         writeln!(tmp_file, "{}", grub_cfg).unwrap();
-        let config_first_part = HashMap::from([
+        let config_second_part = HashMap::from([
             ("debug".to_string(), KeyInfo { value: "".to_string(), operation: "".to_string() }),
             ("quiet".to_string(), KeyInfo { value: "".to_string(), operation: "delete".to_string() }),
             ("panic".to_string(), KeyInfo { value: "5".to_string(), operation: "".to_string() }),
@@ -506,15 +498,16 @@ menuentry 'B' --class KubeOS --class gnu-linux --class gnu --class os --unrestri
         let mut config = Sysconfig {
             model: GRUB_CMDLINE_CURRENT.to_string(),
             config_path: String::new(),
-            contents: config_first_part,
+            contents: config_second_part,
         };
         grub_cmdline.set_config(&mut config).unwrap();
         grub_cmdline.is_cur_partition = false;
-        let config_second = HashMap::from([
+        let config_first_part = HashMap::from([
             ("pci".to_string(), KeyInfo { value: "nomis".to_string(), operation: "".to_string() }),
-            ("panic".to_string(), KeyInfo { value: "5".to_string(), operation: "".to_string() }),
+            ("quiet".to_string(), KeyInfo { value: "11".to_string(), operation: "delete".to_string() }),
+            ("panic".to_string(), KeyInfo { value: "5".to_string(), operation: "update".to_string() }),
         ]);
-        config.contents = config_second;
+        config.contents = config_first_part;
         config.model = GRUB_CMDLINE_NEXT.to_string();
         grub_cmdline.set_config(&mut config).unwrap();
         let result = fs::read_to_string(tmp_file.path().to_str().unwrap()).unwrap();
@@ -540,6 +533,11 @@ menuentry 'B' --class KubeOS --class gnu-linux --class gnu --class os --unrestri
 }
 ";
         assert_eq!(result, expected_res);
+
+        // test grub.cfg not exist
+        grub_cmdline.grub_path = "/tmp/grub-KubeOS-test.cfg".to_string();
+        let res = grub_cmdline.set_config(&mut config);
+        assert!(res.is_err());
     }
 
     #[test]

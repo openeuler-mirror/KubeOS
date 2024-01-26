@@ -80,3 +80,61 @@ impl<T: CommandExecutor> ImageType<T> {
 pub trait ImageHandler<T: CommandExecutor> {
     fn download_image(&self, req: &UpgradeRequest) -> anyhow::Result<UpgradeImageManager<T>>;
 }
+
+#[cfg(test)]
+mod tests {
+    use anyhow::Result;
+    use mockall::mock;
+
+    use super::*;
+    use crate::utils::PreparePath;
+
+    mock! {
+        pub CommandExec{}
+        impl CommandExecutor for CommandExec {
+            fn run_command<'a>(&self, name: &'a str, args: &[&'a str]) -> Result<()>;
+            fn run_command_with_output<'a>(&self, name: &'a str, args: &[&'a str]) -> Result<String>;
+        }
+        impl Clone for CommandExec {
+            fn clone(&self) -> Self;
+        }
+    }
+
+    #[test]
+    fn test_download_image() {
+        let req = UpgradeRequest {
+            version: "KubeOS v2".to_string(),
+            image_type: "containerd".to_string(),
+            container_image: "kubeos-temp".to_string(),
+            check_sum: "22222".to_string(),
+            image_url: "".to_string(),
+            flag_safe: false,
+            mtls: false,
+            certs: CertsInfo { ca_cert: "".to_string(), client_cert: "".to_string(), client_key: "".to_string() },
+        };
+
+        let mut mock_executor1 = MockCommandExec::new();
+        mock_executor1.expect_run_command().returning(|_, _| Ok(()));
+        mock_executor1.expect_run_command_with_output().returning(|_, _| Ok(String::new()));
+        let c_handler = CtrImageHandler::new(PreparePath::default(), mock_executor1);
+        let image_type = ImageType::Containerd(c_handler);
+        let result = image_type.download_image(&req);
+        assert!(result.is_err());
+
+        let mut mock_executor2 = MockCommandExec::new();
+        mock_executor2.expect_run_command().returning(|_, _| Ok(()));
+        mock_executor2.expect_run_command_with_output().returning(|_, _| Ok(String::new()));
+        let docker_handler = DockerImageHandler::new(PreparePath::default(), "test".into(), mock_executor2);
+        let image_type = ImageType::Docker(docker_handler);
+        let result = image_type.download_image(&req);
+        assert!(result.is_err());
+
+        let mut mock_executor3 = MockCommandExec::new();
+        mock_executor3.expect_run_command().returning(|_, _| Ok(()));
+        mock_executor3.expect_run_command_with_output().returning(|_, _| Ok(String::new()));
+        let disk_handler = DiskImageHandler::new(PreparePath::default(), mock_executor3, "test".into());
+        let image_type = ImageType::Disk(disk_handler);
+        let result = image_type.download_image(&req);
+        assert!(result.is_err());
+    }
+}

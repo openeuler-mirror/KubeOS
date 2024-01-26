@@ -13,11 +13,11 @@
 use std::{sync::Mutex, thread, time::Duration};
 
 use anyhow::{bail, Result};
-use log::{debug, error, info};
+use log::{debug, info};
 use manager::{
     api::{AgentStatus, ConfigureRequest, ImageType, Response, UpgradeRequest},
     sys_mgmt::{CtrImageHandler, DiskImageHandler, DockerImageHandler, CONFIG_TEMPLATE, DEFAULT_GRUBENV_PATH},
-    utils::{clean_env, get_partition_info, switch_boot_menuentry, PreparePath, RealCommandExecutor},
+    utils::{get_partition_info, switch_boot_menuentry, RealCommandExecutor},
 };
 use nix::{sys::reboot::RebootMode, unistd::sync};
 
@@ -38,10 +38,6 @@ impl Agent for AgentImpl {
 
     fn upgrade(&self) -> RpcResult<Response> {
         RpcFunction::call(|| self.upgrade_impl())
-    }
-
-    fn cleanup(&self) -> RpcResult<Response> {
-        RpcFunction::call(|| self.cleanup_impl())
     }
 
     fn configure(&self, req: ConfigureRequest) -> RpcResult<Response> {
@@ -94,14 +90,6 @@ impl AgentImpl {
         Ok(Response { status: AgentStatus::Upgraded })
     }
 
-    pub fn cleanup_impl(&self) -> Result<Response> {
-        let _lock = self.mutex.lock().unwrap();
-        info!("Start to cleanup");
-        let paths = PreparePath::default();
-        clean_env(paths.update_path, paths.mount_path, paths.image_path)?;
-        Ok(Response { status: AgentStatus::CleanedUp })
-    }
-
     pub fn configure_impl(&self, mut req: ConfigureRequest) -> Result<Response> {
         let _lock = self.mutex.lock().unwrap();
         debug!("Received a 'configure' request: {:?}", req);
@@ -113,7 +101,6 @@ impl AgentImpl {
                 debug!("Found configuration type: \"{}\"", config_type);
                 configuration.set_config(config)?;
             } else {
-                error!("Unknown configuration type: \"{}\"", config_type);
                 bail!("Unknown configuration type: \"{}\"", config_type);
             }
         }
@@ -135,7 +122,7 @@ impl AgentImpl {
         Ok(Response { status: AgentStatus::Rollbacked })
     }
 
-    pub fn reboot(&self) -> Result<()> {
+    fn reboot(&self) -> Result<()> {
         info!("Wait to reboot");
         thread::sleep(Duration::from_secs(1));
         sync();
@@ -156,7 +143,15 @@ mod test {
     use super::*;
 
     #[test]
-    fn configure_impl_tests() {
+    fn test_reboot() {
+        let mut agent = AgentImpl::default();
+        agent.disable_reboot = true;
+        let res = agent.reboot();
+        assert!(res.is_ok());
+    }
+
+    #[test]
+    fn test_configure() {
         let agent = AgentImpl::default();
         let req = ConfigureRequest {
             configs: vec![Sysconfig {
@@ -165,7 +160,7 @@ mod test {
                 contents: HashMap::new(),
             }],
         };
-        let res = agent.configure_impl(req).unwrap();
+        let res = agent.configure(req).unwrap();
         assert_eq!(res, Response { status: AgentStatus::Configured });
 
         let req = ConfigureRequest {
@@ -175,17 +170,12 @@ mod test {
                 contents: HashMap::new(),
             }],
         };
-        let res = agent.configure_impl(req);
+        let res = agent.configure(req);
         assert!(res.is_err());
     }
 
     #[test]
-    fn upgrade_impl_tests() {
-        let _ = env_logger::builder()
-            .target(env_logger::Target::Stdout)
-            .filter_level(log::LevelFilter::Trace)
-            .is_test(true)
-            .try_init();
+    fn test_prepare_upgrade() {
         let agent = AgentImpl::default();
         let req = UpgradeRequest {
             version: "v2".into(),
@@ -197,7 +187,7 @@ mod test {
             mtls: false,
             certs: CertsInfo { ca_cert: "".to_string(), client_cert: "".to_string(), client_key: "".to_string() },
         };
-        let res = agent.prepare_upgrade_impl(req);
+        let res = agent.prepare_upgrade(req);
         assert!(res.is_err());
     }
 }

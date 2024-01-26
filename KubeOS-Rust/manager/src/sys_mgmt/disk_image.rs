@@ -41,7 +41,7 @@ impl Default for DiskImageHandler<RealCommandExecutor> {
 
 impl<T: CommandExecutor> DiskImageHandler<T> {
     #[cfg(test)]
-    fn new(paths: PreparePath, executor: T, certs_path: String) -> Self {
+    pub fn new(paths: PreparePath, executor: T, certs_path: String) -> Self {
         Self { paths, executor, certs_path }
     }
 
@@ -392,11 +392,14 @@ mod tests {
             .with_body("This is a test txt file for KubeOS test.\n")
             .create();
         handler.download_image(&upgrade_request).unwrap();
-
         assert_eq!(true, handler.paths.image_path.exists());
         assert_eq!(
             fs::read(handler.paths.image_path.to_str().unwrap()).unwrap(),
             "This is a test txt file for KubeOS test.\n".as_bytes()
         );
+
+        let _m = mockito::mock("GET", "/test.txt").with_status(404).with_body("Not found").create();
+        let res = handler.download_image(&upgrade_request);
+        assert!(res.is_err())
     }
 }

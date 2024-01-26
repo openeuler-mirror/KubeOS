@@ -24,3 +24,31 @@ pub trait RpcMethod {
         response.result().map_err(parse_error)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::client;
+
+    #[derive(Default)]
+    struct DummyMethod;
+
+    impl RpcMethod for DummyMethod {
+        type Response = String;
+
+        fn command_name(&self) -> &'static str {
+            "dummy_command"
+        }
+
+        fn command_params(&self) -> Vec<Box<RawValue>> {
+            vec![]
+        }
+    }
+
+    #[test]
+    fn test_call() {
+        let client = client::Client::new("/tmp/KubeOS-test.sock");
+        let result = DummyMethod::default().call(&client);
+        assert!(result.is_err());
+    }
+}

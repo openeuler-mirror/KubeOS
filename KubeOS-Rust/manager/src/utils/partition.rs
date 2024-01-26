@@ -22,6 +22,7 @@ pub struct PartitionInfo {
     pub fs_type: String,
 }
 
+/// get_partition_info returns the current partition info and the next partition info.
 pub fn get_partition_info<T: CommandExecutor>(executor: &T) -> Result<(PartitionInfo, PartitionInfo), anyhow::Error> {
     let lsblk = executor.run_command_with_output("lsblk", &["-lno", "NAME,MOUNTPOINTS,FSTYPE"])?;
     // After split whitespace, the root directory line should have 3 elements, which are "sda2 / ext4".
@@ -93,5 +94,19 @@ mod tests {
             PartitionInfo { device: "/dev/sda3".to_string(), menuentry: "B".to_string(), fs_type: "ext4".to_string() },
         );
         assert_eq!(res, expect_res);
+
+        let command_output2 = "sda\nsda1 /boot/efi vfat\nsda2   ext4\nsda3 / ext4\nsda4 /persist ext4\nsr0  iso9660\n";
+        mock.expect_run_command_with_output().times(1).returning(|_, _| Ok(command_output2.to_string()));
+        let res = get_partition_info(&mock).unwrap();
+        let expect_res = (
+            PartitionInfo { device: "/dev/sda3".to_string(), menuentry: "B".to_string(), fs_type: "ext4".to_string() },
+            PartitionInfo { device: "/dev/sda2".to_string(), menuentry: "A".to_string(), fs_type: "ext4".to_string() },
+        );
+        assert_eq!(res, expect_res);
+
+        let command_output3 = "";
+        mock.expect_run_command_with_output().times(1).returning(|_, _| Ok(command_output3.to_string()));
+        let res = get_partition_info(&mock);
+        assert!(res.is_err());
     }
 }

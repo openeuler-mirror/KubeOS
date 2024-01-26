@@ -27,3 +27,16 @@ impl RpcMethod for RollbackMethod {
         vec![]
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn test_rollback_method() {
+        let method = RollbackMethod::default();
+        assert_eq!(method.command_name(), "rollback");
+        let expected_params = "[]";
+        let actual_params = format!("{:?}", method.command_params());
+        assert_eq!(actual_params, expected_params);
+    }
+}

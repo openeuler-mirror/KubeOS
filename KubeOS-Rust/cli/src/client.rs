@@ -43,27 +43,14 @@ impl Client {
 
 #[cfg(test)]
 mod test {
-    use kubeos_manager::api;
-
     use super::*;
-    use crate::method::{callable_method::RpcMethod, configure::ConfigureMethod};
-
     #[test]
-    #[ignore]
     fn test_client() {
-        let socket_path = "/home/yuhang/os-agent-rust.sock";
+        let socket_path = "/tmp/KubeOS-test.sock";
         let cli = Client::new(socket_path);
-
-        let configured = api::AgentStatus::Configured;
-        let resp = api::Response { status: configured };
-        let config_request = api::ConfigureRequest {
-            configs: vec![api::Sysconfig {
-                model: "kernel.sysctl".into(),
-                config_path: "".into(),
-                contents: std::collections::hash_map::HashMap::new(),
-            }],
-        };
-        let config_resp = ConfigureMethod::new(config_request).call(&cli).unwrap();
-        assert_eq!(resp, config_resp);
+        let command = "example_command";
+        let params = vec![];
+        let request = cli.send_request(cli.build_request(command, &params));
+        assert!(request.is_err());
     }
 }

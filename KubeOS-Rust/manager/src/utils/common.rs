@@ -23,14 +23,25 @@ use nix::{mount, mount::MntFlags};
 use super::executor::CommandExecutor;
 use crate::sys_mgmt::{MOUNT_DIR, OS_IMAGE_NAME, PERSIST_DIR, ROOTFS_ARCHIVE, UPDATE_DIR};
 
+/// * persist_path: /persist
+///
+/// * update_path: /persist/KubeOS-Update
+///
+/// * mount_path: /persist/KubeOS-Update/kubeos-update
+///
+/// * tar_path: /persist/KubeOS-Update/os.tar
+///
+/// * image_path: /persist/update.img
+///
+/// * rootfs_file: os.tar
 #[derive(Clone)]
 pub struct PreparePath {
-    pub persist_path: PathBuf, // persist_path: /persist
-    pub update_path: PathBuf,  // update_path: /persist/KubeOS-Update
-    pub mount_path: PathBuf,   // mount_path: /persist/KubeOS-Update/kubeos-update
-    pub tar_path: PathBuf,     // tar_path: /persist/KubeOS-Update/os.tar
-    pub image_path: PathBuf,   // image_path: /persist/update.img
-    pub rootfs_file: String,   // rootfs_file: os.tar
+    pub persist_path: PathBuf,
+    pub update_path: PathBuf,
+    pub mount_path: PathBuf,
+    pub tar_path: PathBuf,
+    pub image_path: PathBuf,
+    pub rootfs_file: String,
 }
 
 impl Default for PreparePath {
@@ -72,7 +83,7 @@ pub fn check_disk_size<P: AsRef<Path>>(need_bytes: i64, path: P) -> Result<()> {
     Ok(())
 }
 
-// clean_env will umount the mount path and delete directory /persist/KubeOS-Update and /persist/update.img
+/// clean_env will umount the mount path and delete directory /persist/KubeOS-Update and /persist/update.img
 pub fn clean_env<P>(update_path: P, mount_path: P, image_path: P) -> Result<()>
 where
     P: AsRef<Path>,
@@ -160,6 +171,7 @@ mod tests {
     use tempfile::{NamedTempFile, TempDir};
 
     use super::*;
+    use crate::utils::RealCommandExecutor;
 
     // Mock the CommandExecutor trait
     mock! {
@@ -278,10 +290,23 @@ mod tests {
     }
 
     #[test]
-    #[ignore]
     fn test_get_boot_mode() {
         init();
         let boot_mode = get_boot_mode();
-        assert!(boot_mode == "uefi");
+        let executor = RealCommandExecutor {};
+        let res = executor.run_command("ls", &["/sys/firmware/efi"]);
+        if res.is_ok() {
+            assert!(boot_mode == "uefi");
+        } else {
+            assert!(boot_mode == "bios");
+        }
+    }
+
+    #[test]
+    fn test_is_command_available() {
+        init();
+        let executor = RealCommandExecutor {};
+        assert_eq!(is_command_available("ls", &executor), true);
+        assert_eq!(is_command_available("aaaabb", &executor), false);
     }
 }
