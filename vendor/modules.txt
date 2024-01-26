@@ -245,6 +245,9 @@ github.com/spf13/pflag
 ## explicit; go 1.13
 github.com/stretchr/testify/assert
 github.com/stretchr/testify/require
+# github.com/sykesm/zap-logfmt v0.0.4
+## explicit; go 1.13
+github.com/sykesm/zap-logfmt
 # github.com/xlab/treeprint v0.0.0-20181112141820-a009c3971eca
 ## explicit
 github.com/xlab/treeprint
