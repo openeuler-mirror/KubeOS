@@ -12,7 +12,7 @@
 
 use std::{fs, os::unix::fs::PermissionsExt, path::Path};
 
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context, Result};
 use log::{debug, info};
 
 use crate::{
@@ -73,12 +73,12 @@ impl<T: CommandExecutor> CtrImageHandler<T> {
             .to_str()
             .ok_or_else(|| anyhow!("Failed to get mount path: {}", self.paths.mount_path.display()))?;
         info!("Start getting rootfs {}", image_name);
-        self.check_and_unmount(mount_path)?;
+        self.check_and_unmount(mount_path).with_context(|| format!("Failed to clean containerd environment"))?;
         self.executor
             .run_command("ctr", &["-n", DEFAULT_NAMESPACE, "images", "mount", "--rw", image_name, mount_path])?;
         // copy os.tar from mount_path to its partent dir
         self.copy_file(self.paths.mount_path.join(&self.paths.rootfs_file), &self.paths.tar_path, permission)?;
-        self.check_and_unmount(mount_path)?;
+        self.check_and_unmount(mount_path).with_context(|| format!("Failed to clean containerd environment"))?;
         Ok(())
     }
 
