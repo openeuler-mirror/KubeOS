@@ -66,7 +66,7 @@ pub struct GrubCmdline {
 
 impl Configuration for KernelSysctl {
     fn set_config(&self, config: &mut Sysconfig) -> Result<()> {
-        info!("Start set kernel.sysctl");
+        info!("Start setting kernel.sysctl");
         for (key, key_info) in config.contents.iter() {
             let proc_path = self.get_proc_path(key);
             if key_info.operation == "delete" {
@@ -99,7 +99,7 @@ impl KernelSysctl {
 
 impl Configuration for KernelSysctlPersist {
     fn set_config(&self, config: &mut Sysconfig) -> Result<()> {
-        info!("Start set kernel.sysctl.persist");
+        info!("Start setting kernel.sysctl.persist");
         let mut config_path = &values::DEFAULT_KERNEL_CONFIG_PATH.to_string();
         if !config.config_path.is_empty() {
             config_path = &config.config_path;
@@ -247,9 +247,9 @@ fn handle_add_key(expect_configs: &HashMap<String, KeyInfo>, is_only_key_valid: 
 impl Configuration for GrubCmdline {
     fn set_config(&self, config: &mut Sysconfig) -> Result<()> {
         if self.is_cur_partition {
-            info!("Start set grub.cmdline.current configuration");
+            info!("Start setting grub.cmdline.current configuration");
         } else {
-            info!("Start set grub.cmdline.next configuration");
+            info!("Start setting grub.cmdline.next configuration");
         }
         if !is_file_exist(&self.grub_path) {
             bail!("Failed to find grub.cfg file");

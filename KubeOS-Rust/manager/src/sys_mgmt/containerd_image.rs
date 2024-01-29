@@ -72,7 +72,7 @@ impl<T: CommandExecutor> CtrImageHandler<T> {
             .mount_path
             .to_str()
             .ok_or_else(|| anyhow!("Failed to get mount path: {}", self.paths.mount_path.display()))?;
-        info!("Start get rootfs {}", image_name);
+        info!("Start getting rootfs {}", image_name);
         self.check_and_unmount(mount_path)?;
         self.executor
             .run_command("ctr", &["-n", DEFAULT_NAMESPACE, "images", "mount", "--rw", image_name, mount_path])?;
