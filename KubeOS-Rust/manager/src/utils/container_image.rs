@@ -17,7 +17,7 @@ use regex::Regex;
 use super::executor::CommandExecutor;
 
 pub fn is_valid_image_name(image: &str) -> Result<()> {
-    let pattern = r"^(?P<Registry>[a-z0-9\-.]+\.[a-z0-9\-]+:?[0-9]*)?/?((?P<Name>[a-zA-Z0-9-_]+?)|(?P<UserName>[a-zA-Z0-9-_]+?)/(?P<ImageName>[a-zA-Z-_]+?))(?P<Tag>(?::[\w_.-]+)?|(?:@sha256:[a-fA-F0-9]+)?)$";
+    let pattern = r"^((?:[\w.-]+)(?::\d+)?/)*(?:[\w.-]+)((?::[\w_.-]+)?|(?:@sha256:[a-fA-F0-9]+)?)$";
     let reg_ex = Regex::new(pattern)?;
     if !reg_ex.is_match(image) {
         bail!("Invalid image name: {}", image);
@@ -172,16 +172,67 @@ mod tests {
     #[test]
     fn test_is_valid_image_name() {
         init();
-        let out = is_valid_image_name("nginx").unwrap();
-        assert_eq!(out, ());
-        let out =
-            is_valid_image_name("docker.example.com:5000/gmr/alpine@sha256:11111111111111111111111111111111").unwrap();
-        assert_eq!(out, ());
-        let out =
-            is_valid_image_name("sosedoff/pgweb:latest@sha256:5a156ff125e5a12ac7ff43ee5120fa249cf62248337b6d04574c8");
-        match out {
-            Ok(_) => assert_eq!(true, false),
-            Err(_) => assert_eq!(true, true),
+        let correct_images = vec![
+            "alpine",
+            "alpine:latest",
+            "localhost/latest",
+            "library/alpine",
+            "localhost:1234/test",
+            "test:1234/blaboon",
+            "alpine:3.7",
+            "docker.example.edu/gmr/alpine:3.7",
+            "docker.example.com:5000/gmr/alpine@sha256:5a156ff125e5a12ac7ff43ee5120fa249cf62248337b6d04abc574c8",
+            "docker.example.co.uk/gmr/alpine/test2:latest",
+            "registry.dobby.org/dobby/dobby-servers/arthound:2019-08-08",
+            "owasp/zap:3.8.0",
+            "registry.dobby.co/dobby/dobby-servers/github-run:2021-10-04",
+            "docker.elastic.co/kibana/kibana:7.6.2",
+            "registry.dobby.org/dobby/dobby-servers/lerphound:latest",
+            "registry.dobby.org/dobby/dobby-servers/marbletown-poc:2021-03-29",
+            "marbles/marbles:v0.38.1",
+            "registry.dobby.org/dobby/dobby-servers/loophole@sha256:5a156ff125e5a12ac7ff43ee5120fa249cf62248337b6d04abc574c8",
+            "sonatype/nexon:3.30.0",
+            "prom/node-exporter:v1.1.1",
+            "sosedoff/pgweb@sha256:5a156ff125e5a12ac7ff43ee5120fa249cf62248337b6d04abc574c8",
+            "sosedoff/pgweb:latest",
+            "registry.dobby.org/dobby/dobby-servers/arpeggio:2021-06-01",
+            "registry.dobby.org/dobby/antique-penguin:release-production",
+            "dalprodictus/halcon:6.7.5",
+            "antigua/antigua:v31",
+            "weblate/weblate:4.7.2-1",
+            "redis:4.0.01-alpine",
+            "registry.dobby.com/dobby/dobby-servers/github-run:latest",
+            "192.168.122.123:5000/kubeos-x86_64:2023-01",
+        ];
+        let wrong_images = vec![
+            "alpine;v1.0",
+            "alpine:latest@sha256:11111111111111111111111111111111",
+            "alpine|v1.0",
+            "alpine&v1.0",
+            "sosedoff/pgweb:latest@sha256:5a156ff125e5a12ac7ff43ee5120fa249cf62248337b6d04574c8",
+            "192.168.122.123:5000/kubeos-x86_64:2023-01@sha256:1a1a1a1a1a1a1a1a1a1a1a1a1a1a",
+            "192.168.122.123:5000@sha256:1a1a1a1a1a1a1a1a1a1a1a1a1a1a",
+            "myimage$%^&",
+            ":myimage",
+            "/myimage",
+            "myimage/",
+            "myimage:",
+            "myimage@@latest",
+            "myimage::tag",
+            "registry.com//myimage:tag",
+            " myimage",
+            "myimage ",
+            "registry.com/:tag",
+            "myimage:",
+            "",
+            ":tag",
+            "IP:5000@sha256:1a1a1a1a1a1a1a1a1a1a1a1a1a1a",
+        ];
+        for image in correct_images {
+            assert!(is_valid_image_name(image).is_ok());
+        }
+        for image in wrong_images {
+            assert!(is_valid_image_name(image).is_err());
         }
     }
 
