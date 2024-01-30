@@ -66,7 +66,7 @@ async fn get_pods_deleted(
         Ok(pods @ ObjectList { .. }) => pods,
         Err(err) => {
             return Err(GetPodListsError { source: err, node_name: node_name.to_string() });
-        },
+        }
     };
     let mut filterd_pods_list: Vec<Pod> = Vec::new();
     let mut filterd_err: Vec<String> = Vec::new();
@@ -189,14 +189,14 @@ async fn wait_for_deletion(k8s_client: &kube::Client, pod: &Pod) -> Result<(), e
                 let name = (&p).name_any();
                 info!("Pod {} deleted.", name);
                 break;
-            },
+            }
             Ok(_) => {
                 info!("Pod '{}' is not yet deleted. Waiting {}s.", pod.name_any(), EVERY_DELETION_CHECK.as_secs_f64());
-            },
+            }
             Err(kube::Error::Api(e)) if e.code == response_error_not_found => {
                 info!("Pod {} is deleted.", pod.name_any());
                 break;
-            },
+            }
             Err(e) => {
                 error!(
                     "Get pod {} reported error: '{}', whether pod is deleted cannot be determined, waiting {}s.",
@@ -204,7 +204,7 @@ async fn wait_for_deletion(k8s_client: &kube::Client, pod: &Pod) -> Result<(), e
                     e,
                     EVERY_DELETION_CHECK.as_secs_f64()
                 );
-            },
+            }
         }
         if start_time.elapsed() > TIMEOUT {
             return Err(WaitDeletionError { pod_name: pod.name_any(), max_wait: TIMEOUT });
@@ -241,7 +241,7 @@ impl PodFilter for FinishedOrFailedFilter {
         return match pod.status.as_ref() {
             Some(PodStatus { phase: Some(phase), .. }) if phase == "Failed" || phase == "Succeeded" => {
                 FilterResult::create_filter_result(true, "", PodDeleteStatus::Okay)
-            },
+            }
             _ => FilterResult::create_filter_result(false, "", PodDeleteStatus::Okay),
         };
     }
@@ -269,7 +269,7 @@ impl PodFilter for DaemonFilter {
                     let description = format!("Cannot drain Pod '{}': Pod is member of a DaemonSet", pod.name_any());
                     Box::new(FilterResult { result: false, desc: description, status: PodDeleteStatus::Error })
                 }
-            },
+            }
             _ => FilterResult::create_filter_result(true, "", PodDeleteStatus::Okay),
         };
     }
@@ -287,7 +287,7 @@ impl PodFilter for MirrorFilter {
             Some(annotations) if annotations.contains_key("kubernetes.io/config.mirror") => {
                 let description = format!("Ignore Pod '{}': Pod is a static Mirror Pod", pod.name_any());
                 FilterResult::create_filter_result(false, &description.to_string(), PodDeleteStatus::Warning)
-            },
+            }
             _ => FilterResult::create_filter_result(true, "", PodDeleteStatus::Okay),
         };
     }
@@ -312,7 +312,7 @@ impl PodFilter for LocalStorageFilter {
                     let description = format!("Cannot drain Pod '{}': Pod has local Storage", pod.name_any());
                     Box::new(FilterResult { result: false, desc: description, status: PodDeleteStatus::Error })
                 }
-            },
+            }
             _ => FilterResult::create_filter_result(true, "", PodDeleteStatus::Okay),
         };
     }
@@ -365,7 +365,7 @@ impl PodFilter for DeletedFilter {
                     && now - Duration::from_secs(time.0.timestamp() as u64) >= self.delete_wait_timeout =>
             {
                 FilterResult::create_filter_result(true, "", PodDeleteStatus::Okay)
-            },
+            }
             _ => FilterResult::create_filter_result(true, "", PodDeleteStatus::Okay),
         };
     }
@@ -471,7 +471,7 @@ impl ErrorHandleStrategy {
         return match self {
             Self::TolerateStrategy => {
                 return backoff.take(0);
-            },
+            }
 
             Self::RetryStrategy => backoff.take(MAX_RETRIES_TIMES),
         };
@@ -488,7 +488,7 @@ impl tokio_retry::Condition<error::EvictionError> for ErrorHandleStrategy {
                 } else {
                     false
                 }
-            },
+            }
         }
     }
 }

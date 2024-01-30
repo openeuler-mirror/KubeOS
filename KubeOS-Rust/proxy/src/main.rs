@@ -20,7 +20,9 @@ use kube::{
 };
 use log::{error, info};
 mod controller;
-use controller::{error_policy, reconcile, AgentClient, ControllerClient, ProxyController, OS, SOCK_PATH};
+use controller::{
+    error_policy, reconcile, AgentCallClient, AgentClient, ControllerClient, ProxyController, OS, SOCK_PATH,
+};
 
 const PROXY_VERSION: Option<&'static str> = option_env!("CARGO_PKG_VERSION");
 #[tokio::main]
@@ -29,14 +31,15 @@ async fn main() -> Result<()> {
     let client = Client::try_default().await?;
     let os: Api<OS> = Api::all(client.clone());
     let controller_client = ControllerClient::new(client.clone());
-    let agent_client = AgentClient::new(SOCK_PATH);
+    let agent_call_client = AgentCallClient::default();
+    let agent_client = AgentClient::new(SOCK_PATH, agent_call_client);
     let proxy_controller = ProxyController::new(client, controller_client, agent_client);
     info!("os-proxy version is {}, start renconcile", PROXY_VERSION.unwrap_or("Not Found"));
     Controller::new(os, ListParams::default())
         .run(reconcile, error_policy, Context::new(proxy_controller))
         .for_each(|res| async move {
             match res {
-                Ok(_o) => {},
+                Ok(_o) => {}
                 Err(e) => error!("reconcile failed: {}", e.to_string()),
             }
         })

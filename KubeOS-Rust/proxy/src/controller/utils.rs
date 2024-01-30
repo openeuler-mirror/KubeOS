@@ -39,7 +39,7 @@ impl ConfigType {
         debug!("start check_config_version");
         let node_status = &osinstance.spec.nodestatus;
         if node_status == NODE_STATUS_IDLE {
-            debug!("======node status is idle======");
+            debug!("node status is idle");
             return ConfigOperation::DoNothing;
         };
         match self {
@@ -47,7 +47,7 @@ impl ConfigType {
                 let os_config_version = get_config_version(os.spec.upgradeconfigs.as_ref());
                 let osi_config_version = get_config_version(osinstance.spec.upgradeconfigs.as_ref());
                 debug!(
-                    "=======os upgradeconfig version is{},osinstance spec upragdeconfig version is{}",
+                    "os upgradeconfig version is{},osinstance spec upragdeconfig version is{}",
                     os_config_version, osi_config_version
                 );
                 if !check_version(&os_config_version, &osi_config_version) {
@@ -56,12 +56,12 @@ impl ConfigType {
                     );
                     return ConfigOperation::Reassign;
                 }
-            },
+            }
             ConfigType::SysConfig => {
                 let os_config_version = get_config_version(os.spec.sysconfigs.as_ref());
                 let osi_config_version = get_config_version(osinstance.spec.sysconfigs.as_ref());
                 debug!(
-                    "=======os sysconfig version is{},osinstance spec sysconfig version is{}",
+                    "os sysconfig version is{},osinstance spec sysconfig version is{}",
                     os_config_version, osi_config_version
                 );
                 if !check_version(&os_config_version, &osi_config_version) {
@@ -78,7 +78,7 @@ impl ConfigType {
                         return ConfigOperation::UpdateConfig;
                     }
                 }
-            },
+            }
         };
         ConfigOperation::DoNothing
     }
@@ -96,7 +96,7 @@ impl ConfigType {
                     status_config_version = get_config_version(None);
                 }
                 configs = osinstance.spec.upgradeconfigs.clone();
-            },
+            }
             ConfigType::SysConfig => {
                 spec_config_version = get_config_version(osinstance.spec.sysconfigs.as_ref());
                 if let Some(osinstance_status) = osinstance.status.as_ref() {
@@ -105,16 +105,16 @@ impl ConfigType {
                     status_config_version = get_config_version(None);
                 }
                 configs = osinstance.spec.sysconfigs.clone();
-            },
+            }
         }
         debug!(
-            "=======osinstance soec config version is {},status config version is {}",
+            "osinstance soec config version is {},status config version is {}",
             spec_config_version, status_config_version
         );
         if spec_config_version != status_config_version && osinstance.spec.nodestatus != NODE_STATUS_IDLE {
-            return ConfigInfo { need_config: true, configs: configs };
+            return ConfigInfo { need_config: true, configs };
         }
-        return ConfigInfo { need_config: false, configs: None };
+        ConfigInfo { need_config: false, configs: None }
     }
     pub fn set_osi_status_config(&self, osinstance: &mut OSInstance) {
         match self {
@@ -127,7 +127,7 @@ impl ConfigType {
                         sysconfigs: None,
                     })
                 }
-            },
+            }
             ConfigType::SysConfig => {
                 if let Some(osi_status) = &mut osinstance.status {
                     osi_status.sysconfigs = osinstance.spec.sysconfigs.clone();
@@ -135,7 +135,7 @@ impl ConfigType {
                     osinstance.status =
                         Some(OSInstanceStatus { upgradeconfigs: None, sysconfigs: osinstance.spec.sysconfigs.clone() })
                 }
-            },
+            }
         }
     }
 }
