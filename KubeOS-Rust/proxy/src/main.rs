@@ -39,7 +39,7 @@ async fn main() -> Result<()> {
         .run(reconcile, error_policy, Context::new(proxy_controller))
         .for_each(|res| async move {
             match res {
-                Ok(_o) => {}
+                Ok(_o) => {},
                 Err(e) => error!("reconcile failed: {}", e.to_string()),
             }
         })

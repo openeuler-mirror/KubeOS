@@ -30,7 +30,7 @@ impl Client {
         Client { json_rpc_client: JsonRPCClient::with_transport(UdsTransport::new(socket_path)) }
     }
 
-    pub fn build_request<'a>(&self, command: &'a str, params: &'a Vec<Box<RawValue>>) -> Request<'a> {
+    pub fn build_request<'a>(&self, command: &'a str, params: &'a [Box<RawValue>]) -> Request<'a> {
         let json_rpc_request = self.json_rpc_client.build_request(command, params);
         let request = Request(json_rpc_request);
         request

@@ -1,3 +1,35 @@
+/*
+ * Copyright (c) Huawei Technologies Co., Ltd. 2023. All rights reserved.
+ * KubeOS is licensed under the Mulan PSL v2.
+ * You can use this software according to the terms and conditions of the Mulan PSL v2.
+ * You may obtain a copy of Mulan PSL v2 at:
+ *     http://license.coscl.org.cn/MulanPSL2
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY OR FIT FOR A PARTICULAR
+ * PURPOSE.
+ * See the Mulan PSL v2 for more details.
+ */
+
+use std::collections::BTreeMap;
+
+use anyhow::Result;
+use cli::{
+    client::Client,
+    method::{
+        callable_method::RpcMethod, configure::ConfigureMethod, prepare_upgrade::PrepareUpgradeMethod,
+        rollback::RollbackMethod, upgrade::UpgradeMethod,
+    },
+};
+use http::{Request, Response};
+use hyper::{body::to_bytes, Body};
+use k8s_openapi::api::core::v1::{Node, NodeSpec, NodeStatus, NodeSystemInfo, Pod};
+use kube::{
+    api::ObjectMeta,
+    core::{ListMeta, ObjectList},
+    Client as KubeClient, Resource, ResourceExt,
+};
+use mockall::mock;
+
 use self::mock_error::Error;
 use super::{
     agentclient::*,
@@ -10,23 +42,6 @@ use crate::controller::{
     values::{LABEL_OSINSTANCE, LABEL_UPGRADING, NODE_STATUS_IDLE},
     ProxyController,
 };
-use anyhow::Result;
-use cli::client::Client;
-use cli::method::{
-    callable_method::RpcMethod, configure::ConfigureMethod, prepare_upgrade::PrepareUpgradeMethod,
-    rollback::RollbackMethod, upgrade::UpgradeMethod,
-};
-use http::{Request, Response};
-use hyper::{body::to_bytes, Body};
-use k8s_openapi::api::core::v1::Pod;
-use k8s_openapi::api::core::v1::{Node, NodeSpec, NodeStatus, NodeSystemInfo};
-use kube::{
-    api::ObjectMeta,
-    core::{ListMeta, ObjectList},
-};
-use kube::{Client as KubeClient, Resource, ResourceExt};
-use mockall::mock;
-use std::collections::BTreeMap;
 
 type ApiServerHandle = tower_test::mock::Handle<Request<Body>, Response<Body>>;
 pub struct ApiServerVerifier(ApiServerHandle);
@@ -66,7 +81,7 @@ impl ApiServerVerifier {
                         .unwrap()
                         .handler_node_get(osi)
                         .await
-                }
+                },
                 Testcases::UpgradeNormal(osi) => {
                     self.handler_osinstance_get_exist(osi.clone())
                         .await
@@ -85,7 +100,7 @@ impl ApiServerVerifier {
                         .unwrap()
                         .handler_node_pod_list_get(osi)
                         .await
-                }
+                },
                 Testcases::UpgradeUpgradeconfigsVersionMismatch(osi) => {
                     self.handler_osinstance_get_exist(osi.clone())
                         .await
@@ -104,7 +119,7 @@ impl ApiServerVerifier {
                         .unwrap()
                         .handler_osinstance_patch_nodestatus_idle(osi)
                         .await
-                }
+                },
                 Testcases::UpgradeOSInstaceNodestatusConfig(osi) => {
                     self.handler_osinstance_get_exist(osi.clone())
                         .await
@@ -114,7 +129,7 @@ impl ApiServerVerifier {
                         .unwrap()
                         .handler_node_get_with_label(osi.clone())
                         .await
-                }
+                },
                 Testcases::UpgradeOSInstaceNodestatusIdle(osi) => {
                     self.handler_osinstance_get_exist(osi.clone())
                         .await
@@ -130,7 +145,7 @@ impl ApiServerVerifier {
                         .unwrap()
                         .handler_node_uncordon(osi)
                         .await
-                }
+                },
                 Testcases::ConfigNormal(osi) => {
                     self.handler_osinstance_get_exist(osi.clone())
                         .await
@@ -146,7 +161,7 @@ impl ApiServerVerifier {
                         .unwrap()
                         .handler_osinstance_patch_nodestatus_idle(osi)
                         .await
-                }
+                },
                 Testcases::ConfigVersionMismatchReassign(osi) => {
                     self.handler_osinstance_get_exist(osi.clone())
                         .await
@@ -159,7 +174,7 @@ impl ApiServerVerifier {
                         .unwrap()
                         .handler_osinstance_patch_nodestatus_idle(osi)
                         .await
-                }
+                },
                 Testcases::ConfigVersionMismatchUpdate(osi) => {
                     self.handler_osinstance_get_exist(osi.clone())
                         .await
@@ -172,7 +187,7 @@ impl ApiServerVerifier {
                         .unwrap()
                         .handler_osinstance_patch_spec_sysconfig_v2(osi)
                         .await
-                }
+                },
                 Testcases::Rollback(osi) => {
                     self.handler_osinstance_get_exist(osi.clone())
                         .await
@@ -191,7 +206,7 @@ impl ApiServerVerifier {
                         .unwrap()
                         .handler_node_pod_list_get(osi)
                         .await
-                }
+                },
             }
             .expect("Case completed without errors");
         })

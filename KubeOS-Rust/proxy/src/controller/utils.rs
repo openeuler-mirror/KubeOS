@@ -56,7 +56,7 @@ impl ConfigType {
                     );
                     return ConfigOperation::Reassign;
                 }
-            }
+            },
             ConfigType::SysConfig => {
                 let os_config_version = get_config_version(os.spec.sysconfigs.as_ref());
                 let osi_config_version = get_config_version(osinstance.spec.sysconfigs.as_ref());
@@ -78,7 +78,7 @@ impl ConfigType {
                         return ConfigOperation::UpdateConfig;
                     }
                 }
-            }
+            },
         };
         ConfigOperation::DoNothing
     }
@@ -96,7 +96,7 @@ impl ConfigType {
                     status_config_version = get_config_version(None);
                 }
                 configs = osinstance.spec.upgradeconfigs.clone();
-            }
+            },
             ConfigType::SysConfig => {
                 spec_config_version = get_config_version(osinstance.spec.sysconfigs.as_ref());
                 if let Some(osinstance_status) = osinstance.status.as_ref() {
@@ -105,7 +105,7 @@ impl ConfigType {
                     status_config_version = get_config_version(None);
                 }
                 configs = osinstance.spec.sysconfigs.clone();
-            }
+            },
         }
         debug!(
             "osinstance soec config version is {},status config version is {}",
@@ -127,7 +127,7 @@ impl ConfigType {
                         sysconfigs: None,
                     })
                 }
-            }
+            },
             ConfigType::SysConfig => {
                 if let Some(osi_status) = &mut osinstance.status {
                     osi_status.sysconfigs = osinstance.spec.sysconfigs.clone();
@@ -135,7 +135,7 @@ impl ConfigType {
                     osinstance.status =
                         Some(OSInstanceStatus { upgradeconfigs: None, sysconfigs: osinstance.spec.sysconfigs.clone() })
                 }
-            }
+            },
         }
     }
 }

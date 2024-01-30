@@ -66,7 +66,7 @@ async fn get_pods_deleted(
         Ok(pods @ ObjectList { .. }) => pods,
         Err(err) => {
             return Err(GetPodListsError { source: err, node_name: node_name.to_string() });
-        }
+        },
     };
     let mut filterd_pods_list: Vec<Pod> = Vec::new();
     let mut filterd_err: Vec<String> = Vec::new();
@@ -81,7 +81,7 @@ async fn get_pods_deleted(
             filterd_pods_list.push(pod);
         }
     }
-    if filterd_err.len() > 0 {
+    if !filterd_err.is_empty() {
         return Err(DeletePodsError { errors: filterd_err });
     }
     Ok(filterd_pods_list.into_iter())
@@ -189,14 +189,14 @@ async fn wait_for_deletion(k8s_client: &kube::Client, pod: &Pod) -> Result<(), e
                 let name = (&p).name_any();
                 info!("Pod {} deleted.", name);
                 break;
-            }
+            },
             Ok(_) => {
                 info!("Pod '{}' is not yet deleted. Waiting {}s.", pod.name_any(), EVERY_DELETION_CHECK.as_secs_f64());
-            }
+            },
             Err(kube::Error::Api(e)) if e.code == response_error_not_found => {
                 info!("Pod {} is deleted.", pod.name_any());
                 break;
-            }
+            },
             Err(e) => {
                 error!(
                     "Get pod {} reported error: '{}', whether pod is deleted cannot be determined, waiting {}s.",
@@ -204,7 +204,7 @@ async fn wait_for_deletion(k8s_client: &kube::Client, pod: &Pod) -> Result<(), e
                     e,
                     EVERY_DELETION_CHECK.as_secs_f64()
                 );
-            }
+            },
         }
         if start_time.elapsed() > TIMEOUT {
             return Err(WaitDeletionError { pod_name: pod.name_any(), max_wait: TIMEOUT });
@@ -223,25 +223,25 @@ fn get_pod_api_with_namespace(client: &kube::Client, pod: &Pod) -> Api<Pod> {
 }
 
 trait NameAny {
-    fn name_any(self: &Self) -> String;
+    fn name_any(&self) -> String;
 }
 
 impl NameAny for &Pod {
-    fn name_any(self: &Self) -> String {
+    fn name_any(&self) -> String {
         self.metadata.name.clone().or_else(|| self.metadata.generate_name.clone()).unwrap_or_default()
     }
 }
 trait PodFilter {
-    fn filter(self: &Self, pod: &Pod) -> Box<FilterResult>;
+    fn filter(&self, pod: &Pod) -> Box<FilterResult>;
 }
 
 struct FinishedOrFailedFilter {}
 impl PodFilter for FinishedOrFailedFilter {
-    fn filter(self: &Self, pod: &Pod) -> Box<FilterResult> {
+    fn filter(&self, pod: &Pod) -> Box<FilterResult> {
         return match pod.status.as_ref() {
             Some(PodStatus { phase: Some(phase), .. }) if phase == "Failed" || phase == "Succeeded" => {
                 FilterResult::create_filter_result(true, "", PodDeleteStatus::Okay)
-            }
+            },
             _ => FilterResult::create_filter_result(false, "", PodDeleteStatus::Okay),
         };
     }
@@ -251,7 +251,7 @@ struct DaemonFilter {
     force: bool,
 }
 impl PodFilter for DaemonFilter {
-    fn filter(self: &Self, pod: &Pod) -> Box<FilterResult> {
+    fn filter(&self, pod: &Pod) -> Box<FilterResult> {
         if let FilterResult { result: true, .. } = self.finished_or_failed_filter.filter(pod).as_ref() {
             return FilterResult::create_filter_result(true, "", PodDeleteStatus::Okay);
         }
@@ -269,25 +269,25 @@ impl PodFilter for DaemonFilter {
                     let description = format!("Cannot drain Pod '{}': Pod is member of a DaemonSet", pod.name_any());
                     Box::new(FilterResult { result: false, desc: description, status: PodDeleteStatus::Error })
                 }
-            }
+            },
             _ => FilterResult::create_filter_result(true, "", PodDeleteStatus::Okay),
         };
     }
 }
 impl DaemonFilter {
     fn new(force: bool) -> DaemonFilter {
-        return DaemonFilter { finished_or_failed_filter: FinishedOrFailedFilter {}, force: force };
+        DaemonFilter { finished_or_failed_filter: FinishedOrFailedFilter {}, force }
     }
 }
 
 struct MirrorFilter {}
 impl PodFilter for MirrorFilter {
-    fn filter(self: &Self, pod: &Pod) -> Box<FilterResult> {
+    fn filter(&self, pod: &Pod) -> Box<FilterResult> {
         return match pod.metadata.annotations.as_ref() {
             Some(annotations) if annotations.contains_key("kubernetes.io/config.mirror") => {
                 let description = format!("Ignore Pod '{}': Pod is a static Mirror Pod", pod.name_any());
                 FilterResult::create_filter_result(false, &description.to_string(), PodDeleteStatus::Warning)
-            }
+            },
             _ => FilterResult::create_filter_result(true, "", PodDeleteStatus::Okay),
         };
     }
@@ -298,7 +298,7 @@ struct LocalStorageFilter {
     force: bool,
 }
 impl PodFilter for LocalStorageFilter {
-    fn filter(self: &Self, pod: &Pod) -> Box<FilterResult> {
+    fn filter(&self, pod: &Pod) -> Box<FilterResult> {
         if let FilterResult { result: true, .. } = self.finished_or_failed_filter.filter(pod).as_ref() {
             return FilterResult::create_filter_result(true, "", PodDeleteStatus::Okay);
         }
@@ -312,14 +312,14 @@ impl PodFilter for LocalStorageFilter {
                     let description = format!("Cannot drain Pod '{}': Pod has local Storage", pod.name_any());
                     Box::new(FilterResult { result: false, desc: description, status: PodDeleteStatus::Error })
                 }
-            }
+            },
             _ => FilterResult::create_filter_result(true, "", PodDeleteStatus::Okay),
         };
     }
 }
 impl LocalStorageFilter {
     fn new(force: bool) -> LocalStorageFilter {
-        return LocalStorageFilter { finished_or_failed_filter: FinishedOrFailedFilter {}, force: force };
+        LocalStorageFilter { finished_or_failed_filter: FinishedOrFailedFilter {}, force }
     }
 }
 struct UnreplicatedFilter {
@@ -327,7 +327,7 @@ struct UnreplicatedFilter {
     force: bool,
 }
 impl PodFilter for UnreplicatedFilter {
-    fn filter(self: &Self, pod: &Pod) -> Box<FilterResult> {
+    fn filter(&self, pod: &Pod) -> Box<FilterResult> {
         if let FilterResult { result: true, .. } = self.finished_or_failed_filter.filter(pod).as_ref() {
             return FilterResult::create_filter_result(true, "", PodDeleteStatus::Okay);
         }
@@ -338,18 +338,18 @@ impl PodFilter for UnreplicatedFilter {
             return FilterResult::create_filter_result(true, "", PodDeleteStatus::Okay);
         }
 
-        return if !is_replicated && self.force {
+        if !is_replicated && self.force {
             let description = format!("Force drain Pod '{}': Pod is unreplicated", pod.name_any());
             Box::new(FilterResult { result: true, desc: description, status: PodDeleteStatus::Warning })
         } else {
             let description = format!("Cannot drain Pod '{}': Pod is unreplicated", pod.name_any());
             Box::new(FilterResult { result: false, desc: description, status: PodDeleteStatus::Error })
-        };
+        }
     }
 }
 impl UnreplicatedFilter {
     fn new(force: bool) -> UnreplicatedFilter {
-        return UnreplicatedFilter { finished_or_failed_filter: FinishedOrFailedFilter {}, force: force };
+        UnreplicatedFilter { finished_or_failed_filter: FinishedOrFailedFilter {}, force }
     }
 }
 
@@ -357,7 +357,7 @@ struct DeletedFilter {
     delete_wait_timeout: Duration,
 }
 impl PodFilter for DeletedFilter {
-    fn filter(self: &Self, pod: &Pod) -> Box<FilterResult> {
+    fn filter(&self, pod: &Pod) -> Box<FilterResult> {
         let now = Instant::now().elapsed();
         return match pod.metadata.deletion_timestamp.as_ref() {
             Some(time)
@@ -365,7 +365,7 @@ impl PodFilter for DeletedFilter {
                     && now - Duration::from_secs(time.0.timestamp() as u64) >= self.delete_wait_timeout =>
             {
                 FilterResult::create_filter_result(true, "", PodDeleteStatus::Okay)
-            }
+            },
             _ => FilterResult::create_filter_result(true, "", PodDeleteStatus::Okay),
         };
     }
@@ -379,14 +379,14 @@ struct CombinedFilter {
     unreplicated_filter: UnreplicatedFilter,
 }
 impl PodFilter for CombinedFilter {
-    fn filter(self: &Self, pod: &Pod) -> Box<FilterResult> {
+    fn filter(&self, pod: &Pod) -> Box<FilterResult> {
         let mut filter_res = self.deleted_filter.filter(pod);
         if !filter_res.result {
             info!("{}", filter_res.desc);
             return Box::new(FilterResult {
                 result: filter_res.result,
                 desc: filter_res.desc.clone(),
-                status: filter_res.status.clone(),
+                status: filter_res.status,
             });
         }
         filter_res = self.daemon_filter.filter(pod);
@@ -395,7 +395,7 @@ impl PodFilter for CombinedFilter {
             return Box::new(FilterResult {
                 result: filter_res.result,
                 desc: filter_res.desc.clone(),
-                status: filter_res.status.clone(),
+                status: filter_res.status,
             });
         }
         filter_res = self.mirror_filter.filter(pod);
@@ -404,7 +404,7 @@ impl PodFilter for CombinedFilter {
             return Box::new(FilterResult {
                 result: filter_res.result,
                 desc: filter_res.desc.clone(),
-                status: filter_res.status.clone(),
+                status: filter_res.status,
             });
         }
         filter_res = self.local_storage_filter.filter(pod);
@@ -413,7 +413,7 @@ impl PodFilter for CombinedFilter {
             return Box::new(FilterResult {
                 result: filter_res.result,
                 desc: filter_res.desc.clone(),
-                status: filter_res.status.clone(),
+                status: filter_res.status,
             });
         }
         filter_res = self.unreplicated_filter.filter(pod);
@@ -422,22 +422,22 @@ impl PodFilter for CombinedFilter {
             return Box::new(FilterResult {
                 result: filter_res.result,
                 desc: filter_res.desc.clone(),
-                status: filter_res.status.clone(),
+                status: filter_res.status,
             });
         }
 
-        return FilterResult::create_filter_result(true, "", PodDeleteStatus::Okay);
+        FilterResult::create_filter_result(true, "", PodDeleteStatus::Okay)
     }
 }
 impl CombinedFilter {
     fn new(force: bool) -> CombinedFilter {
-        return CombinedFilter {
+        CombinedFilter {
             deleted_filter: DeletedFilter { delete_wait_timeout: TIMEOUT },
             daemon_filter: DaemonFilter::new(force),
             mirror_filter: MirrorFilter {},
             local_storage_filter: LocalStorageFilter::new(force),
             unreplicated_filter: UnreplicatedFilter::new(force),
-        };
+        }
     }
 }
 
@@ -454,7 +454,7 @@ struct FilterResult {
 }
 impl FilterResult {
     fn create_filter_result(result: bool, desc: &str, status: PodDeleteStatus) -> Box<FilterResult> {
-        Box::new(FilterResult { result: result, desc: desc.to_string(), status: status })
+        Box::new(FilterResult { result, desc: desc.to_string(), status })
     }
 }
 
@@ -468,13 +468,11 @@ impl ErrorHandleStrategy {
         let backoff =
             ExponentialBackoff::from_millis(RETRY_BASE_DELAY.as_millis() as u64).max_delay(RETRY_MAX_DELAY).map(jitter);
 
-        return match self {
-            Self::TolerateStrategy => {
-                return backoff.take(0);
-            }
+        match self {
+            Self::TolerateStrategy => backoff.take(0),
 
             Self::RetryStrategy => backoff.take(MAX_RETRIES_TIMES),
-        };
+        }
     }
 }
 
@@ -482,13 +480,7 @@ impl tokio_retry::Condition<error::EvictionError> for ErrorHandleStrategy {
     fn should_retry(&mut self, error: &error::EvictionError) -> bool {
         match self {
             Self::TolerateStrategy => false,
-            Self::RetryStrategy => {
-                if let error::EvictionError::EvictionErrorRetry { .. } = error {
-                    true
-                } else {
-                    false
-                }
-            }
+            Self::RetryStrategy => matches!(error, error::EvictionError::EvictionErrorRetry { .. }),
         }
     }
 }
