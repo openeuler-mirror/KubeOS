@@ -56,7 +56,7 @@ impl Default for AgentImpl {
 }
 
 impl AgentImpl {
-    pub fn prepare_upgrade_impl(&self, req: UpgradeRequest) -> Result<Response> {
+    fn prepare_upgrade_impl(&self, req: UpgradeRequest) -> Result<Response> {
         let _lock = self.mutex.lock().unwrap();
         debug!("Received an 'prepare upgrade' request: {:?}", req);
         info!("Start preparing for upgrading to version: {}", req.version);
@@ -75,7 +75,7 @@ impl AgentImpl {
         Ok(Response { status: AgentStatus::UpgradeReady })
     }
 
-    pub fn upgrade_impl(&self) -> Result<Response> {
+    fn upgrade_impl(&self) -> Result<Response> {
         let _lock = self.mutex.lock().unwrap();
         info!("Start to upgrade");
         let command_executor = RealCommandExecutor {};
@@ -90,7 +90,7 @@ impl AgentImpl {
         Ok(Response { status: AgentStatus::Upgraded })
     }
 
-    pub fn configure_impl(&self, mut req: ConfigureRequest) -> Result<Response> {
+    fn configure_impl(&self, mut req: ConfigureRequest) -> Result<Response> {
         let _lock = self.mutex.lock().unwrap();
         debug!("Received a 'configure' request: {:?}", req);
         info!("Start to configure");
@@ -107,7 +107,7 @@ impl AgentImpl {
         Ok(Response { status: AgentStatus::Configured })
     }
 
-    pub fn rollback_impl(&self) -> Result<Response> {
+    fn rollback_impl(&self) -> Result<Response> {
         let _lock = self.mutex.lock().unwrap();
         info!("Start to rollback");
         let command_executor = RealCommandExecutor {};

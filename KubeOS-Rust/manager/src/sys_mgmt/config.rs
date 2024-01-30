@@ -105,10 +105,10 @@ impl Configuration for KernelSysctlPersist {
             config_path = &config.config_path;
         }
         debug!("kernel.sysctl.persist config_path: \"{}\"", config_path);
-        create_config_file(config_path).with_context(|| format!("Failed to find config path"))?;
+        create_config_file(config_path).with_context(|| format!("Failed to find config path \"{}\"", config_path))?;
         let configs = get_and_set_configs(&mut config.contents, config_path)
-            .with_context(|| format!("Failed to set persist kernel configs"))?;
-        write_configs_to_file(config_path, &configs).with_context(|| format!("Failed to write configs to file"))?;
+            .with_context(|| format!("Failed to set persist kernel configs \"{}\"", config_path))?;
+        write_configs_to_file(config_path, &configs).with_context(|| "Failed to write configs to file".to_string())?;
         Ok(())
     }
 }
@@ -125,7 +125,7 @@ fn create_config_file(config_path: &str) -> Result<()> {
 }
 
 fn get_and_set_configs(expect_configs: &mut HashMap<String, KeyInfo>, config_path: &str) -> Result<Vec<String>> {
-    let f = File::open(config_path)?;
+    let f = File::open(config_path).with_context(|| format!("Failed to open config path \"{}\"", config_path))?;
     let mut configs_write = Vec::new();
     for line in io::BufReader::new(f).lines() {
         let line = line?;
@@ -169,7 +169,7 @@ fn write_configs_to_file(config_path: &str, configs: &Vec<String>) -> Result<()>
     Ok(())
 }
 
-fn handle_delete_key(config_kv: &Vec<&str>, new_config_info: &KeyInfo) -> String {
+fn handle_delete_key(config_kv: &[&str], new_config_info: &KeyInfo) -> String {
     let key = config_kv[0];
     if config_kv.len() == 1 && new_config_info.value.is_empty() {
         info!("Delete configuration key: \"{}\"", key);
@@ -190,7 +190,7 @@ fn handle_delete_key(config_kv: &Vec<&str>, new_config_info: &KeyInfo) -> String
     String::new()
 }
 
-fn handle_update_key(config_kv: &Vec<&str>, new_config_info: &KeyInfo) -> String {
+fn handle_update_key(config_kv: &[&str], new_config_info: &KeyInfo) -> String {
     let key = config_kv[0];
     if !new_config_info.operation.is_empty() {
         warn!(
@@ -259,12 +259,13 @@ impl Configuration for GrubCmdline {
             self.is_cur_partition
         } else {
             self.get_config_partition(RealCommandExecutor {})
-                .with_context(|| format!("Failed to get config partition"))?
+                .with_context(|| "Failed to get config partition".to_string())?
         };
         debug!("Config_partition: {} (false means partition A, true means partition B)", config_partition);
         let configs = get_and_set_grubcfg(&mut config.contents, &self.grub_path, config_partition)
-            .with_context(|| format!("Failed to set grub configs"))?;
-        write_configs_to_file(&self.grub_path, &configs)?;
+            .with_context(|| "Failed to set grub configs".to_string())?;
+        write_configs_to_file(&self.grub_path, &configs)
+            .with_context(|| "Failed to write configs to file".to_string())?;
         Ok(())
     }
 }
@@ -286,7 +287,7 @@ fn get_and_set_grubcfg(
     grub_path: &str,
     config_partition: bool,
 ) -> Result<Vec<String>> {
-    let f = File::open(grub_path)?;
+    let f = File::open(grub_path).with_context(|| format!("Failed to open grub.cfg \"{}\"", grub_path))?;
     let re_find_cur_linux = r"^\s*linux.*root=.*";
     let re = Regex::new(re_find_cur_linux)?;
     let mut configs_write = Vec::new();

@@ -52,7 +52,7 @@ impl<T: CommandExecutor> DockerImageHandler<T> {
     fn get_rootfs_archive(&self, req: &UpgradeRequest) -> Result<()> {
         let image_name = &req.container_image;
         info!("Start getting rootfs {}", image_name);
-        self.check_and_rm_container().with_context(|| format!("Failed to remove kubeos-temp container"))?;
+        self.check_and_rm_container().with_context(|| "Failed to remove kubeos-temp container".to_string())?;
         debug!("Create container {}", self.container_name);
         let container_id =
             self.executor.run_command_with_output("docker", &["create", "--name", &self.container_name, image_name])?;
@@ -65,7 +65,7 @@ impl<T: CommandExecutor> DockerImageHandler<T> {
                 self.paths.update_path.to_str().unwrap(),
             ],
         )?;
-        self.check_and_rm_container().with_context(|| format!("Failed to remove kubeos-temp container"))?;
+        self.check_and_rm_container().with_context(|| "Failed to remove kubeos-temp container".to_string())?;
         Ok(())
     }
 

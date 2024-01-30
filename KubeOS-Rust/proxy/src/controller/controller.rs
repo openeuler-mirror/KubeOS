@@ -72,7 +72,7 @@ pub async fn reconcile<T: ApplyApi, U: AgentCall>(
                     )
                     .await?;
                 return Ok(REQUEUE_NORMAL);
-            }
+            },
             ConfigOperation::UpdateConfig => {
                 debug!("start update config");
                 osinstance.spec.sysconfigs = os_cr.spec.sysconfigs.clone();
@@ -81,8 +81,8 @@ pub async fn reconcile<T: ApplyApi, U: AgentCall>(
                     .update_osinstance_spec(&osinstance.name(), &namespace, &osinstance.spec)
                     .await?;
                 return Ok(REQUEUE_ERROR);
-            }
-            _ => {}
+            },
+            _ => {},
         }
         proxy_controller.set_config(&mut osinstance, ConfigType::SysConfig).await?;
         proxy_controller
@@ -92,17 +92,17 @@ pub async fn reconcile<T: ApplyApi, U: AgentCall>(
         if os_cr.spec.opstype == NODE_STATUS_CONFIG {
             return Err(Error::UpgradeBeforeConfig);
         }
-        if let ConfigOperation::Reassign = ConfigType::UpgradeConfig.check_config_version(&os, &osinstance)  {
-                debug!("start reassign");
-                proxy_controller
-                    .refresh_node(
-                        node,
-                        osinstance,
-                        &get_config_version(os_cr.spec.upgradeconfigs.as_ref()),
-                        ConfigType::UpgradeConfig,
-                    )
-                    .await?;
-                return Ok(REQUEUE_NORMAL);
+        if let ConfigOperation::Reassign = ConfigType::UpgradeConfig.check_config_version(&os, &osinstance) {
+            debug!("start reassign");
+            proxy_controller
+                .refresh_node(
+                    node,
+                    osinstance,
+                    &get_config_version(os_cr.spec.upgradeconfigs.as_ref()),
+                    ConfigType::UpgradeConfig,
+                )
+                .await?;
+            return Ok(REQUEUE_NORMAL);
         }
         if node.labels().contains_key(LABEL_UPGRADING) {
             if osinstance.spec.nodestatus == NODE_STATUS_IDLE {
@@ -157,12 +157,12 @@ impl<T: ApplyApi, U: AgentCall> ProxyController<T, U> {
             Ok(osi) => {
                 debug!("osinstance is exist {:?}", osi.name());
                 Ok(())
-            }
+            },
             Err(kube::Error::Api(ErrorResponse { reason, .. })) if &reason == "NotFound" => {
                 info!("Create OSInstance {}", node_name);
                 self.controller_client.create_osinstance(node_name, namespace).await?;
                 Ok(())
-            }
+            },
             Err(err) => Err(Error::KubeClient { source: err }),
         }
     }
@@ -251,15 +251,15 @@ impl<T: ApplyApi, U: AgentCall> ProxyController<T, U> {
             match config_info.configs.and_then(convert_to_agent_config) {
                 Some(agent_configs) => {
                     match self.agent_client.configure_method(ConfigInfo { configs: agent_configs }) {
-                        Ok(_resp) => {}
+                        Ok(_resp) => {},
                         Err(e) => {
                             return Err(Error::Agent { source: e });
-                        }
+                        },
                     }
-                }
+                },
                 None => {
                     info!("config is none, No content can be configured.");
-                }
+                },
             };
             self.update_osi_status(osinstance, config_type).await?;
         }
@@ -284,32 +284,32 @@ impl<T: ApplyApi, U: AgentCall> ProxyController<T, U> {
                 };
 
                 match self.agent_client.prepare_upgrade_method(upgrade_info) {
-                    Ok(_resp) => {}
+                    Ok(_resp) => {},
                     Err(e) => {
                         return Err(Error::Agent { source: e });
-                    }
+                    },
                 }
                 self.evict_node(&node.name(), os_cr.spec.evictpodforce).await?;
                 match self.agent_client.upgrade_method() {
-                    Ok(_resp) => {}
+                    Ok(_resp) => {},
                     Err(e) => {
                         return Err(Error::Agent { source: e });
-                    }
+                    },
                 }
-            }
+            },
             OPERATION_TYPE_ROLLBACK => {
                 self.evict_node(&node.name(), os_cr.spec.evictpodforce).await?;
 
                 match self.agent_client.rollback_method() {
-                    Ok(_resp) => {}
+                    Ok(_resp) => {},
                     Err(e) => {
                         return Err(Error::Agent { source: e });
-                    }
+                    },
                 }
-            }
+            },
             _ => {
                 return Err(Error::Operation { value: os_cr.spec.opstype.clone() });
-            }
+            },
         }
         Ok(())
     }
@@ -320,12 +320,12 @@ impl<T: ApplyApi, U: AgentCall> ProxyController<T, U> {
         node_api.cordon(node_name).await?;
         info!("Cordon node Successfully{}, start drain nodes", node_name);
         match self.drain_node(node_name, evict_pod_force).await {
-            Ok(()) => {}
+            Ok(()) => {},
             Err(e) => {
                 node_api.uncordon(node_name).await?;
                 info!("Drain node {} error, uncordon node successfully", node_name);
                 return Err(e);
-            }
+            },
         }
         Ok(())
     }
@@ -351,7 +351,7 @@ fn convert_to_agent_config(configs: Configs) -> Option<Vec<Sysconfig>> {
                         contents: contents_tmp,
                     };
                     agent_configs.push(config_tmp)
-                }
+                },
                 None => {
                     info!(
                         "model {} which has configpath {} do not has any contents no need to configure",
@@ -359,7 +359,7 @@ fn convert_to_agent_config(configs: Configs) -> Option<Vec<Sysconfig>> {
                         config.configpath.unwrap_or_default()
                     );
                     continue;
-                }
+                },
             };
         }
         if agent_configs.is_empty() {
@@ -427,10 +427,13 @@ pub mod reconciler_error {
 
 #[cfg(test)]
 mod test {
-    use super::{error_policy, reconcile, Context, OSInstance, ProxyController, OS};
-    use crate::controller::apiserver_mock::{timeout_after_5s, MockAgentCallClient, Testcases};
-    use crate::controller::ControllerClient;
     use std::env;
+
+    use super::{error_policy, reconcile, Context, OSInstance, ProxyController, OS};
+    use crate::controller::{
+        apiserver_mock::{timeout_after_5s, MockAgentCallClient, Testcases},
+        ControllerClient,
+    };
 
     #[tokio::test]
     async fn test_create_osinstance_with_no_upgrade_or_configuration() {

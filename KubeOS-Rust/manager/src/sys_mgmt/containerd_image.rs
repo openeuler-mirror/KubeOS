@@ -73,12 +73,12 @@ impl<T: CommandExecutor> CtrImageHandler<T> {
             .to_str()
             .ok_or_else(|| anyhow!("Failed to get mount path: {}", self.paths.mount_path.display()))?;
         info!("Start getting rootfs {}", image_name);
-        self.check_and_unmount(mount_path).with_context(|| format!("Failed to clean containerd environment"))?;
+        self.check_and_unmount(mount_path).with_context(|| "Failed to clean containerd environment".to_string())?;
         self.executor
             .run_command("ctr", &["-n", DEFAULT_NAMESPACE, "images", "mount", "--rw", image_name, mount_path])?;
         // copy os.tar from mount_path to its partent dir
         self.copy_file(self.paths.mount_path.join(&self.paths.rootfs_file), &self.paths.tar_path, permission)?;
-        self.check_and_unmount(mount_path).with_context(|| format!("Failed to clean containerd environment"))?;
+        self.check_and_unmount(mount_path).with_context(|| "Failed to clean containerd environment".to_string())?;
         Ok(())
     }
 
@@ -103,10 +103,7 @@ impl<T: CommandExecutor> CtrImageHandler<T> {
 
 #[cfg(test)]
 mod tests {
-    use std::{
-        io::Write,
-        path::{Path, PathBuf},
-    };
+    use std::{io::Write, path::PathBuf};
 
     use mockall::mock;
     use tempfile::NamedTempFile;
