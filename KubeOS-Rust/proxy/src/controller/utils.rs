@@ -39,7 +39,7 @@ impl ConfigType {
         debug!("start check_config_version");
         let node_status = &osinstance.spec.nodestatus;
         if node_status == NODE_STATUS_IDLE {
-            debug!("======node status is idle======");
+            debug!("node status is idle");
             return ConfigOperation::DoNothing;
         };
         match self {
@@ -47,7 +47,7 @@ impl ConfigType {
                 let os_config_version = get_config_version(os.spec.upgradeconfigs.as_ref());
                 let osi_config_version = get_config_version(osinstance.spec.upgradeconfigs.as_ref());
                 debug!(
-                    "=======os upgradeconfig version is{},osinstance spec upragdeconfig version is{}",
+                    "os upgradeconfig version is{},osinstance spec upragdeconfig version is{}",
                     os_config_version, osi_config_version
                 );
                 if !check_version(&os_config_version, &osi_config_version) {
@@ -61,7 +61,7 @@ impl ConfigType {
                 let os_config_version = get_config_version(os.spec.sysconfigs.as_ref());
                 let osi_config_version = get_config_version(osinstance.spec.sysconfigs.as_ref());
                 debug!(
-                    "=======os sysconfig version is{},osinstance spec sysconfig version is{}",
+                    "os sysconfig version is{},osinstance spec sysconfig version is{}",
                     os_config_version, osi_config_version
                 );
                 if !check_version(&os_config_version, &osi_config_version) {
@@ -108,13 +108,13 @@ impl ConfigType {
             }
         }
         debug!(
-            "=======osinstance soec config version is {},status config version is {}",
+            "osinstance soec config version is {},status config version is {}",
             spec_config_version, status_config_version
         );
         if spec_config_version != status_config_version && osinstance.spec.nodestatus != NODE_STATUS_IDLE {
-            return ConfigInfo { need_config: true, configs: configs };
+            return ConfigInfo { need_config: true, configs };
         }
-        return ConfigInfo { need_config: false, configs: None };
+        ConfigInfo { need_config: false, configs: None }
     }
     pub fn set_osi_status_config(&self, osinstance: &mut OSInstance) {
         match self {

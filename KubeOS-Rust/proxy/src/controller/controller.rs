@@ -59,7 +59,7 @@ pub async fn reconcile<T: ApplyApi, U: AgentCall>(
         .ok_or(Error::MissingSubResource { value: String::from("node.status.node_info") })?
         .os_image;
     debug!("os expected osversion is {},actual osversion is {}", os_cr.spec.osversion, node_os_image);
-    if check_version(&os_cr.spec.osversion, &node_os_image) {
+    if check_version(&os_cr.spec.osversion, node_os_image) {
         match ConfigType::SysConfig.check_config_version(&os, &osinstance) {
             ConfigOperation::Reassign => {
                 debug!("start reassign");
@@ -92,8 +92,7 @@ pub async fn reconcile<T: ApplyApi, U: AgentCall>(
         if os_cr.spec.opstype == NODE_STATUS_CONFIG {
             return Err(Error::UpgradeBeforeConfig);
         }
-        match ConfigType::UpgradeConfig.check_config_version(&os, &osinstance) {
-            ConfigOperation::Reassign => {
+        if let ConfigOperation::Reassign = ConfigType::UpgradeConfig.check_config_version(&os, &osinstance)  {
                 debug!("start reassign");
                 proxy_controller
                     .refresh_node(
@@ -104,8 +103,6 @@ pub async fn reconcile<T: ApplyApi, U: AgentCall>(
                     )
                     .await?;
                 return Ok(REQUEUE_NORMAL);
-            }
-            _ => {}
         }
         if node.labels().contains_key(LABEL_UPGRADING) {
             if osinstance.spec.nodestatus == NODE_STATUS_IDLE {
@@ -159,14 +156,14 @@ impl<T: ApplyApi, U: AgentCall> ProxyController<T, U> {
         match osi_api.get(node_name).await {
             Ok(osi) => {
                 debug!("osinstance is exist {:?}", osi.name());
-                return Ok(());
+                Ok(())
             }
             Err(kube::Error::Api(ErrorResponse { reason, .. })) if &reason == "NotFound" => {
                 info!("Create OSInstance {}", node_name);
                 self.controller_client.create_osinstance(node_name, namespace).await?;
                 Ok(())
             }
-            Err(err) => Err(Error::KubeError { source: err }),
+            Err(err) => Err(Error::KubeClient { source: err }),
         }
     }
 
@@ -243,7 +240,7 @@ impl<T: ApplyApi, U: AgentCall> ProxyController<T, U> {
         let namespace = &osinstance
             .namespace()
             .ok_or(Error::MissingObjectKey { resource: "osinstance".to_string(), value: "namespace".to_string() })?;
-        self.controller_client.update_osinstance_status(&osinstance.name(), &namespace, &osinstance.status).await?;
+        self.controller_client.update_osinstance_status(&osinstance.name(), namespace, &osinstance.status).await?;
         Ok(())
     }
 
@@ -256,7 +253,7 @@ impl<T: ApplyApi, U: AgentCall> ProxyController<T, U> {
                     match self.agent_client.configure_method(ConfigInfo { configs: agent_configs }) {
                         Ok(_resp) => {}
                         Err(e) => {
-                            return Err(Error::AgentError { source: e });
+                            return Err(Error::Agent { source: e });
                         }
                     }
                 }
@@ -278,9 +275,9 @@ impl<T: ApplyApi, U: AgentCall> ProxyController<T, U> {
                     image_type: os_cr.spec.imagetype.clone(),
                     check_sum: os_cr.spec.checksum.clone(),
                     container_image: os_cr.spec.containerimage.clone(),
-                    flagsafe: os_cr.spec.flagsafe.clone(),
+                    flagsafe: os_cr.spec.flagsafe,
                     imageurl: os_cr.spec.imageurl.clone(),
-                    mtls: os_cr.spec.mtls.clone(),
+                    mtls: os_cr.spec.mtls,
                     cacert: os_cr.spec.cacert.clone().unwrap_or_default(),
                     clientcert: os_cr.spec.clientcert.clone().unwrap_or_default(),
                     clientkey: os_cr.spec.clientkey.clone().unwrap_or_default(),
@@ -289,14 +286,14 @@ impl<T: ApplyApi, U: AgentCall> ProxyController<T, U> {
                 match self.agent_client.prepare_upgrade_method(upgrade_info) {
                     Ok(_resp) => {}
                     Err(e) => {
-                        return Err(Error::AgentError { source: e });
+                        return Err(Error::Agent { source: e });
                     }
                 }
                 self.evict_node(&node.name(), os_cr.spec.evictpodforce).await?;
                 match self.agent_client.upgrade_method() {
                     Ok(_resp) => {}
                     Err(e) => {
-                        return Err(Error::AgentError { source: e });
+                        return Err(Error::Agent { source: e });
                     }
                 }
             }
@@ -306,12 +303,12 @@ impl<T: ApplyApi, U: AgentCall> ProxyController<T, U> {
                 match self.agent_client.rollback_method() {
                     Ok(_resp) => {}
                     Err(e) => {
-                        return Err(Error::AgentError { source: e });
+                        return Err(Error::Agent { source: e });
                     }
                 }
             }
             _ => {
-                return Err(Error::OperationError { value: os_cr.spec.opstype.clone() });
+                return Err(Error::Operation { value: os_cr.spec.opstype.clone() });
             }
         }
         Ok(())
@@ -336,7 +333,7 @@ impl<T: ApplyApi, U: AgentCall> ProxyController<T, U> {
     async fn drain_node(&self, node_name: &str, force: bool) -> Result<(), Error> {
         use drain::error::DrainError::*;
         match drain_os(&self.k8s_client.clone(), node_name, force).await {
-            Err(DeletePodsError { errors, .. }) => Err(Error::DrainNodeError { value: errors.join("; ") }),
+            Err(DeletePodsError { errors, .. }) => Err(Error::DrainNode { value: errors.join("; ") }),
             _ => Ok(()),
         }
     }
@@ -365,13 +362,13 @@ fn convert_to_agent_config(configs: Configs) -> Option<Vec<Sysconfig>> {
                 }
             };
         }
-        if agent_configs.len() == 0 {
+        if agent_configs.is_empty() {
             info!("no contents in all models, no need to configure");
             return None;
         }
         return Some(agent_configs);
     }
-    return None;
+    None
 }
 
 fn convert_to_config_hashmap(contents: Vec<Content>) -> Option<HashMap<String, KeyInfo>> {
@@ -381,7 +378,7 @@ fn convert_to_config_hashmap(contents: Vec<Content>) -> Option<HashMap<String, K
             KeyInfo { value: content.value.unwrap_or_default(), operation: content.operation.unwrap_or_default() };
         contents_tmp.insert(content.key.unwrap_or_default(), key_info);
     }
-    return Some(contents_tmp);
+    Some(contents_tmp)
 }
 
 pub mod reconciler_error {
@@ -391,19 +388,19 @@ pub mod reconciler_error {
     #[derive(Error, Debug)]
     pub enum Error {
         #[error("Kubernetes reported error: {source}")]
-        KubeError {
+        KubeClient {
             #[from]
             source: kube::Error,
         },
 
         #[error("Create/Patch OSInstance reported error: {source}")]
-        ApplyApiError {
+        ApplyApi {
             #[from]
             source: apiclient_error::Error,
         },
 
         #[error("Cannot get environment NODE_NAME, error: {source}")]
-        EnvError {
+        Env {
             #[from]
             source: std::env::VarError,
         },
@@ -415,16 +412,16 @@ pub mod reconciler_error {
         MissingSubResource { value: String },
 
         #[error("operation {} cannot be recognized", value)]
-        OperationError { value: String },
+        Operation { value: String },
 
         #[error("Expect OS Version is not same with Node OS Version, please upgrade first")]
         UpgradeBeforeConfig,
 
         #[error("os-agent reported error:{source}")]
-        AgentError { source: agent_error::Error },
+        Agent { source: agent_error::Error },
 
         #[error("Error when drain node, error reported: {}", value)]
-        DrainNodeError { value: String },
+        DrainNode { value: String },
     }
 }
 
