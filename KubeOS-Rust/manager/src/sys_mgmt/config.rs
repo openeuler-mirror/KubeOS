@@ -105,9 +105,10 @@ impl Configuration for KernelSysctlPersist {
             config_path = &config.config_path;
         }
         debug!("kernel.sysctl.persist config_path: \"{}\"", config_path);
-        create_config_file(config_path)?;
-        let configs = get_and_set_configs(&mut config.contents, config_path)?;
-        write_configs_to_file(config_path, &configs)?;
+        create_config_file(config_path).with_context(|| format!("Failed to find config path"))?;
+        let configs = get_and_set_configs(&mut config.contents, config_path)
+            .with_context(|| format!("Failed to set persist kernel configs"))?;
+        write_configs_to_file(config_path, &configs).with_context(|| format!("Failed to write configs to file"))?;
         Ok(())
     }
 }
@@ -254,10 +255,15 @@ impl Configuration for GrubCmdline {
         if !is_file_exist(&self.grub_path) {
             bail!("Failed to find grub.cfg file");
         }
-        let config_partition =
-            if cfg!(test) { self.is_cur_partition } else { self.get_config_partition(RealCommandExecutor {})? };
+        let config_partition = if cfg!(test) {
+            self.is_cur_partition
+        } else {
+            self.get_config_partition(RealCommandExecutor {})
+                .with_context(|| format!("Failed to get config partition"))?
+        };
         debug!("Config_partition: {} (false means partition A, true means partition B)", config_partition);
-        let configs = get_and_set_grubcfg(&mut config.contents, &self.grub_path, config_partition)?;
+        let configs = get_and_set_grubcfg(&mut config.contents, &self.grub_path, config_partition)
+            .with_context(|| format!("Failed to set grub configs"))?;
         write_configs_to_file(&self.grub_path, &configs)?;
         Ok(())
     }

@@ -16,7 +16,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use anyhow::{anyhow, bail, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use log::{debug, info, trace};
 use nix::{mount, mount::MntFlags};
 
@@ -85,7 +85,7 @@ pub fn check_disk_size<P: AsRef<Path>>(need_bytes: i64, path: P) -> Result<()> {
 /// clean_env will umount the mount path and delete directory /persist/KubeOS-Update and /persist/update.img
 pub fn clean_env<P>(update_path: P, mount_path: P, image_path: P) -> Result<()>
 where
-    P: AsRef<Path>,
+    P: AsRef<Path> + std::fmt::Debug,
 {
     if is_mounted(&mount_path)? {
         debug!("Umount \"{}\"", mount_path.as_ref().display());
@@ -94,8 +94,8 @@ where
         }
     }
     // losetup -D?
-    delete_file_or_dir(update_path)?;
-    delete_file_or_dir(image_path)?;
+    delete_file_or_dir(&update_path).with_context(|| format!("Failed to delete {:?}", update_path))?;
+    delete_file_or_dir(&image_path).with_context(|| format!("Failed to delete {:?}", image_path))?;
     Ok(())
 }
 
