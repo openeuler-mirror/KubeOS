@@ -19,7 +19,7 @@ mod crd;
 mod utils;
 mod values;
 
-pub use agentclient::AgentClient;
+pub use agentclient::{AgentCallClient, AgentClient};
 pub use apiclient::ControllerClient;
 pub use controller::{error_policy, reconcile, reconciler_error::Error, ProxyController};
 pub use crd::OS;

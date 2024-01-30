@@ -2,15 +2,20 @@ use self::mock_error::Error;
 use super::{
     agentclient::*,
     crd::{Configs, OSInstanceStatus},
-    values::{NODE_STATUS_CONFIG, NODE_STATUS_UPGRADE},
+    values::{NODE_STATUS_CONFIG, NODE_STATUS_UPGRADE, OPERATION_TYPE_ROLLBACK},
 };
 use crate::controller::{
     apiclient::{ApplyApi, ControllerClient},
-    crd::{OSInstance, OSInstanceSpec, OSSpec, OS},
+    crd::{Config, Content, OSInstance, OSInstanceSpec, OSSpec, OS},
     values::{LABEL_OSINSTANCE, LABEL_UPGRADING, NODE_STATUS_IDLE},
     ProxyController,
 };
 use anyhow::Result;
+use cli::client::Client;
+use cli::method::{
+    callable_method::RpcMethod, configure::ConfigureMethod, prepare_upgrade::PrepareUpgradeMethod,
+    rollback::RollbackMethod, upgrade::UpgradeMethod,
+};
 use http::{Request, Response};
 use hyper::{body::to_bytes, Body};
 use k8s_openapi::api::core::v1::Pod;
@@ -19,7 +24,8 @@ use kube::{
     api::ObjectMeta,
     core::{ListMeta, ObjectList},
 };
-use kube::{Client, Resource, ResourceExt};
+use kube::{Client as KubeClient, Resource, ResourceExt};
+use mockall::mock;
 use std::collections::BTreeMap;
 
 type ApiServerHandle = tower_test::mock::Handle<Request<Body>, Response<Body>>;
@@ -34,6 +40,7 @@ pub enum Testcases {
     ConfigNormal(OSInstance),
     ConfigVersionMismatchReassign(OSInstance),
     ConfigVersionMismatchUpdate(OSInstance),
+    Rollback(OSInstance),
 }
 
 pub async fn timeout_after_5s(handle: tokio::task::JoinHandle<()>) {
@@ -59,7 +66,7 @@ impl ApiServerVerifier {
                         .unwrap()
                         .handler_node_get(osi)
                         .await
-                },
+                }
                 Testcases::UpgradeNormal(osi) => {
                     self.handler_osinstance_get_exist(osi.clone())
                         .await
@@ -78,7 +85,7 @@ impl ApiServerVerifier {
                         .unwrap()
                         .handler_node_pod_list_get(osi)
                         .await
-                },
+                }
                 Testcases::UpgradeUpgradeconfigsVersionMismatch(osi) => {
                     self.handler_osinstance_get_exist(osi.clone())
                         .await
@@ -97,7 +104,7 @@ impl ApiServerVerifier {
                         .unwrap()
                         .handler_osinstance_patch_nodestatus_idle(osi)
                         .await
-                },
+                }
                 Testcases::UpgradeOSInstaceNodestatusConfig(osi) => {
                     self.handler_osinstance_get_exist(osi.clone())
                         .await
@@ -107,7 +114,7 @@ impl ApiServerVerifier {
                         .unwrap()
                         .handler_node_get_with_label(osi.clone())
                         .await
-                },
+                }
                 Testcases::UpgradeOSInstaceNodestatusIdle(osi) => {
                     self.handler_osinstance_get_exist(osi.clone())
                         .await
@@ -123,7 +130,7 @@ impl ApiServerVerifier {
                         .unwrap()
                         .handler_node_uncordon(osi)
                         .await
-                },
+                }
                 Testcases::ConfigNormal(osi) => {
                     self.handler_osinstance_get_exist(osi.clone())
                         .await
@@ -139,7 +146,7 @@ impl ApiServerVerifier {
                         .unwrap()
                         .handler_osinstance_patch_nodestatus_idle(osi)
                         .await
-                },
+                }
                 Testcases::ConfigVersionMismatchReassign(osi) => {
                     self.handler_osinstance_get_exist(osi.clone())
                         .await
@@ -152,7 +159,7 @@ impl ApiServerVerifier {
                         .unwrap()
                         .handler_osinstance_patch_nodestatus_idle(osi)
                         .await
-                },
+                }
                 Testcases::ConfigVersionMismatchUpdate(osi) => {
                     self.handler_osinstance_get_exist(osi.clone())
                         .await
@@ -165,7 +172,26 @@ impl ApiServerVerifier {
                         .unwrap()
                         .handler_osinstance_patch_spec_sysconfig_v2(osi)
                         .await
-                },
+                }
+                Testcases::Rollback(osi) => {
+                    self.handler_osinstance_get_exist(osi.clone())
+                        .await
+                        .unwrap()
+                        .handler_osinstance_get_exist(osi.clone())
+                        .await
+                        .unwrap()
+                        .handler_node_get_with_label(osi.clone())
+                        .await
+                        .unwrap()
+                        .handler_osinstance_patch_upgradeconfig_v2(osi.clone())
+                        .await
+                        .unwrap()
+                        .handler_node_cordon(osi.clone())
+                        .await
+                        .unwrap()
+                        .handler_node_pod_list_get(osi)
+                        .await
+                }
             }
             .expect("Case completed without errors");
         })
@@ -437,6 +463,7 @@ impl ApiServerVerifier {
 
 pub mod mock_error {
     use thiserror::Error;
+
     #[derive(Error, Debug)]
     pub enum Error {
         #[error("Kubernetes reported error: {source}")]
@@ -447,17 +474,27 @@ pub mod mock_error {
     }
 }
 
-impl<T: ApplyApi, U: AgentMethod> ProxyController<T, U> {
-    pub fn test() -> (ProxyController<impl ApplyApi, impl AgentMethod>, ApiServerVerifier) {
+mock! {
+    pub AgentCallClient{}
+    impl AgentCall for AgentCallClient{
+        fn call_agent<T: RpcMethod + 'static>(&self, client:&Client, method: T) -> Result<(), agent_error::Error> {
+                Ok(())
+            }
+    }
+
+}
+impl<T: ApplyApi, U: AgentCall> ProxyController<T, U> {
+    pub fn test() -> (ProxyController<ControllerClient, MockAgentCallClient>, ApiServerVerifier) {
         let (mock_service, handle) = tower_test::mock::pair::<Request<Body>, Response<Body>>();
-        let mock_k8s_client = Client::new(mock_service, "default");
+        let mock_k8s_client = KubeClient::new(mock_service, "default");
         let mock_api_client = ControllerClient::new(mock_k8s_client.clone());
-        let mut mock_agent_client: MockAgentMethod = MockAgentMethod::new();
-        mock_agent_client.expect_rollback_method().returning(|_x| Ok(()));
-        mock_agent_client.expect_prepare_upgrade_method().returning(|_x, _y| Ok(()));
-        mock_agent_client.expect_upgrade_method().returning(|_x| Ok(()));
-        mock_agent_client.expect_configure_method().returning(|_x, _y| Ok(()));
-        let proxy_controller: ProxyController<ControllerClient, MockAgentMethod> =
+        let mut mock_agent_call_client = MockAgentCallClient::new();
+        mock_agent_call_client.expect_call_agent::<UpgradeMethod>().returning(|_x, _y| Ok(()));
+        mock_agent_call_client.expect_call_agent::<PrepareUpgradeMethod>().returning(|_x, _y| Ok(()));
+        mock_agent_call_client.expect_call_agent::<RollbackMethod>().returning(|_x, _y| Ok(()));
+        mock_agent_call_client.expect_call_agent::<ConfigureMethod>().returning(|_x, _y| Ok(()));
+        let mock_agent_client = AgentClient::new("test", mock_agent_call_client);
+        let proxy_controller: ProxyController<ControllerClient, MockAgentCallClient> =
             ProxyController::new(mock_k8s_client, mock_api_client, mock_agent_client);
         (proxy_controller, ApiServerVerifier(handle))
     }
@@ -495,7 +532,7 @@ impl OSInstance {
     }
 
     pub fn set_osi_nodestatus_config(node_name: &str, namespace: &str) -> Self {
-        // return osinstance with nodestatus = upgrade, upgradeconfig.version=v1, sysconfig.version=v1
+        // return osinstance with nodestatus = config, upgradeconfig.version=v1, sysconfig.version=v1
         let mut osinstance = OSInstance::set_osi_default(node_name, namespace);
         osinstance.spec.nodestatus = NODE_STATUS_CONFIG.to_string();
         osinstance
@@ -512,7 +549,18 @@ impl OSInstance {
         // return osinstance with nodestatus = upgrade, upgradeconfig.version=v2, sysconfig.version=v1
         let mut osinstance = OSInstance::set_osi_default(node_name, namespace);
         osinstance.spec.nodestatus = NODE_STATUS_UPGRADE.to_string();
-        osinstance.spec.upgradeconfigs.as_mut().unwrap().version = Some(String::from("v2"));
+        osinstance.spec.upgradeconfigs = Some(Configs {
+            version: Some(String::from("v2")),
+            configs: Some(vec![Config {
+                model: Some(String::from("kernel.sysctl.persist")),
+                configpath: Some(String::from("/persist/persist.conf")),
+                contents: Some(vec![Content {
+                    key: Some(String::from("kernel.test")),
+                    value: Some(String::from("test")),
+                    operation: Some(String::from("delete")),
+                }]),
+            }]),
+        });
         osinstance
     }
 
@@ -520,7 +568,18 @@ impl OSInstance {
         // return osinstance with nodestatus = upgrade, upgradeconfig.version=v2, sysconfig.version=v1
         let mut osinstance = OSInstance::set_osi_default(node_name, namespace);
         osinstance.spec.nodestatus = NODE_STATUS_CONFIG.to_string();
-        osinstance.spec.sysconfigs.as_mut().unwrap().version = Some(String::from("v2"));
+        osinstance.spec.sysconfigs = Some(Configs {
+            version: Some(String::from("v2")),
+            configs: Some(vec![Config {
+                model: Some(String::from("kernel.sysctl.persist")),
+                configpath: Some(String::from("/persist/persist.conf")),
+                contents: Some(vec![Content {
+                    key: Some(String::from("kernel.test")),
+                    value: Some(String::from("test")),
+                    operation: Some(String::from("delete")),
+                }]),
+            }]),
+        });
         osinstance
     }
 }
@@ -549,7 +608,37 @@ impl OS {
     pub fn set_os_syscon_v2_opstype_config() -> Self {
         let mut os = OS::set_os_default();
         os.spec.opstype = String::from("config");
-        os.spec.sysconfigs = Some(Configs { version: Some(String::from("v2")), configs: None });
+        os.spec.sysconfigs = Some(Configs {
+            version: Some(String::from("v2")),
+            configs: Some(vec![Config {
+                model: Some(String::from("kernel.sysctl.persist")),
+                configpath: Some(String::from("/persist/persist.conf")),
+                contents: Some(vec![Content {
+                    key: Some(String::from("kernel.test")),
+                    value: Some(String::from("test")),
+                    operation: Some(String::from("delete")),
+                }]),
+            }]),
+        });
+        os
+    }
+
+    pub fn set_os_rollback_osversion_v2_upgradecon_v2() -> Self {
+        let mut os = OS::set_os_default();
+        os.spec.osversion = String::from("KubeOS v2");
+        os.spec.opstype = OPERATION_TYPE_ROLLBACK.to_string();
+        os.spec.upgradeconfigs = Some(Configs {
+            version: Some(String::from("v2")),
+            configs: Some(vec![Config {
+                model: Some(String::from("kernel.sysctl.persist")),
+                configpath: Some(String::from("/persist/persist.conf")),
+                contents: Some(vec![Content {
+                    key: Some(String::from("kernel.test")),
+                    value: Some(String::from("test")),
+                    operation: Some(String::from("delete")),
+                }]),
+            }]),
+        });
         os
     }
 }
