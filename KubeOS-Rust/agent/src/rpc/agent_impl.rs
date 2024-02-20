@@ -57,7 +57,10 @@ impl Default for AgentImpl {
 
 impl AgentImpl {
     fn prepare_upgrade_impl(&self, req: UpgradeRequest) -> Result<Response> {
-        let _lock = self.mutex.lock().unwrap();
+        let lock = self.mutex.try_lock();
+        if lock.is_err() {
+            bail!("os-agent is processing another request");
+        }
         debug!("Received an 'prepare upgrade' request: {:?}", req);
         info!("Start preparing for upgrading to version: {}", req.version);
 
@@ -76,7 +79,10 @@ impl AgentImpl {
     }
 
     fn upgrade_impl(&self) -> Result<Response> {
-        let _lock = self.mutex.lock().unwrap();
+        let lock = self.mutex.try_lock();
+        if lock.is_err() {
+            bail!("os-agent is processing another request");
+        }
         info!("Start to upgrade");
         let command_executor = RealCommandExecutor {};
         let (_, next_partition_info) = get_partition_info(&command_executor)?;
@@ -91,7 +97,10 @@ impl AgentImpl {
     }
 
     fn configure_impl(&self, mut req: ConfigureRequest) -> Result<Response> {
-        let _lock = self.mutex.lock().unwrap();
+        let lock = self.mutex.try_lock();
+        if lock.is_err() {
+            bail!("os-agent is processing another request");
+        }
         debug!("Received a 'configure' request: {:?}", req);
         info!("Start to configure");
         let config_map = &*CONFIG_TEMPLATE;
@@ -108,7 +117,10 @@ impl AgentImpl {
     }
 
     fn rollback_impl(&self) -> Result<Response> {
-        let _lock = self.mutex.lock().unwrap();
+        let lock = self.mutex.try_lock();
+        if lock.is_err() {
+            bail!("os-agent is processing another request");
+        }
         info!("Start to rollback");
         let command_executor = RealCommandExecutor {};
         let (_, next_partition_info) = get_partition_info(&command_executor)?;
@@ -166,6 +178,18 @@ mod test {
         let req = ConfigureRequest {
             configs: vec![Sysconfig {
                 model: "invalid".to_string(),
+                config_path: "".to_string(),
+                contents: HashMap::new(),
+            }],
+        };
+        let res = agent.configure(req);
+        assert!(res.is_err());
+
+        // test lock
+        let _lock = agent.mutex.lock().unwrap();
+        let req = ConfigureRequest {
+            configs: vec![Sysconfig {
+                model: "kernel.sysctl".to_string(),
                 config_path: "".to_string(),
                 contents: HashMap::new(),
             }],
