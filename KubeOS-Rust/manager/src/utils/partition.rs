@@ -50,7 +50,7 @@ pub fn get_partition_info<T: CommandExecutor>(executor: &T) -> Result<(Partition
             }
         }
     }
-    if cur_partition.device.is_empty() {
+    if cur_partition.menuentry.is_empty() {
         bail!("Failed to get partition info, lsblk output: {}", lsblk);
     }
     Ok((cur_partition, next_partition))
@@ -106,6 +106,11 @@ mod tests {
 
         let command_output3 = "";
         mock.expect_run_command_with_output().times(1).returning(|_, _| Ok(command_output3.to_string()));
+        let res = get_partition_info(&mock);
+        assert!(res.is_err());
+
+        let command_output4 = "sda4 / ext4";
+        mock.expect_run_command_with_output().times(1).returning(|_, _| Ok(command_output4.to_string()));
         let res = get_partition_info(&mock);
         assert!(res.is_err());
     }
