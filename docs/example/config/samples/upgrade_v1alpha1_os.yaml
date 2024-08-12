@@ -1,38 +1,38 @@
 apiVersion: upgrade.openeuler.org/v1alpha1
 kind: OS
 metadata:
-    name: os-sample
+  name: os-sample
 spec:
-    imagetype: docker/containerd/disk
-    opstype: upgrade/config/rollback
-    osversion: edit.os.version
-    maxunavailable: edit.node.upgrade.number
-    containerimage: ""
-    evictpodforce: true
-    imageurl: ""
-    checksum: image digests
-    flagSafe: false
-    mtls: false
-    sysconfigs:
-        version: edit.sysconfig.version
-        configs:
-            - model: kernel.systcl
-            contents:
-                - key: kernel param key1
-                  value: kernel param value1
-                - key: kernel param key2
-                  value: kernel param value2
-            - model: kernel.systcl.persist
-              configpath: persist file path
-              contents:
-                - key: kernel param key3
-                  value: kernel param value3
-                  operation: delete
-    upgradeconfigs:
-        version: edit.upgradeconfig.version
-        configs:
-            - model: kernel.systcl
-            contents:
-                - key: kernel param key4
-                  value: kernel param value4
-                  operation: delete
+  imagetype: docker/containerd/disk
+  opstype: upgrade/config/rollback
+  osversion: edit.os.version
+  maxunavailable: edit.node.upgrade.number
+  containerimage: ""
+  evictpodforce: true
+  imageurl: ""
+  checksum: image digests
+  flagSafe: false
+  mtls: false
+  sysconfigs:
+    version: edit.sysconfig.version
+    configs:
+      - model: kernel.sysctl
+        contents:
+          - key: kernel param key1
+            value: kernel param value1
+          - key: kernel param key2
+            value: kernel param value2
+      - model: kernel.sysctl.persist
+        configpath: persist file path
+        contents:
+          - key: kernel param key3
+            value: kernel param value3
+            operation: delete
+  upgradeconfigs:
+    version: edit.upgradeconfig.version
+    configs:
+      - model: kernel.sysctl
+        contents:
+          - key: kernel param key4
+            value: kernel param value4
+            operation: delete

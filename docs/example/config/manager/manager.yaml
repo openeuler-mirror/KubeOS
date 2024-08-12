@@ -20,19 +20,19 @@ spec:
         control-plane: upgrade-proxy
     spec:
       containers:
-       - name: proxy
-         command:
-          - /proxy
-         image: edit.proxy.image.addr
-         volumeMounts:
-          - name: upgrade-agent
-            mountPath: /var/run/os-agent
-         env:
-          - name: NODE_NAME
-            valueFrom:
-             fieldRef:
-              apiVersion: v1
-              fieldPath: spec.nodeName
+        - name: proxy
+          command:
+            - /proxy
+          image: <edit.proxy.image.addr>
+          volumeMounts:
+            - name: upgrade-agent
+              mountPath: /var/run/os-agent
+          env:
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  apiVersion: v1
+                  fieldPath: spec.nodeName
       volumes:
         - name: upgrade-agent
           hostPath:
@@ -56,24 +56,26 @@ spec:
         control-plane: upgrade-operator
     spec:
       containers:
-      - command:
-        - /operator
-        image: edit.operator.image.addr
-        name: operator
-        securityContext:
-          allowPrivilegeEscalation: false
-          runAsUser: 6552
-          runAsGroup: 6552
-        resources:
-          limits:
-            cpu: 100m
-            memory: 30Mi
-          requests:
-            cpu: 100m
-            memory: 20Mi
+        - command:
+            - /operator
+          image: <edit.operator.image.addr>
+          name: operator
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsUser: 6552
+            runAsGroup: 6552
+          resources:
+            limits:
+              cpu: 100m
+              memory: 30Mi
+            requests:
+              cpu: 100m
+              memory: 20Mi
       terminationGracePeriodSeconds: 10
       nodeSelector:
         node-role.kubernetes.io/control-plane: ""
       tolerations:
         - key: "node-role.kubernetes.io/master"
+          operator: "Exists"
+        - key: "node-role.kubernetes.io/control-plane"
           operator: "Exists"
