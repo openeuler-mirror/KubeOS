@@ -17,8 +17,6 @@ import (
 	"context"
 
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/apimachinery/pkg/selection"
 	"k8s.io/apimachinery/pkg/types"
 	"openeuler.org/KubeOS/pkg/common"
 	"openeuler.org/KubeOS/pkg/values"
@@ -28,32 +26,19 @@ import (
 )
 
 type operation interface {
-	newExistRequirement() (labels.Requirement, error)
-	newNotExistRequirement() (labels.Requirement, error)
 	updateNodes(ctx context.Context, r common.ReadStatusWriter, os *upgradev1.OS,
 		nodes []corev1.Node, limit int) (int, error)
 	updateNodeAndOSins(ctx context.Context, r common.ReadStatusWriter, os *upgradev1.OS,
 		node *corev1.Node, osInstance *upgradev1.OSInstance) error
+	getOpsLabel() opsLabel
 }
 
-type upgradeOps struct{}
-
-func (u upgradeOps) newExistRequirement() (labels.Requirement, error) {
-	requirement, err := labels.NewRequirement(values.LabelUpgrading, selection.Exists, nil)
-	if err != nil {
-		log.Error(err, "unable to create requirement "+values.LabelUpgrading)
-		return labels.Requirement{}, err
-	}
-	return *requirement, nil
+type upgradeOps struct {
+	label opsLabel
 }
 
-func (u upgradeOps) newNotExistRequirement() (labels.Requirement, error) {
-	requirement, err := labels.NewRequirement(values.LabelUpgrading, selection.DoesNotExist, nil)
-	if err != nil {
-		log.Error(err, "unable to create requirement "+values.LabelUpgrading)
-		return labels.Requirement{}, err
-	}
-	return *requirement, nil
+func (u upgradeOps) getOpsLabel() opsLabel {
+	return u.label
 }
 
 func (u upgradeOps) updateNodes(ctx context.Context, r common.ReadStatusWriter, os *upgradev1.OS,
@@ -120,24 +105,12 @@ func (u upgradeOps) updateNodeAndOSins(ctx context.Context, r common.ReadStatusW
 	return nil
 }
 
-type configOps struct{}
-
-func (c configOps) newExistRequirement() (labels.Requirement, error) {
-	requirement, err := labels.NewRequirement(values.LabelConfiguring, selection.Exists, nil)
-	if err != nil {
-		log.Error(err, "unable to create requirement "+values.LabelConfiguring)
-		return labels.Requirement{}, err
-	}
-	return *requirement, nil
+type configOps struct {
+	label opsLabel
 }
 
-func (c configOps) newNotExistRequirement() (labels.Requirement, error) {
-	requirement, err := labels.NewRequirement(values.LabelConfiguring, selection.DoesNotExist, nil)
-	if err != nil {
-		log.Error(err, "unable to create requirement "+values.LabelConfiguring)
-		return labels.Requirement{}, err
-	}
-	return *requirement, nil
+func (c configOps) getOpsLabel() opsLabel {
+	return c.label
 }
 
 func (c configOps) updateNodes(ctx context.Context, r common.ReadStatusWriter, os *upgradev1.OS,

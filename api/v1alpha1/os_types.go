@@ -39,7 +39,12 @@ type OSSpec struct {
 	// +kubebuilder:validation:Optional
 	UpgradeConfigs SysConfigs `json:"upgradeconfigs"`
 	// +kubebuilder:validation:Optional
+	// +kubebuilder:default:=no-label
 	NodeSelector string `json:"nodeselector"`
+	// +kubebuilder:validation:Optional
+	TimeWindow TimeWindow `json:"timewindow"`
+	// +kubebuilder:validation:Optional
+	TimeInterval int `json:"timeinterval"`
 }
 
 // +kubebuilder:subresource:status
@@ -88,6 +93,11 @@ type Content struct {
 	Value string `json:"value"`
 	// +kubebuilder:validation:Optional
 	Operation string `json:"operation"`
+}
+
+type TimeWindow struct {
+	StartTime string `json:"starttime"`
+	EndTime   string `json:"endtime"`
 }
 
 // +kubebuilder:subresource:status
