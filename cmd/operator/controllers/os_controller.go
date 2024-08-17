@@ -17,6 +17,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -57,6 +58,7 @@ func (r *OSReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Re
 
 // Reconcile compares the actual state with the desired and updates the status of the resources e.g. nodes
 func Reconcile(ctx context.Context, r common.ReadStatusWriter, req ctrl.Request) (ctrl.Result, error) {
+	log.V(1).Info("start Reconcile of " + req.Name + " with namespace is " + req.Namespace)
 	os, err := getOSCr(ctx, r, req.NamespacedName)
 	if err != nil {
 		if errors.IsNotFound(err) {
@@ -64,41 +66,64 @@ func Reconcile(ctx context.Context, r common.ReadStatusWriter, req ctrl.Request)
 		}
 		return values.RequeueNow, err
 	}
-
+	log.V(1).Info("get os cr name is " + os.Name + ", namespace is " + os.Namespace)
 	isWithinTimeWindow, err := isWithinTimeWindow(os.Spec.TimeWindow.StartTime, os.Spec.TimeWindow.EndTime)
 	if err != nil {
 		return values.RequeueNow, err
 	}
 	if !isWithinTimeWindow {
-		//Todo consider time interval
-		return values.RequeueNow, nil
+		log.V(1).Info("not in time window, the start time is " + os.Spec.TimeWindow.StartTime + " , the start time " + os.Spec.TimeWindow.StartTime)
+		return values.Requeue, nil
 	}
 
 	ops := os.Spec.OpsType
 	var opsInsatnce operation
 	switch ops {
 	case "upgrade", "rollback":
-		opsInsatnce = upgradeOps{label: opsLabel{label: values.LabelUpgrading, op: selection.DoesNotExist}}
+		opsInsatnce = upgradeOps{
+			label: opsLabel{
+				label: values.LabelUpgrading,
+				op:    selection.DoesNotExist,
+			},
+		}
 	case "config":
-		opsInsatnce = configOps{label: opsLabel{label: values.LabelConfiguring, op: selection.DoesNotExist}}
+		opsInsatnce = configOps{
+			label: opsLabel{
+				label: values.LabelConfiguring,
+				op:    selection.DoesNotExist,
+			},
+		}
 	default:
 		log.Error(nil, "operation "+ops+" cannot be recognized")
 		return values.Requeue, nil
 	}
-	nodeNum, err := getNodeNum(ctx, r, os.Spec.NodeSelector)
+	commonNodesReq, err := newCommonsNodesRequirement(os.Spec.NodeSelector,
+		selection.Equals).createNodeRequirement(ctx, r)
 	if err != nil {
 		return values.RequeueNow, err
 	}
-	limit, err := calNodeLimit(ctx, r, opsInsatnce.getOpsLabel(), min(os.Spec.MaxUnavailable, nodeNum), os.Spec.NodeSelector) // adjust maxUnavailable if need
+	allNodes, err := getNodes(ctx, r, 0, commonNodesReq...)
 	if err != nil {
 		return values.RequeueNow, err
 	}
-	if needRequeue, err := assignOperation(ctx, r, os, limit, opsInsatnce); err != nil {
-		return values.RequeueNow, err
-	} else if needRequeue {
+	log.V(1).Info("get all nodes is " + strconv.Itoa(len(allNodes)))
+	switch os.Spec.ExecutionMode {
+	case ExecutionModeParallel:
+		result, err := excuteParallelOperation(ctx, r, os, opsInsatnce, len(allNodes))
+		if err != nil {
+			return values.RequeueNow, nil
+		}
+		return result, nil
+	case ExecutionModeSerial:
+		result, err := excuteSerialOperation(ctx, r, os, opsInsatnce, len(allNodes))
+		if err != nil {
+			return values.RequeueNow, err
+		}
+		return result, nil
+	default:
+		log.Error(nil, "excutionMode "+os.Spec.ExecutionMode+" cannot be recognized")
 		return values.Requeue, nil
 	}
-	return setTimeInterval(os.Spec.TimeInterval), nil
 }
 
 // SetupWithManager sets up the controller with the Manager.
@@ -114,28 +139,28 @@ func (r *OSReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		}); err != nil {
 		return err
 	}
-	if err := mgr.GetFieldIndexer().IndexField(context.Background(), &upgradev1.OS{}, "metadata.name",
-		func(rawObj client.Object) []string {
-			os, ok := rawObj.(*upgradev1.OS)
-			if !ok {
-				log.Error(nil, "failed to convert to osInstance")
-				return []string{}
-			}
-			return []string{os.Name}
-		}); err != nil {
-		return err
-	}
-	if err := mgr.GetFieldIndexer().IndexField(context.Background(), &upgradev1.OS{}, "metadata.namespace",
-		func(rawObj client.Object) []string {
-			os, ok := rawObj.(*upgradev1.OS)
-			if !ok {
-				log.Error(nil, "failed to convert to osInstance")
-				return []string{}
-			}
-			return []string{os.Namespace}
-		}); err != nil {
-		return err
-	}
+	// if err := mgr.GetFieldIndexer().IndexField(context.Background(), &upgradev1.OS{}, "metadata.name",
+	// 	func(rawObj client.Object) []string {
+	// 		os, ok := rawObj.(*upgradev1.OS)
+	// 		if !ok {
+	// 			log.Error(nil, "failed to convert to osInstance")
+	// 			return []string{}
+	// 		}
+	// 		return []string{os.Name}
+	// 	}); err != nil {
+	// 	return err
+	// }
+	// if err := mgr.GetFieldIndexer().IndexField(context.Background(), &upgradev1.OS{}, "metadata.namespace",
+	// 	func(rawObj client.Object) []string {
+	// 		os, ok := rawObj.(*upgradev1.OS)
+	// 		if !ok {
+	// 			log.Error(nil, "failed to convert to osInstance")
+	// 			return []string{}
+	// 		}
+	// 		return []string{os.Namespace}
+	// 	}); err != nil {
+	// 	return err
+	// }
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&upgradev1.OS{}).
 		Watches(&source.Kind{Type: &corev1.Node{}}, handler.Funcs{DeleteFunc: r.DeleteOSInstance}).
@@ -173,22 +198,6 @@ func getOSCr(ctx context.Context, r common.ReadStatusWriter, name types.Namespac
 	return os, nil
 }
 
-// Get nodes which do not have master label，have nodeselector label or do not have  other os cr nodeselector
-func getNodeNum(ctx context.Context, r common.ReadStatusWriter, nodeSelector string) (int, error) {
-	labelList := []labelRequirementCreator{masterLabel{op: selection.DoesNotExist}, nodeSelectorLabel{value: nodeSelector, op: selection.Equals}}
-	requirements, err := createRequirement(labelList)
-	if err != nil {
-		return 0, err
-	}
-	nodesItems, err := getNodes(ctx, r, 0, requirements...)
-	if err != nil {
-		log.Error(err, "get slave nodes fail")
-		return 0, err
-	}
-	nodeNum := len(nodesItems)
-	return nodeNum, nil
-}
-
 func getNodes(ctx context.Context, r common.ReadStatusWriter, limit int,
 	reqs ...labels.Requirement) ([]corev1.Node, error) {
 	var nodeList corev1.NodeList
@@ -200,45 +209,27 @@ func getNodes(ctx context.Context, r common.ReadStatusWriter, limit int,
 	return nodeList.Items, nil
 }
 
-// get now in upgrading and match with nodeselector
 func calNodeLimit(ctx context.Context, r common.ReadStatusWriter,
-	label opsLabel, maxUnavailable int, nodeSelector string) (int, error) {
-	label.op = selection.Exists
-	labelList := []labelRequirementCreator{
-		masterLabel{op: selection.DoesNotExist},
-		label,
-		nodeSelectorLabel{value: nodeSelector, op: selection.Equals}}
-	requirements, err := createRequirement(labelList)
-	if err != nil {
-		return 0, err
-	}
+	maxUnavailable int, requirements []labels.Requirement) (int, error) {
 	nodes, err := getNodes(ctx, r, 0, requirements...)
 	if err != nil {
 		return 0, err
 	}
 	return maxUnavailable - len(nodes), nil
 }
-
 func assignOperation(ctx context.Context, r common.ReadStatusWriter, os upgradev1.OS, limit int,
-	opsInstance operation) (bool, error) {
-	opsLabel := opsInstance.getOpsLabel()
-	opsLabel.op = selection.DoesNotExist
-	labelList := []labelRequirementCreator{
-		masterLabel{op: selection.DoesNotExist},
-		opsLabel,
-		nodeSelectorLabel{value: os.Spec.NodeSelector, op: selection.Equals}}
-	requirements, err := createRequirement(labelList)
+	opsInstance operation, requirements []labels.Requirement) (int, error) {
 	nodes, err := getNodes(ctx, r, limit+1, requirements...) // one more to see if all nodes updated
 	if err != nil {
-		return false, err
+		return 0, err
 	}
+	log.V(1).Info("get need nodes is " + strconv.Itoa(len(nodes)))
 	// Upgrade OS for selected nodes
-	count, err := opsInstance.updateNodes(ctx, r, &os, nodes, limit)
-	if err != nil {
-		return false, err
+	count, errLists := opsInstance.updateNodes(ctx, r, &os, nodes, limit)
+	if len(errLists) != 0 {
+		return 0, fmt.Errorf("update nodes and osinstance error")
 	}
-
-	return count >= limit, nil
+	return count, nil
 }
 
 func min(a, b int) int {
@@ -311,15 +302,74 @@ func setTimeInterval(timeInterval int) ctrl.Result {
 	return ctrl.Result{Requeue: true, RequeueAfter: time.Duration(timeInterval) * time.Second}
 }
 
-func createRequirement(labelsList []labelRequirementCreator) ([]labels.Requirement, error) {
-	var requirements []labels.Requirement
-	for _, label := range labelsList {
-		requirement, err := label.createLabelRequirement()
-		if err != nil {
-			log.Error(err, "unable to create requirement "+values.LabelNodeSelector)
-			return []labels.Requirement{}, err
-		}
-		requirements = append(requirements, requirement...)
+func excuteParallelOperation(ctx context.Context, r common.ReadStatusWriter, os upgradev1.OS,
+	opsInsatnce operation, nodeNum int) (ctrl.Result, error) {
+	opsLabel := opsInsatnce.getOpsLabel()
+	opsLabel.op = selection.Exists
+	opsNodesReq, err := newopsNodesRequirement(os.Spec.NodeSelector,
+		selection.Equals, opsLabel).createNodeRequirement(ctx, r)
+	if err != nil {
+		return values.RequeueNow, nil
 	}
-	return requirements, nil
+	limit, err := calNodeLimit(ctx, r, min(os.Spec.MaxUnavailable, nodeNum), opsNodesReq) // adjust maxUnavailable if need
+	if err != nil {
+		return values.RequeueNow, nil
+	}
+	opsLabel.op = selection.DoesNotExist
+	noOpsNodesReq, err := newopsNodesRequirement(os.Spec.NodeSelector,
+		selection.Equals, opsLabel).createNodeRequirement(ctx, r)
+	if err != nil {
+		return values.RequeueNow, nil
+	}
+	if _, err := assignOperation(ctx, r, os, limit, opsInsatnce, noOpsNodesReq); err != nil {
+		return values.RequeueNow, nil
+	}
+	return setTimeInterval(os.Spec.TimeInterval), nil
+}
+
+func excuteSerialOperation(ctx context.Context, r common.ReadStatusWriter, os upgradev1.OS,
+	opsInsatnce operation, nodeNum int) (ctrl.Result, error) {
+	opsLabel := opsInsatnce.getOpsLabel()
+	opsLabel.op = selection.Exists
+	opsNodesReq, err := newopsNodesRequirement(os.Spec.NodeSelector,
+		selection.Equals, opsLabel).createNodeRequirement(ctx, r)
+	if err != nil {
+		return values.RequeueNow, nil
+	}
+	opsNodeNum, err := getNodes(ctx, r, 0, opsNodesReq...)
+	if err != nil {
+		return values.RequeueNow, nil
+	}
+	if len(opsNodeNum) > 0 {
+		return values.Requeue, nil
+	}
+	log.V(1).Info("get opsnodes is " + strconv.Itoa(len(opsNodeNum)))
+	serialNodesRequirement, err := newSerialNodesRequirement(os.Spec.NodeSelector,
+		selection.Equals, selection.Exists).createNodeRequirement(ctx, r)
+	if err != nil {
+		return values.RequeueNow, nil
+	}
+	serialNodeLimit, err := calNodeLimit(ctx, r, min(os.Spec.MaxUnavailable, nodeNum), serialNodesRequirement)
+	if err != nil {
+		return values.RequeueNow, nil
+	}
+	log.V(1).Info("get serialLimit is " + strconv.Itoa(serialNodeLimit))
+	noSerialNodesRequirement, err := newSerialNodesRequirement(os.Spec.NodeSelector,
+		selection.Equals, selection.DoesNotExist).createNodeRequirement(ctx, r)
+	if err != nil {
+		return values.RequeueNow, nil
+	}
+	if _, err := assignOperation(ctx, r, os, serialNodeLimit, serialOps{opsInsatnce.getOpsLabel()}, noSerialNodesRequirement); err != nil {
+		return values.RequeueNow, nil
+	}
+	serialLimit := 1 // 1 is the number of operation nodes when excution mode in serial
+	count, err := assignOperation(ctx, r, os, serialLimit, opsInsatnce, serialNodesRequirement)
+	if err != nil {
+		return values.RequeueNow, nil
+	}
+	if count > 0 {
+		return values.Requeue, nil
+	}
+	return setTimeInterval(os.Spec.TimeInterval), nil
+
 }

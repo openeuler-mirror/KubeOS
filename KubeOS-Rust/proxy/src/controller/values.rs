@@ -15,6 +15,7 @@ use tokio::time::Duration;
 
 pub const LABEL_OSINSTANCE: &str = "upgrade.openeuler.org/osinstance-node";
 pub const LABEL_UPGRADING: &str = "upgrade.openeuler.org/upgrading";
+pub const LABEL_CONFIGURING: &str = "upgrade.openeuler.org/configuring";
 
 pub const OSINSTANCE_API_VERSION: &str = "upgrade.openeuler.org/v1alpha1";
 pub const OSINSTANCE_KIND: &str = "OSInstance";

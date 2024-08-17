@@ -24,6 +24,8 @@ use kube::{
 use log::{debug, error, info};
 use reconciler_error::Error;
 
+use crate::controller::values::LABEL_CONFIGURING;
+
 use super::{
     agentclient::{AgentCall, AgentClient, AgentMethod, ConfigInfo, KeyInfo, Sysconfig, UpgradeInfo},
     apiclient::ApplyApi,
@@ -188,6 +190,10 @@ impl<T: ApplyApi, U: AgentCall> ProxyController<T, U> {
         if labels.contains_key(LABEL_UPGRADING) {
             labels.remove(LABEL_UPGRADING);
             node = node_api.replace(&node.name(), &PostParams::default(), &node).await?;
+        }else if labels.contains_key(LABEL_CONFIGURING) {
+            labels.remove(LABEL_CONFIGURING);
+            node = node_api.replace(&node.name(), &PostParams::default(), &node).await?;
+
         }
         if let Some(node_spec) = &node.spec {
             if let Some(node_unschedulable) = node_spec.unschedulable {

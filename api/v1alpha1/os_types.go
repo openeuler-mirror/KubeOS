@@ -24,10 +24,12 @@ type OSSpec struct {
 	CheckSum       string `json:"checksum"`
 	FlagSafe       bool   `json:"flagSafe"`
 	MTLS           bool   `json:"mtls"`
+	// +kubebuilder:validation:Enum=docker;disk;containerd
 	ImageType      string `json:"imagetype"`
 	ContainerImage string `json:"containerimage"`
-	OpsType        string `json:"opstype"`
-	EvictPodForce  bool   `json:"evictpodforce"`
+	// +kubebuilder:validation:Enum=upgrade;config;rollback
+	OpsType       string `json:"opstype"`
+	EvictPodForce bool   `json:"evictpodforce"`
 	// +kubebuilder:validation:Optional
 	CaCert string `json:"cacert"`
 	// +kubebuilder:validation:Optional
@@ -45,6 +47,10 @@ type OSSpec struct {
 	TimeWindow TimeWindow `json:"timewindow"`
 	// +kubebuilder:validation:Optional
 	TimeInterval int `json:"timeinterval"`
+	// +kubebuilder:validation:Optional
+	// +kubebuilder:validation:Enum=serial;parallel
+	// +kubebuilder:default:=parallel
+	ExecutionMode string `json:"executionmode"`
 }
 
 // +kubebuilder:subresource:status

@@ -15,19 +15,20 @@ package controllers
 
 import (
 	"context"
+	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
-	"openeuler.org/KubeOS/pkg/common"
-	"openeuler.org/KubeOS/pkg/values"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	upgradev1 "openeuler.org/KubeOS/api/v1alpha1"
+	"openeuler.org/KubeOS/pkg/common"
+	"openeuler.org/KubeOS/pkg/values"
 )
 
 type operation interface {
 	updateNodes(ctx context.Context, r common.ReadStatusWriter, os *upgradev1.OS,
-		nodes []corev1.Node, limit int) (int, error)
+		nodes []corev1.Node, limit int) (int, []error)
 	updateNodeAndOSins(ctx context.Context, r common.ReadStatusWriter, os *upgradev1.OS,
 		node *corev1.Node, osInstance *upgradev1.OSInstance) error
 	getOpsLabel() opsLabel
@@ -42,8 +43,9 @@ func (u upgradeOps) getOpsLabel() opsLabel {
 }
 
 func (u upgradeOps) updateNodes(ctx context.Context, r common.ReadStatusWriter, os *upgradev1.OS,
-	nodes []corev1.Node, limit int) (int, error) {
-	var count int
+	nodes []corev1.Node, limit int) (int, []error) {
+	var count = 0
+	var errList []error
 	for _, node := range nodes {
 		if count >= limit {
 			break
@@ -54,19 +56,49 @@ func (u upgradeOps) updateNodes(ctx context.Context, r common.ReadStatusWriter, 
 			var osInstance upgradev1.OSInstance
 			if err := r.Get(ctx, types.NamespacedName{Namespace: os.GetObjectMeta().GetNamespace(), Name: node.Name}, &osInstance); err != nil {
 				if err = client.IgnoreNotFound(err); err != nil {
-					log.Error(err, "failed to get osInstance "+node.Name, "skip this node")
-					return count, err
+					log.Error(err, "osInstance not found "+node.Name, ", maybe the os-proxy initialization is not complete. "+
+						"Restart the reconcile and wait until it is complete.")
+					return count, []error{err}
 				}
+				log.Error(err, "failed to get osInstance "+node.Name+"skip this node")
+				errList = append(errList, err)
 				continue
 			}
 			if err := u.updateNodeAndOSins(ctx, r, os, &node, &osInstance); err != nil {
 				log.Error(err, "failed to update node and osinstance ,skip this node ")
+				errList = append(errList, err)
 				continue
 			}
 			count++
 		}
 	}
+	if count == 0 && os.Spec.ExecutionMode == ExecutionModeSerial {
+		if errList = deleteSerialLabel(ctx, r, nodes); errList != nil {
+			log.Error(nil, "failed to delete nodes serial label")
+		}
+	}
+	if len(errList) > 0 {
+		return count, errList
+	}
 	return count, nil
+
+}
+
+func deleteSerialLabel(ctx context.Context, r common.ReadStatusWriter, nodes []corev1.Node) []error {
+	var errList []error
+	for _, node := range nodes {
+		if _, ok := node.Labels[values.LabelSerial]; ok {
+			delete(node.Labels, values.LabelSerial)
+			if err := r.Update(ctx, &node); err != nil {
+				log.Error(err, "unable to delete serial label ", "node", node.Name+", skip this node")
+				errList = append(errList, err)
+			}
+		}
+	}
+	if len(errList) > 0 {
+		return errList
+	}
+	return nil
 }
 
 func (u upgradeOps) updateNodeAndOSins(ctx context.Context, r common.ReadStatusWriter, os *upgradev1.OS,
@@ -114,8 +146,9 @@ func (c configOps) getOpsLabel() opsLabel {
 }
 
 func (c configOps) updateNodes(ctx context.Context, r common.ReadStatusWriter, os *upgradev1.OS,
-	nodes []corev1.Node, limit int) (int, error) {
-	var count int
+	nodes []corev1.Node, limit int) (int, []error) {
+	var count = 0
+	var errList []error
 	for _, node := range nodes {
 		if count >= limit {
 			break
@@ -123,21 +156,34 @@ func (c configOps) updateNodes(ctx context.Context, r common.ReadStatusWriter, o
 		var osInstance upgradev1.OSInstance
 		if err := r.Get(ctx, types.NamespacedName{Namespace: os.GetObjectMeta().GetNamespace(), Name: node.Name}, &osInstance); err != nil {
 			if err = client.IgnoreNotFound(err); err != nil {
-				log.Error(err, "failed to get osInstance "+node.Name)
-				return count, err
+				log.Error(err, "osInstance not found "+node.Name, ", maybe the os-proxy initialization is not complete. "+
+					"Restart the reconcile and wait until it is complete.")
+				return count, []error{err}
 			}
+			log.Error(err, "failed to get osInstance "+node.Name+", skip this node")
+			errList = append(errList, err)
 			continue
 		}
 		if os.Spec.SysConfigs.Version != osInstance.Spec.SysConfigs.Version {
 			log.Info("Configuring node " + node.Name)
 			if err := c.updateNodeAndOSins(ctx, r, os, &node, &osInstance); err != nil {
 				log.Error(err, "failed to update node and osinstance ,skip this node ")
+				errList = append(errList, err)
 				continue
 			}
 			count++
 		}
 	}
-	return count, nil
+	if count == 0 && os.Spec.ExecutionMode == ExecutionModeSerial {
+		if errList = deleteSerialLabel(ctx, r, nodes); errList != nil {
+			log.Error(nil, "failed to delete nodes serial label")
+		}
+	}
+	if len(errList) > 0 {
+		return count, errList
+	}
+	return count, errList
+
 }
 
 func (c configOps) updateNodeAndOSins(ctx context.Context, r common.ReadStatusWriter, os *upgradev1.OS,
@@ -157,5 +203,76 @@ func (c configOps) updateNodeAndOSins(ctx context.Context, r common.ReadStatusWr
 		return err
 	}
 	log.Info("Add node configuring label " + values.LabelConfiguring + " successfully")
+	return nil
+}
+
+type serialOps struct {
+	label opsLabel
+}
+
+func (s serialOps) getOpsLabel() opsLabel {
+	return s.label
+}
+
+func (s serialOps) updateNodes(ctx context.Context, r common.ReadStatusWriter, os *upgradev1.OS,
+	nodes []corev1.Node, limit int) (int, []error) {
+	var count int
+	var errList []error
+	for _, node := range nodes {
+		log.V(1).Info("start add serial label to nodes")
+		if count >= limit {
+			break
+		}
+		var osInstance upgradev1.OSInstance
+		if err := r.Get(ctx, types.NamespacedName{Namespace: os.GetObjectMeta().GetNamespace(), Name: node.Name}, &osInstance); err != nil {
+			if err = client.IgnoreNotFound(err); err != nil {
+				log.Error(err, "osInstance not found "+node.Name, ", maybe the os-proxy initialization is not complete. "+
+					"Restart the reconcile and wait until it is complete.")
+				return count, []error{err}
+			}
+			log.Error(err, "failed to get osInstance "+node.Name+", skip this node")
+			errList = append(errList, err)
+			continue
+		}
+		switch s.getOpsLabel().label {
+		case values.LabelUpgrading:
+			if os.Spec.OSVersion != node.Status.NodeInfo.OSImage {
+				log.Info("Add Serial Label to node " + node.Name)
+				if err := s.updateNodeAndOSins(ctx, r, os, &node, &osInstance); err != nil {
+					log.Error(err, "failed to update node and osinstance ,skip this node ")
+					errList = append(errList, err)
+					continue
+				}
+				count++
+			}
+		case values.LabelConfiguring:
+			if os.Spec.SysConfigs.Version != osInstance.Spec.SysConfigs.Version {
+				log.Info("Add Serial Label to node " + node.Name)
+				if err := s.updateNodeAndOSins(ctx, r, os, &node, &osInstance); err != nil {
+					log.Error(err, "failed to update node and osinstance ,skip this node ")
+					errList = append(errList, err)
+					continue
+				}
+				count++
+			}
+		default:
+			log.Error(nil, "ops "+s.getOpsLabel().label+" cannot be recognized")
+			return count, []error{fmt.Errorf("ops " + s.getOpsLabel().label + " cannot be recognized")}
+		}
+	}
+	if len(errList) == 0 {
+		return count, nil
+	}
+	return count, errList
+}
+func (s serialOps) updateNodeAndOSins(ctx context.Context, r common.ReadStatusWriter, os *upgradev1.OS,
+	node *corev1.Node, osInstance *upgradev1.OSInstance) error {
+	log.V(1).Info("start update nodes")
+	node.Labels[values.LabelSerial] = ""
+	if err := r.Update(ctx, node); err != nil {
+		log.Error(err, "unable to label", "node", node.Name)
+		return err
+	}
+	log.Info("Add node serial label " + values.LabelSerial + " successfully")
 	return nil
 }
