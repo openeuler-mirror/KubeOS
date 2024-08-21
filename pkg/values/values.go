@@ -30,13 +30,18 @@ const (
 	LabelNodeSelector = "upgrade.openeuler.org/node-selector"
 	// LabelConfiguring is the key of the configuring label for nodes
 	LabelConfiguring = "upgrade.openeuler.org/configuring"
-	defaultPeriod    = 15 * time.Second
+	// LabelSerial is the key of the serial label for nodes
+	LabelSerial = "upgrade.openeuler.org/serial"
+
+	defaultPeriod = 15 * time.Second
 	// OsiStatusName is param name of nodeStatus in osInstance
 	OsiStatusName = "nodestatus"
 	// UpgradeConfigName is param name of UpgradeConfig
 	UpgradeConfigName = "UpgradeConfig"
 	// SysConfigName is param name of SysConfig
 	SysConfigName = "SysConfig"
+	// OsiNamespace is the namespace of osinstance
+	OsiNamespace = "default"
 )
 
 // NodeStatus defines state of nodes

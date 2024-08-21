@@ -57,9 +57,19 @@ spec:
                 type: string
               evictpodforce:
                 type: boolean
+              executionmode:
+                default: parallel
+                enum:
+                - serial
+                - parallel
+                type: string
               flagSafe:
                 type: boolean
               imagetype:
+                enum:
+                - docker
+                - disk
+                - containerd
                 type: string
               imageurl:
                 type: string
@@ -68,8 +78,13 @@ spec:
               mtls:
                 type: boolean
               nodeselector:
+                default: no-label
                 type: string
               opstype:
+                enum:
+                - upgrade
+                - config
+                - rollback
                 type: string
               osversion:
                 type: string
@@ -100,6 +115,19 @@ spec:
                     type: array
                   version:
                     type: string
+                type: object
+              timeinterval:
+                default: 15
+                type: integer
+              timewindow:
+                properties:
+                  endtime:
+                    type: string
+                  starttime:
+                    type: string
+                required:
+                - endtime
+                - starttime
                 type: object
               upgradeconfigs:
                 description: SysConfigs defines all configurations expected by the user

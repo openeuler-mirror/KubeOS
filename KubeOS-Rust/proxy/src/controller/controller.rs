@@ -30,8 +30,8 @@ use super::{
     crd::{Configs, Content, OSInstance, OS},
     utils::{check_version, get_config_version, ConfigOperation, ConfigType},
     values::{
-        LABEL_UPGRADING, NODE_STATUS_CONFIG, NODE_STATUS_IDLE, OPERATION_TYPE_ROLLBACK, OPERATION_TYPE_UPGRADE,
-        REQUEUE_ERROR, REQUEUE_NORMAL,
+        LABEL_UPGRADING, NODE_STATUS_CONFIG, NODE_STATUS_IDLE, OPERATION_TYPE_ROLLBACK, OPERATION_TYPE_UPGRADE, 
+        OSINSTANCE_NAMESPACE, REQUEUE_ERROR, REQUEUE_NORMAL,LABEL_CONFIGURING, NO_REQUEUE,
     },
 };
 
@@ -46,10 +46,20 @@ pub async fn reconcile<T: ApplyApi, U: AgentCall>(
     let namespace: String = os_cr
         .namespace()
         .ok_or(Error::MissingObjectKey { resource: "os".to_string(), value: "namespace".to_string() })?;
-    proxy_controller.check_osi_exisit(&namespace, &node_name).await?;
-    let controller_res = proxy_controller.get_resources(&namespace, &node_name).await?;
+    proxy_controller.check_osi_exisit(&node_name).await?;
+    let controller_res = proxy_controller.get_resources(&node_name).await?;
     let node = controller_res.node;
     let mut osinstance = controller_res.osinstance;
+    if let Some(namespacedname) = osinstance.spec.namespacedname.as_ref(){
+        debug!("osinstance correspending os name is {}, namespace is {}",namespacedname.name,namespacedname.namespace);
+        if !(namespacedname.name == os_cr.name() && namespacedname.namespace == namespace){
+            debug!("current os cr name:{}, namespace:{} is not belong to this node",os_cr.name(),namespace);
+            return Ok(NO_REQUEUE)
+        }
+    }else {
+        return Ok(REQUEUE_NORMAL)
+    }
+
     let node_os_image = &node
         .status
         .as_ref()
@@ -151,8 +161,8 @@ impl<T: ApplyApi, U: AgentCall> ProxyController<T, U> {
 }
 
 impl<T: ApplyApi, U: AgentCall> ProxyController<T, U> {
-    async fn check_osi_exisit(&self, namespace: &str, node_name: &str) -> Result<(), Error> {
-        let osi_api: Api<OSInstance> = Api::namespaced(self.k8s_client.clone(), namespace);
+    async fn check_osi_exisit(&self, node_name: &str) -> Result<(), Error> {
+        let osi_api: Api<OSInstance> = Api::namespaced(self.k8s_client.clone(), OSINSTANCE_NAMESPACE);
         match osi_api.get(node_name).await {
             Ok(osi) => {
                 debug!("osinstance is exist {:?}", osi.name());
@@ -160,15 +170,15 @@ impl<T: ApplyApi, U: AgentCall> ProxyController<T, U> {
             },
             Err(kube::Error::Api(ErrorResponse { reason, .. })) if &reason == "NotFound" => {
                 info!("Create OSInstance {}", node_name);
-                self.controller_client.create_osinstance(node_name, namespace).await?;
+                self.controller_client.create_osinstance(node_name, OSINSTANCE_NAMESPACE).await?;
                 Ok(())
             },
             Err(err) => Err(Error::KubeClient { source: err }),
         }
     }
 
-    async fn get_resources(&self, namespace: &str, node_name: &str) -> Result<ControllerResources, Error> {
-        let osi_api: Api<OSInstance> = Api::namespaced(self.k8s_client.clone(), namespace);
+    async fn get_resources(&self, node_name: &str) -> Result<ControllerResources, Error> {
+        let osi_api: Api<OSInstance> = Api::namespaced(self.k8s_client.clone(), OSINSTANCE_NAMESPACE);
         let osinstance_cr = osi_api.get(node_name).await?;
         let node_api: Api<Node> = Api::all(self.k8s_client.clone());
         let node_cr = node_api.get(node_name).await?;
@@ -188,6 +198,10 @@ impl<T: ApplyApi, U: AgentCall> ProxyController<T, U> {
         if labels.contains_key(LABEL_UPGRADING) {
             labels.remove(LABEL_UPGRADING);
             node = node_api.replace(&node.name(), &PostParams::default(), &node).await?;
+        }else if labels.contains_key(LABEL_CONFIGURING) {
+            labels.remove(LABEL_CONFIGURING);
+            node = node_api.replace(&node.name(), &PostParams::default(), &node).await?;
+
         }
         if let Some(node_spec) = &node.spec {
             if let Some(node_unschedulable) = node_spec.unschedulable {
@@ -228,6 +242,7 @@ impl<T: ApplyApi, U: AgentCall> ProxyController<T, U> {
                 value: String::from("namespace"),
             })?;
             osinstance.spec.nodestatus = NODE_STATUS_IDLE.to_string();
+            osinstance.spec.namespacedname = None;
             self.controller_client.update_osinstance_spec(&osinstance.name(), &namespace, &osinstance.spec).await?;
         }
         Ok(())

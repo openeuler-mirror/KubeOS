@@ -33,7 +33,7 @@ use mockall::mock;
 use self::mock_error::Error;
 use super::{
     agentclient::*,
-    crd::{Configs, OSInstanceStatus},
+    crd::{Configs, NamespacedName, OSInstanceStatus},
     values::{NODE_STATUS_CONFIG, NODE_STATUS_UPGRADE, OPERATION_TYPE_ROLLBACK},
 };
 use crate::controller::{
@@ -531,6 +531,7 @@ impl OSInstance {
                 nodestatus: NODE_STATUS_IDLE.to_string(),
                 sysconfigs: Some(Configs { version: Some(String::from("v1")), configs: None }),
                 upgradeconfigs: Some(Configs { version: Some(String::from("v1")), configs: None }),
+                namespacedname:Some(NamespacedName{namespace:String::from("default"),name:String::from("test")})
             },
             status: Some(OSInstanceStatus {
                 sysconfigs: Some(Configs { version: Some(String::from("v1")), configs: None }),
@@ -605,7 +606,7 @@ impl OS {
         os.meta_mut().namespace = Some("default".into());
         os
     }
-
+    
     pub fn set_os_osversion_v2_opstype_config() -> Self {
         let mut os = OS::set_os_default();
         os.spec.osversion = String::from("KubeOS v2");
@@ -676,6 +677,10 @@ impl Default for OSSpec {
             clientkey: Some(String::from("")),
             sysconfigs: Some(Configs { version: Some(String::from("v1")), configs: None }),
             upgradeconfigs: Some(Configs { version: Some(String::from("v1")), configs: None }),
+            nodeselector:None,
+            timeinterval:None,
+            timewindow:None,
+            executionmode:None,
         }
     }
 }

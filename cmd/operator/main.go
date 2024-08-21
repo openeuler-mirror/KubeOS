@@ -14,6 +14,7 @@ package main
 
 import (
 	"os"
+	"strings"
 	"time"
 
 	zaplogfmt "github.com/sykesm/zap-logfmt"
@@ -38,6 +39,11 @@ var (
 	setupLog = ctrl.Log.WithName("setup")
 )
 
+const (
+	DEBUGLOGLEVEL = "debug"
+	INFOLOGLEVEL  = "info"
+)
+
 func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 
@@ -51,7 +57,12 @@ func main() {
 		encoder.AppendString(ts.UTC().Format(time.RFC3339Nano))
 	}
 	logfmtEncoder := zaplogfmt.NewEncoder(configLog)
-	logger := zap.New(zap.UseDevMode(true), zap.WriteTo(os.Stdout), zap.Encoder(logfmtEncoder))
+	level := zap.Level(zapcore.Level(0))
+	goLog := strings.ToLower(os.Getenv("GO_LOG"))
+	if goLog == DEBUGLOGLEVEL {
+		level = zap.Level(zapcore.Level(-1))
+	}
+	logger := zap.New(zap.UseDevMode(true), zap.WriteTo(os.Stdout), zap.Encoder(logfmtEncoder), level)
 	ctrl.SetLogger(logger)
 
 	mgr, err := common.NewControllerManager(setupLog, scheme)

@@ -39,7 +39,7 @@ impl Default for OSInstanceSpecPatch {
         OSInstanceSpecPatch {
             api_version: OSINSTANCE_API_VERSION.to_string(),
             kind: OSINSTANCE_KIND.to_string(),
-            spec: OSInstanceSpec { nodestatus: NODE_STATUS_IDLE.to_string(), sysconfigs: None, upgradeconfigs: None },
+            spec: OSInstanceSpec { nodestatus: NODE_STATUS_IDLE.to_string(), sysconfigs: None, upgradeconfigs: None ,namespacedname:None},
         }
     }
 }
@@ -102,7 +102,7 @@ impl ApplyApi for ControllerClient {
                 labels: Some(labels),
                 ..ObjectMeta::default()
             },
-            spec: OSInstanceSpec { nodestatus: NODE_STATUS_IDLE.to_string(), sysconfigs: None, upgradeconfigs: None },
+            spec: OSInstanceSpec { nodestatus: NODE_STATUS_IDLE.to_string(), sysconfigs: None, upgradeconfigs: None ,namespacedname: None},
             status: None,
         };
         let osi_api = Api::namespaced(self.client.clone(), namespace);

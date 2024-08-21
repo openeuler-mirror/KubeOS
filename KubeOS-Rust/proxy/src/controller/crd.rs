@@ -32,6 +32,11 @@ pub struct OSSpec {
     pub clientkey: Option<String>,
     pub sysconfigs: Option<Configs>,
     pub upgradeconfigs: Option<Configs>,
+    pub nodeselector:Option<String>,
+    pub timewindow: Option<TimeWindow>,
+	pub timeinterval: Option<i64>,
+	pub executionmode:Option<String>,
+
 }
 
 #[derive(CustomResource, Debug, Clone, Deserialize, Serialize, JsonSchema)]
@@ -46,6 +51,7 @@ pub struct OSSpec {
 )]
 pub struct OSInstanceSpec {
     pub nodestatus: String,
+    pub namespacedname: Option<NamespacedName>,
     pub sysconfigs: Option<Configs>,
     pub upgradeconfigs: Option<Configs>,
 }
@@ -74,4 +80,15 @@ pub struct Content {
     pub key: Option<String>,
     pub value: Option<String>,
     pub operation: Option<String>,
+}
+
+#[derive(Clone, Deserialize, Serialize, Debug, Eq, PartialEq, JsonSchema)]
+pub struct NamespacedName{
+    pub namespace: String,
+    pub name: String,
+}
+#[derive(Clone, Deserialize, Serialize, Debug, Eq, PartialEq, JsonSchema)]
+pub struct TimeWindow{
+    pub starttime:String,
+    pub endtime:String,
 }

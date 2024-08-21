@@ -53,6 +53,14 @@ spec:
           spec:
             description: OSInstanceSpec defines desired state of OS
             properties:
+              namespacedname:
+                description: NamespacedName defines name and namespace of os corresponding to osinstance
+                properties:
+                  name:
+                    type: string
+                  namespace:
+                    type: string
+                type: object
               nodestatus:
                 type: string
               sysconfigs:
