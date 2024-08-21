@@ -19,6 +19,7 @@ pub const LABEL_CONFIGURING: &str = "upgrade.openeuler.org/configuring";
 
 pub const OSINSTANCE_API_VERSION: &str = "upgrade.openeuler.org/v1alpha1";
 pub const OSINSTANCE_KIND: &str = "OSInstance";
+pub const OSINSTANCE_NAMESPACE: &str = "default";
 
 pub const NODE_STATUS_IDLE: &str = "idle";
 pub const NODE_STATUS_UPGRADE: &str = "upgrade";
@@ -30,5 +31,5 @@ pub const OPERATION_TYPE_ROLLBACK: &str = "rollback";
 pub const SOCK_PATH: &str = "/run/os-agent/os-agent.sock";
 
 pub const REQUEUE_NORMAL: ReconcilerAction = ReconcilerAction { requeue_after: Some(Duration::from_secs(15)) };
-
 pub const REQUEUE_ERROR: ReconcilerAction = ReconcilerAction { requeue_after: Some(Duration::from_secs(1)) };
+pub const NO_REQUEUE: ReconcilerAction = ReconcilerAction { requeue_after: None };

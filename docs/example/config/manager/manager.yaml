@@ -60,6 +60,9 @@ spec:
             - /operator
           image: <edit.operator.image.addr>
           name: operator
+          volumeMounts:
+            - name: date-config
+              mountPath: /etc/localtime
           securityContext:
             allowPrivilegeEscalation: false
             runAsUser: 6552
@@ -71,6 +74,10 @@ spec:
             requests:
               cpu: 100m
               memory: 20Mi
+      volumes:
+      - name: date-config
+        hostPath: 
+          path: /etc/localtime        
       terminationGracePeriodSeconds: 10
       nodeSelector:
         node-role.kubernetes.io/control-plane: ""

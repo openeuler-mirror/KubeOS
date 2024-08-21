@@ -117,6 +117,7 @@ spec:
                     type: string
                 type: object
               timeinterval:
+                default: 15
                 type: integer
               timewindow:
                 properties:

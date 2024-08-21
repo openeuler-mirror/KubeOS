@@ -111,7 +111,7 @@ generate: controller-gen
 	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./..."
 
 # Build the docker image
-docker-build: operator proxy
+docker-build: operator rust-proxy
 	docker build --target operator -t ${IMG_OPERATOR} .
 	docker build --target proxy -t ${IMG_PROXY} .
 

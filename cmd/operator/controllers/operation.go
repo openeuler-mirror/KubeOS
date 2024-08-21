@@ -54,7 +54,7 @@ func (u upgradeOps) updateNodes(ctx context.Context, r common.ReadStatusWriter, 
 		if os.Spec.OSVersion != osVersionNode {
 			log.Info("Upgrading node " + node.Name)
 			var osInstance upgradev1.OSInstance
-			if err := r.Get(ctx, types.NamespacedName{Namespace: os.GetObjectMeta().GetNamespace(), Name: node.Name}, &osInstance); err != nil {
+			if err := r.Get(ctx, types.NamespacedName{Namespace: values.OsiNamespace, Name: node.Name}, &osInstance); err != nil {
 				if err = client.IgnoreNotFound(err); err != nil {
 					log.Error(err, "osInstance not found "+node.Name, ", maybe the os-proxy initialization is not complete. "+
 						"Restart the reconcile and wait until it is complete.")
@@ -73,7 +73,7 @@ func (u upgradeOps) updateNodes(ctx context.Context, r common.ReadStatusWriter, 
 		}
 	}
 	if count == 0 && os.Spec.ExecutionMode == ExecutionModeSerial {
-		if errList = deleteSerialLabel(ctx, r, nodes); errList != nil {
+		if errList = deleteSerialLabel(ctx, r, nodes); len(errList) != 0 {
 			log.Error(nil, "failed to delete nodes serial label")
 		}
 	}
@@ -123,11 +123,14 @@ func (u upgradeOps) updateNodeAndOSins(ctx context.Context, r common.ReadStatusW
 		}
 	}
 	osInstance.Spec.NodeStatus = values.NodeStatusUpgrade.String()
+	osInstance.Spec.NamespacedName = upgradev1.NamespacedName{Name: os.Name, Namespace: os.Namespace}
+	log.V(1).Info("Wait to update osinstance name:" + osInstance.Name + " node name is " + node.Name)
 	if err := r.Update(ctx, osInstance); err != nil {
 		log.Error(err, "unable to update", "osInstance", osInstance.Name)
 		return err
 	}
 	log.Info("Update osinstance spec successfully")
+
 	node.Labels[values.LabelUpgrading] = ""
 	if err := r.Update(ctx, node); err != nil {
 		log.Error(err, "unable to label", "node", node.Name)
@@ -175,7 +178,7 @@ func (c configOps) updateNodes(ctx context.Context, r common.ReadStatusWriter, o
 		}
 	}
 	if count == 0 && os.Spec.ExecutionMode == ExecutionModeSerial {
-		if errList = deleteSerialLabel(ctx, r, nodes); errList != nil {
+		if errList = deleteSerialLabel(ctx, r, nodes); len(errList) != 0 {
 			log.Error(nil, "failed to delete nodes serial label")
 		}
 	}
@@ -192,11 +195,14 @@ func (c configOps) updateNodeAndOSins(ctx context.Context, r common.ReadStatusWr
 		return err
 	}
 	osInstance.Spec.NodeStatus = values.NodeStatusConfig.String()
+	osInstance.Spec.NamespacedName = upgradev1.NamespacedName{Name: os.Name, Namespace: os.Namespace}
+	log.V(1).Info("Wait to update osinstance name:" + osInstance.Name + " node name is " + node.Name)
 	if err := r.Update(ctx, osInstance); err != nil {
 		log.Error(err, "unable to update", "osInstance", osInstance.Name)
 		return err
 	}
 	log.Info("Update osinstance spec successfully")
+
 	node.Labels[values.LabelConfiguring] = ""
 	if err := r.Update(ctx, node); err != nil {
 		log.Error(err, "unable to label", "node", node.Name)
@@ -219,7 +225,6 @@ func (s serialOps) updateNodes(ctx context.Context, r common.ReadStatusWriter, o
 	var count int
 	var errList []error
 	for _, node := range nodes {
-		log.V(1).Info("start add serial label to nodes")
 		if count >= limit {
 			break
 		}
@@ -267,7 +272,6 @@ func (s serialOps) updateNodes(ctx context.Context, r common.ReadStatusWriter, o
 }
 func (s serialOps) updateNodeAndOSins(ctx context.Context, r common.ReadStatusWriter, os *upgradev1.OS,
 	node *corev1.Node, osInstance *upgradev1.OSInstance) error {
-	log.V(1).Info("start update nodes")
 	node.Labels[values.LabelSerial] = ""
 	if err := r.Update(ctx, node); err != nil {
 		log.Error(err, "unable to label", "node", node.Name)

@@ -25,6 +25,7 @@ const (
 	TIME_ONLY             = "15:04:05"
 	ExecutionModeSerial   = "serial"
 	ExecutionModeParallel = "parallel"
+	oneDayTime            = 24 * time.Hour
 )
 
 func isWithinTimeWindow(start, end string) (bool, error) {
@@ -32,7 +33,7 @@ func isWithinTimeWindow(start, end string) (bool, error) {
 		return true, nil
 	}
 	if start == "" || end == "" {
-		return false, fmt.Errorf("The start time and end time must be both empty or not empty.")
+		return false, fmt.Errorf("invalid TimeWindow: The start time and end time must be both empty or not empty")
 	}
 	layoutStart, err := checkTimeValid(start)
 	if err != nil {
@@ -43,13 +44,11 @@ func isWithinTimeWindow(start, end string) (bool, error) {
 		return false, err
 	}
 	if layoutStart != layoutEnd {
-		return false, fmt.Errorf("Start Time needs same time format with End Time")
+		return false, fmt.Errorf("invalid TimeWindow: Start Time should have same time format with End Time")
 	}
 	now := time.Now()
-	if layoutStart == TIME_ONLY {
-		timeFormat := now.Format(TIME_ONLY)
-		now, err = time.ParseInLocation(layoutStart, timeFormat, now.Location())
-	}
+	timeFormat := now.Format(layoutStart)
+	now, err = time.ParseInLocation(layoutStart, timeFormat, now.Location())
 	startTime, err := time.ParseInLocation(layoutStart, start, now.Location())
 	if err != nil {
 		return false, err
@@ -58,11 +57,18 @@ func isWithinTimeWindow(start, end string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
+	if endTime.Equal(startTime) {
+		return false, fmt.Errorf("invalid TimeWindow: start time is equal to end time")
+	}
 	if endTime.Before(startTime) {
-		endTime = endTime.Add(24 * time.Hour)
+		if layoutStart == DATE_TIME {
+			return false, fmt.Errorf("invalid TimeWindow: Start %s Time is after end time %s",
+				startTime.Format(layoutStart), endTime.Format(layoutEnd))
+		}
+		endTime = endTime.Add(oneDayTime)
 		fmt.Printf("endtime time add 24 hour is %s\n", endTime.Format(layoutStart))
 		if now.Before(startTime) {
-			now = now.Add(24 * time.Hour)
+			now = now.Add(oneDayTime)
 			fmt.Printf("now time add 24 hour is %s\n", now.Format(layoutStart))
 		}
 
@@ -96,5 +102,5 @@ func checkTimeValid(checkTime string) (string, error) {
 		return TIME_ONLY, nil
 
 	}
-	return "", fmt.Errorf("Invalid date format, please use date format YYYY-MM-DD HH:MM:SS, or only HH:MM:SS such as \"2006-01-02 15:04:05\" or \"15:04:05\"")
+	return "", fmt.Errorf("invalid TimeWindow: invalid date format, please use date format YYYY-MM-DD HH:MM:SS, or only HH:MM:SS")
 }

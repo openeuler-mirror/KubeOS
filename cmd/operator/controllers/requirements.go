@@ -18,6 +18,7 @@ import (
 
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/selection"
+
 	"openeuler.org/KubeOS/pkg/common"
 	"openeuler.org/KubeOS/pkg/values"
 )
@@ -124,8 +125,8 @@ type commonsNodesRequirement struct {
 
 func newCommonsNodesRequirement(nodeSelector string, op selection.Operator) commonsNodesRequirement {
 	return commonsNodesRequirement{
-		nodeSelector,
-		op,
+		nodeSelector: nodeSelector,
+		op:           op,
 	}
 }
 

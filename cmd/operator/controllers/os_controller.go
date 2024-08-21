@@ -66,13 +66,13 @@ func Reconcile(ctx context.Context, r common.ReadStatusWriter, req ctrl.Request)
 		}
 		return values.RequeueNow, err
 	}
-	log.V(1).Info("get os cr name is " + os.Name + ", namespace is " + os.Namespace)
 	isWithinTimeWindow, err := isWithinTimeWindow(os.Spec.TimeWindow.StartTime, os.Spec.TimeWindow.EndTime)
 	if err != nil {
 		return values.RequeueNow, err
 	}
 	if !isWithinTimeWindow {
-		log.V(1).Info("not in time window, the start time is " + os.Spec.TimeWindow.StartTime + " , the start time " + os.Spec.TimeWindow.StartTime)
+		log.V(1).Info("not in time window, the start time is " + os.Spec.TimeWindow.StartTime +
+			" , the end time " + os.Spec.TimeWindow.EndTime)
 		return values.Requeue, nil
 	}
 
@@ -106,7 +106,6 @@ func Reconcile(ctx context.Context, r common.ReadStatusWriter, req ctrl.Request)
 	if err != nil {
 		return values.RequeueNow, err
 	}
-	log.V(1).Info("get all nodes is " + strconv.Itoa(len(allNodes)))
 	switch os.Spec.ExecutionMode {
 	case ExecutionModeParallel:
 		result, err := excuteParallelOperation(ctx, r, os, opsInsatnce, len(allNodes))
@@ -139,28 +138,6 @@ func (r *OSReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		}); err != nil {
 		return err
 	}
-	// if err := mgr.GetFieldIndexer().IndexField(context.Background(), &upgradev1.OS{}, "metadata.name",
-	// 	func(rawObj client.Object) []string {
-	// 		os, ok := rawObj.(*upgradev1.OS)
-	// 		if !ok {
-	// 			log.Error(nil, "failed to convert to osInstance")
-	// 			return []string{}
-	// 		}
-	// 		return []string{os.Name}
-	// 	}); err != nil {
-	// 	return err
-	// }
-	// if err := mgr.GetFieldIndexer().IndexField(context.Background(), &upgradev1.OS{}, "metadata.namespace",
-	// 	func(rawObj client.Object) []string {
-	// 		os, ok := rawObj.(*upgradev1.OS)
-	// 		if !ok {
-	// 			log.Error(nil, "failed to convert to osInstance")
-	// 			return []string{}
-	// 		}
-	// 		return []string{os.Namespace}
-	// 	}); err != nil {
-	// 	return err
-	// }
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&upgradev1.OS{}).
 		Watches(&source.Kind{Type: &corev1.Node{}}, handler.Funcs{DeleteFunc: r.DeleteOSInstance}).
@@ -219,12 +196,14 @@ func calNodeLimit(ctx context.Context, r common.ReadStatusWriter,
 }
 func assignOperation(ctx context.Context, r common.ReadStatusWriter, os upgradev1.OS, limit int,
 	opsInstance operation, requirements []labels.Requirement) (int, error) {
+	if limit == 0 {
+		return 0, nil
+	}
 	nodes, err := getNodes(ctx, r, limit+1, requirements...) // one more to see if all nodes updated
 	if err != nil {
 		return 0, err
 	}
-	log.V(1).Info("get need nodes is " + strconv.Itoa(len(nodes)))
-	// Upgrade OS for selected nodes
+	log.V(1).Info("get wait to check nodes is " + strconv.Itoa(len(nodes)))
 	count, errLists := opsInstance.updateNodes(ctx, r, &os, nodes, limit)
 	if len(errLists) != 0 {
 		return 0, fmt.Errorf("update nodes and osinstance error")
@@ -343,7 +322,7 @@ func excuteSerialOperation(ctx context.Context, r common.ReadStatusWriter, os up
 	if len(opsNodeNum) > 0 {
 		return values.Requeue, nil
 	}
-	log.V(1).Info("get opsnodes is " + strconv.Itoa(len(opsNodeNum)))
+
 	serialNodesRequirement, err := newSerialNodesRequirement(os.Spec.NodeSelector,
 		selection.Equals, selection.Exists).createNodeRequirement(ctx, r)
 	if err != nil {
@@ -353,15 +332,20 @@ func excuteSerialOperation(ctx context.Context, r common.ReadStatusWriter, os up
 	if err != nil {
 		return values.RequeueNow, nil
 	}
-	log.V(1).Info("get serialLimit is " + strconv.Itoa(serialNodeLimit))
+
 	noSerialNodesRequirement, err := newSerialNodesRequirement(os.Spec.NodeSelector,
 		selection.Equals, selection.DoesNotExist).createNodeRequirement(ctx, r)
 	if err != nil {
 		return values.RequeueNow, nil
 	}
-	if _, err := assignOperation(ctx, r, os, serialNodeLimit, serialOps{opsInsatnce.getOpsLabel()}, noSerialNodesRequirement); err != nil {
+	// add serial label to node
+	serialOpsInstance := serialOps{
+		label: opsInsatnce.getOpsLabel(),
+	}
+	if _, err := assignOperation(ctx, r, os, serialNodeLimit, serialOpsInstance, noSerialNodesRequirement); err != nil {
 		return values.RequeueNow, nil
 	}
+
 	serialLimit := 1 // 1 is the number of operation nodes when excution mode in serial
 	count, err := assignOperation(ctx, r, os, serialLimit, opsInsatnce, serialNodesRequirement)
 	if err != nil {

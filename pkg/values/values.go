@@ -40,6 +40,8 @@ const (
 	UpgradeConfigName = "UpgradeConfig"
 	// SysConfigName is param name of SysConfig
 	SysConfigName = "SysConfig"
+	// OsiNamespace is the namespace of osinstance
+	OsiNamespace = "default"
 )
 
 // NodeStatus defines state of nodes

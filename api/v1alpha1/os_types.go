@@ -46,6 +46,7 @@ type OSSpec struct {
 	// +kubebuilder:validation:Optional
 	TimeWindow TimeWindow `json:"timewindow"`
 	// +kubebuilder:validation:Optional
+	// +kubebuilder:default:=15
 	TimeInterval int `json:"timeinterval"`
 	// +kubebuilder:validation:Optional
 	// +kubebuilder:validation:Enum=serial;parallel
@@ -132,9 +133,19 @@ type OSInstanceSpec struct {
 	// +kubebuilder:validation:Optional
 	NodeStatus string `json:"nodestatus"`
 	// +kubebuilder:validation:Optional
+	NamespacedName NamespacedName `json:"namespacedname"`
+	// +kubebuilder:validation:Optional
 	SysConfigs SysConfigs `json:"sysconfigs"`
 	// +kubebuilder:validation:Optional
 	UpgradeConfigs SysConfigs `json:"upgradeconfigs"`
+}
+
+// NamespacedName defines name and namespace of os corresponding to osinstance
+type NamespacedName struct {
+	// +kubebuilder:validation:Optional
+	Name string `json:"name"`
+	// +kubebuilder:validation:Optional
+	Namespace string `json:"namespace"`
 }
 
 // +kubebuilder:object:root=true
