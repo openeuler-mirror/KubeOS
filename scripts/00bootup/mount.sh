@@ -2,8 +2,13 @@
 arch=$(arch)
 min_size=8
 log=/install.log
+dhcs=/dhclient-script
 
 source /Global.cfg
+
+if [ -z ${enable_dhcp} ];then
+	enable_dhcp=0
+fi
 
 function CheckSpace() {
     local disk_ava="$(parted -l | grep ${disk} | awk '{print $3}')"
@@ -122,25 +127,60 @@ function InitNetwork() {
     echo "Initializing network..."
     netNames=(`ifconfig -a | awk '{print $1}' | grep : | grep '^e' | awk -F: '{print $1}'`)
     if [ ${#netNames[*]} -gt 0 ]; then
-        if [ -n "${net_name}" ] && echo "${netNames[@]}" | grep -wq "${net_name}" ; then
+        if [ ${enable_dhcp} -eq 0 ] && [ -n "${net_name}" ] && echo "${netNames[@]}" | grep -wq "${net_name}" ; then
             echo "${net_name} exists, start set ip"  | tee -a ${log}
+	    netNames=(${net_name})
         else
-            echo "net_name not exist, choose default net"  | tee -a ${log}
-            net_name=${netNames[0]}
+	    if [ ${enable_dhcp} -ne 0 ];then
+	      echo "Dhcp setup network." | tee -a ${log}
+	    else
+              echo "net_name ${net_name} not exist, choose default net"  | tee -a ${log}
+	      net_name=${netNames[0]}
+	    fi
         fi
     else
         echo "no net Device found" | tee -a ${log}
         return 1
     fi
 
-    ifconfig ${net_name} up
-    if [ $? -ne 0 ]; then
-        echo "load net card failed" | tee -a ${log}
-        return 1
+    if [ ${enable_dhcp} -eq 0 ];then
+      ifconfig ${net_name} ${local_ip} netmask ${netmask}  >> ${log} 2>&1
+      return 0
     fi
+
+    for netif in ${netNames[@]};do
+       echo "Setup ${netif} link up"
+       ifconfig ${netif} up
+
+       if [ $? -ne 0 ]; then
+           echo "load ${netif} net card failed" | tee -a ${log}
+           continue
+       fi
+    done
+
     sleep 3
 
-    ifconfig ${net_name} ${local_ip} netmask ${netmask}  >> ${log} 2>&1
+    #dhclient ${net_name}
+    mkdir -p /var/lib/dhclient
+    cat > ${dhcs} <<EON
+#!/bin/sh
+case "\${reason}" in
+
+BOUND|RENEW|REBIND)
+  echo "new ip:  \${new_ip_address}; \${new_subnet_mask}"
+  ifconfig \${interface} \${new_ip_address} netmask \${new_subnet_mask}
+  ;;
+*)
+  echo "cannot get new ip"
+  ;;
+esac
+EON
+    echo "dhcp setup ip address" | tee -a ${log}
+    if [ -f ${dhcs} ]; then
+        cat ${dhcs} | tee -a ${log}
+	chmod 755 ${dhcs}
+        dhclient -sf ${dhcs} -v | tee -a ${log}
+    fi
     if [ $? -ne 0 ]; then
         echo "ip set failed" | tee -a ${log}
         return 1

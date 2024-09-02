@@ -325,7 +325,7 @@ function verify_create_input() {
       fi
     fi
     check_disk_space "pxe"
-    check_conf_valid ${rootfs_name} ${disk} ${server_ip} ${local_ip} ${route_ip} ${netmask} ${net_name}
+    check_conf_valid ${rootfs_name} ${disk} ${server_ip} ${local_ip} ${route_ip} ${netmask} ${net_name} ${enable_dhcp}
     if [ $# -eq 8 ]; then
       verify_repo_input "$@"
       check_repo_path "${REPO}"

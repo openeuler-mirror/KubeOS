@@ -103,9 +103,13 @@ function check_file_valid() {
 function check_conf_valid() {
         local conf_path="${PWD}/00bootup/Global.cfg"
         check_file_valid ${conf_path} "Globab.cfg"
-        if [ $# != 7 ];then
-                log_error_print "configure configured in Global.cfg is empty."
+	if [ ! -z ${net_name} ] && [ $# != 7 ]; then
+                log_error_print "configure configured in Global.cfg maybe missed."
                 exit 3
+	fi
+        if [ -z ${net_name} ] && [ $# != 6 ];then
+                 log_error_print "configure configured in Global.cfg maybe missed."
+                 exit 3
         fi
         for addr in ${server_ip} ${local_ip} ${route_ip} ${netmask}; do
                 check_ip_valid $addr
