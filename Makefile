@@ -52,7 +52,7 @@ all: proxy operator agent hostshell rust-kubeos
 
 # Build binary
 proxy:
-	${GO_BUILD_CGO} ${LD_FLAGS} -o bin/proxy  cmd/proxy/main.go
+	${GO_BUILD_CGO} ${LD_FLAGS} -o bin/proxy cmd/proxy/main.go
 	strip bin/proxy
 
 operator:
@@ -76,9 +76,16 @@ rust-proxy:
 rust-agent:
 	cd KubeOS-Rust && ${RUSTFLAGS} cargo build --profile release --target-dir ../bin/rust --package os-agent
 
+rust-kbimg:
+	cd KubeOS-Rust && ${RUSTFLAGS} cargo build --profile release --target-dir ../bin/rust --package kbimg
+
+# clean binary
+clean:
+	rm -rf bin
+
 # Install CRDs into a cluster
 install: manifests
-	kubectl apply -f confg/crd
+	kubectl apply -f config/crd
 
 # Uninstall CRDs from a cluster
 uninstall: manifests
