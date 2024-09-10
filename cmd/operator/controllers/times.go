@@ -62,14 +62,12 @@ func isWithinTimeWindow(start, end string) (bool, error) {
 	}
 	if endTime.Before(startTime) {
 		if layoutStart == DATE_TIME {
-			return false, fmt.Errorf("invalid TimeWindow: Start %s Time is after end time %s",
+			return false, fmt.Errorf("invalid TimeWindow: start time %s is after end time %s",
 				startTime.Format(layoutStart), endTime.Format(layoutEnd))
 		}
 		endTime = endTime.Add(oneDayTime)
-		fmt.Printf("endtime time add 24 hour is %s\n", endTime.Format(layoutStart))
 		if now.Before(startTime) {
 			now = now.Add(oneDayTime)
-			fmt.Printf("now time add 24 hour is %s\n", now.Format(layoutStart))
 		}
 
 	}

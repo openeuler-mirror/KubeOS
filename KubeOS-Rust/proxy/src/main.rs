@@ -27,7 +27,7 @@ use controller::{
 const PROXY_VERSION: Option<&'static str> = option_env!("CARGO_PKG_VERSION");
 #[tokio::main]
 async fn main() -> Result<()> {
-    Builder::from_env(Env::default().default_filter_or("info")).target(Target::Stdout).init();
+    Builder::from_env(Env::default().default_filter_or("proxy=info")).target(Target::Stdout).init();
     let client = Client::try_default().await?;
     let os: Api<OS> = Api::all(client.clone());
     let controller_client = ControllerClient::new(client.clone());

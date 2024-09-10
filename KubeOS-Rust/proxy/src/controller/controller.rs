@@ -57,6 +57,7 @@ pub async fn reconcile<T: ApplyApi, U: AgentCall>(
             return Ok(NO_REQUEUE)
         }
     }else {
+        debug!("osinstance correspending os name is None, not in upgrading or configuring");
         return Ok(REQUEUE_NORMAL)
     }
 
@@ -68,7 +69,7 @@ pub async fn reconcile<T: ApplyApi, U: AgentCall>(
         .as_ref()
         .ok_or(Error::MissingSubResource { value: String::from("node.status.node_info") })?
         .os_image;
-    debug!("os expected osversion is {},actual osversion is {}", os_cr.spec.osversion, node_os_image);
+    debug!("os expected osversion is {}, actual osversion is {}", os_cr.spec.osversion, node_os_image);
     if check_version(&os_cr.spec.osversion, node_os_image) {
         match ConfigType::SysConfig.check_config_version(&os, &osinstance) {
             ConfigOperation::Reassign => {
@@ -94,10 +95,26 @@ pub async fn reconcile<T: ApplyApi, U: AgentCall>(
             },
             _ => {},
         }
+        if node.labels().contains_key(LABEL_UPGRADING) || node.labels().contains_key(LABEL_CONFIGURING) {
+            if osinstance.spec.nodestatus == NODE_STATUS_IDLE {
+                info!(
+                    "node has upgrade/config label , but osinstance.spec.nodestatus is idle. Operation:refesh node and wait reassgin"
+                );
+                proxy_controller
+                    .refresh_node(
+                        node,
+                        osinstance,
+                        &get_config_version(os_cr.spec.upgradeconfigs.as_ref()),
+                        ConfigType::UpgradeConfig,
+                    )
+                    .await?;
+                return Ok(REQUEUE_NORMAL);
+            }
         proxy_controller.set_config(&mut osinstance, ConfigType::SysConfig).await?;
         proxy_controller
             .refresh_node(node, osinstance, &get_config_version(os_cr.spec.sysconfigs.as_ref()), ConfigType::SysConfig)
             .await?;
+        }
     } else {
         if os_cr.spec.opstype == NODE_STATUS_CONFIG {
             return Err(Error::UpgradeBeforeConfig);
@@ -117,7 +134,7 @@ pub async fn reconcile<T: ApplyApi, U: AgentCall>(
         if node.labels().contains_key(LABEL_UPGRADING) {
             if osinstance.spec.nodestatus == NODE_STATUS_IDLE {
                 info!(
-                    "node has upgrade label ,but osinstance.spec.nodestatus is idle. Operation:refesh node and wait reassgin"
+                    "node has upgrade label , but osinstance.spec.nodestatus is idle. Operation:refesh node and wait reassgin"
                 );
                 proxy_controller
                     .refresh_node(
@@ -196,12 +213,13 @@ impl<T: ApplyApi, U: AgentCall> ProxyController<T, U> {
         let node_api: Api<Node> = Api::all(self.k8s_client.clone());
         let labels = node.labels_mut();
         if labels.contains_key(LABEL_UPGRADING) {
+            debug!("delete label {}", LABEL_UPGRADING);
             labels.remove(LABEL_UPGRADING);
             node = node_api.replace(&node.name(), &PostParams::default(), &node).await?;
-        }else if labels.contains_key(LABEL_CONFIGURING) {
+        }else if labels.contains_key(LABEL_CONFIGURING){
+            debug!("delete label {}", LABEL_CONFIGURING);
             labels.remove(LABEL_CONFIGURING);
             node = node_api.replace(&node.name(), &PostParams::default(), &node).await?;
-
         }
         if let Some(node_spec) = &node.spec {
             if let Some(node_unschedulable) = node_spec.unschedulable {
