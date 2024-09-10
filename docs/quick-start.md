@@ -102,7 +102,7 @@
 ### KubeOS虚拟机镜像制作指导
 
 * 制作注意事项
-  * 请确保已安装qemu-img，bc，parted，tar，yum，docker
+  * 请确保已安装qemu-img，bc，parted，tar，yum，docker，dosfstools
   * 容器OS镜像制作需要使用root权限
   * 容器OS 镜像制作工具的 rpm 包源为 openEuler 具体版本的 everything 仓库和 EPOL 仓库。制作镜像时提供的 repo 文件中，yum 源建议同时配置 openEuler 具体版本的 everything 仓库和 EPOL 仓库
   * 容器OS镜像制作之前需要先将当前机器上的selinux关闭或者设为允许模式

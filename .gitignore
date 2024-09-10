@@ -6,3 +6,6 @@ target/
 
 # KubeOS bin
 /bin
+
+# scripts-auto
+/scripts-auto
