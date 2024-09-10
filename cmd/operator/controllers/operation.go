@@ -93,6 +93,7 @@ func deleteSerialLabel(ctx context.Context, r common.ReadStatusWriter, nodes []c
 				log.Error(err, "unable to delete serial label ", "node", node.Name+", skip this node")
 				errList = append(errList, err)
 			}
+			log.Info("delete node " + node.Name + " serial label " + values.LabelSerial + " successfully")
 		}
 	}
 	if len(errList) > 0 {

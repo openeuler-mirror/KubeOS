@@ -75,7 +75,6 @@ func Reconcile(ctx context.Context, r common.ReadStatusWriter, req ctrl.Request)
 			" , the end time " + os.Spec.TimeWindow.EndTime)
 		return values.Requeue, nil
 	}
-
 	ops := os.Spec.OpsType
 	var opsInsatnce operation
 	switch ops {
@@ -106,6 +105,7 @@ func Reconcile(ctx context.Context, r common.ReadStatusWriter, req ctrl.Request)
 	if err != nil {
 		return values.RequeueNow, err
 	}
+	log.V(1).Info("get all nodes num is " + strconv.Itoa(len(allNodes)))
 	switch os.Spec.ExecutionMode {
 	case ExecutionModeParallel:
 		result, err := excuteParallelOperation(ctx, r, os, opsInsatnce, len(allNodes))
@@ -197,6 +197,7 @@ func calNodeLimit(ctx context.Context, r common.ReadStatusWriter,
 func assignOperation(ctx context.Context, r common.ReadStatusWriter, os upgradev1.OS, limit int,
 	opsInstance operation, requirements []labels.Requirement) (int, error) {
 	if limit == 0 {
+		log.V(1).Info("limit is 0 , do not need to assign operation")
 		return 0, nil
 	}
 	nodes, err := getNodes(ctx, r, limit+1, requirements...) // one more to see if all nodes updated
@@ -283,6 +284,7 @@ func setTimeInterval(timeInterval int) ctrl.Result {
 
 func excuteParallelOperation(ctx context.Context, r common.ReadStatusWriter, os upgradev1.OS,
 	opsInsatnce operation, nodeNum int) (ctrl.Result, error) {
+	log.V(1).Info("start parallel operation")
 	opsLabel := opsInsatnce.getOpsLabel()
 	opsLabel.op = selection.Exists
 	opsNodesReq, err := newopsNodesRequirement(os.Spec.NodeSelector,
@@ -294,6 +296,7 @@ func excuteParallelOperation(ctx context.Context, r common.ReadStatusWriter, os 
 	if err != nil {
 		return values.RequeueNow, nil
 	}
+	log.V(1).Info("get limit is " + strconv.Itoa(limit))
 	opsLabel.op = selection.DoesNotExist
 	noOpsNodesReq, err := newopsNodesRequirement(os.Spec.NodeSelector,
 		selection.Equals, opsLabel).createNodeRequirement(ctx, r)
@@ -308,6 +311,7 @@ func excuteParallelOperation(ctx context.Context, r common.ReadStatusWriter, os 
 
 func excuteSerialOperation(ctx context.Context, r common.ReadStatusWriter, os upgradev1.OS,
 	opsInsatnce operation, nodeNum int) (ctrl.Result, error) {
+	log.V(1).Info("start serial operation")
 	opsLabel := opsInsatnce.getOpsLabel()
 	opsLabel.op = selection.Exists
 	opsNodesReq, err := newopsNodesRequirement(os.Spec.NodeSelector,
@@ -320,6 +324,7 @@ func excuteSerialOperation(ctx context.Context, r common.ReadStatusWriter, os up
 		return values.RequeueNow, nil
 	}
 	if len(opsNodeNum) > 0 {
+		log.V(1).Info("a node is being upgraded or configured. Wait until the node upgrade or configuration is complete.")
 		return values.Requeue, nil
 	}
 
@@ -332,7 +337,7 @@ func excuteSerialOperation(ctx context.Context, r common.ReadStatusWriter, os up
 	if err != nil {
 		return values.RequeueNow, nil
 	}
-
+	log.V(1).Info("get the number of nodes which need to be added serial label num is " + strconv.Itoa(serialNodeLimit))
 	noSerialNodesRequirement, err := newSerialNodesRequirement(os.Spec.NodeSelector,
 		selection.Equals, selection.DoesNotExist).createNodeRequirement(ctx, r)
 	if err != nil {
@@ -342,10 +347,12 @@ func excuteSerialOperation(ctx context.Context, r common.ReadStatusWriter, os up
 	serialOpsInstance := serialOps{
 		label: opsInsatnce.getOpsLabel(),
 	}
+	log.V(1).Info("start add serial label to nodes")
 	if _, err := assignOperation(ctx, r, os, serialNodeLimit, serialOpsInstance, noSerialNodesRequirement); err != nil {
 		return values.RequeueNow, nil
 	}
 
+	log.V(1).Info("start check nodes needed to be upgrade/configure or not")
 	serialLimit := 1 // 1 is the number of operation nodes when excution mode in serial
 	count, err := assignOperation(ctx, r, os, serialLimit, opsInsatnce, serialNodesRequirement)
 	if err != nil {
@@ -355,5 +362,4 @@ func excuteSerialOperation(ctx context.Context, r common.ReadStatusWriter, os up
 		return values.Requeue, nil
 	}
 	return setTimeInterval(os.Spec.TimeInterval), nil
-
 }
