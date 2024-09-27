@@ -22,19 +22,19 @@ spec:
       type: string
       jsonPath: .spec.nodestatus
       description: The status of node
-    - name: SYSCONFIG STATUS
+    - name: SYSCONFIG-VERSION-CURRENT
       type: string
       jsonPath: .status.sysconfigs.version
       description: The current status of sysconfig
-    - name: SYSCONFIG SPEC
+    - name: SYSCONFIG-VERSION-DESIRED
       type: string
       jsonPath: .spec.sysconfigs.version
       description: The expected version of sysconfig
-    - name: UPGRADECONFIG STATUS
+    - name: UPGRADECONFIG-VERSION-CURRENT
       type: string
       jsonPath: .status.upgradeconfigs.version
       description: The current version of upgradeconfig
-    - name: UPGRADECONFIG SPEC
+    - name: UPGRADECONFIG-VERSION-DESIRED
       type: string
       jsonPath: .spec.upgradeconfigs.version
       description: The expected version of upgradeconfig
@@ -53,6 +53,14 @@ spec:
           spec:
             description: OSInstanceSpec defines desired state of OS
             properties:
+              namespacedname:
+                description: NamespacedName defines name and namespace of os corresponding to osinstance
+                properties:
+                  name:
+                    type: string
+                  namespace:
+                    type: string
+                type: object
               nodestatus:
                 type: string
               sysconfigs:

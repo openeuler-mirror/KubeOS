@@ -1,0 +1,12 @@
+[workspace]
+members = ["agent", "cli", "kbimg", "manager", "proxy"]
+resolver = "2"
+
+[profile.release]
+debug = false
+debug-assertions = false
+lto = true
+opt-level = 's'
+overflow-checks = false
+panic = "unwind"
+rpath = false
