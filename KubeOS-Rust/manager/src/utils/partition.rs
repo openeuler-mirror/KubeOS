@@ -24,7 +24,7 @@ pub struct PartitionInfo {
 
 /// get_partition_info returns the current partition info and the next partition info.
 pub fn get_partition_info<T: CommandExecutor>(executor: &T) -> Result<(PartitionInfo, PartitionInfo), anyhow::Error> {
-    let lsblk = executor.run_command_with_output("lsblk", &["-lno", "NAME,MOUNTPOINTS,FSTYPE"])?;
+    let lsblk = executor.run_command_with_output("lsblk", &["-lno", "NAME,MOUNTPOINT,FSTYPE"])?;
     // After split whitespace, the root directory line should have 3 elements, which are "sda2 / ext4".
     let mut cur_partition = PartitionInfo::default();
     let mut next_partition = PartitionInfo::default();

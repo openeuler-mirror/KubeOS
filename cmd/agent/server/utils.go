@@ -110,7 +110,7 @@ func getNextPart(partA string, partB string) (string, string, error) {
 }
 
 func getRootfsDisks() (string, string, error) {
-	out, err := runCommandWithOut("lsblk", "-lno", "NAME,MOUNTPOINTS")
+	out, err := runCommandWithOut("lsblk", "-lno", "NAME,MOUNTPOINT")
 	if err != nil {
 		logrus.Errorln("get rootfs disks error " + err.Error())
 		return "", "", err
