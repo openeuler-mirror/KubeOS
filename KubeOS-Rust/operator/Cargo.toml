@@ -1,17 +1,14 @@
 [package]
-description = "KubeOS os-proxy"
+description = "KubeOS os-operator"
 edition = "2021"
 license = "MulanPSL-2.0"
-name = "proxy"
+name = "operator"
 version = "1.0.6"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-[lib]
-name = "drain"
-path = "src/drain.rs"
 
 [[bin]]
-name = "proxy"
+name = "operator"
 path = "src/main.rs"
 
 [dependencies]
@@ -48,3 +45,4 @@ http = "0.2.9"
 hyper = "0.14.25"
 tower-test = "0.4.0"
 mockall = { version = "=0.11.3" }
+regex = "1"

@@ -10,11 +10,7 @@
  * See the Mulan PSL v2 for more details.
  */
 
-mod agentclient;
 #[cfg(test)]
 mod apiserver_mock;
 mod controller;
-mod utils;
-
-pub use agentclient::{AgentCallClient, AgentClient};
-pub use controller::{error_policy, reconcile, ProxyController};
+pub use controller::{error_policy, reconcile, OperatorController};

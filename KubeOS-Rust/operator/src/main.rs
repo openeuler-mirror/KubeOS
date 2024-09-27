@@ -11,6 +11,7 @@
  */
 
 use anyhow::Result;
+use controller::{error_policy, reconcile, OperatorController};
 use env_logger::{Builder, Env, Target};
 use futures::StreamExt;
 use kube::{
@@ -19,33 +20,33 @@ use kube::{
     runtime::controller::{Context, Controller},
 };
 use log::{error, info};
-mod controller;
-use controller::{
-    error_policy, reconcile, AgentCallClient, AgentClient, ProxyController,
-};
+use tokio::signal;
 
-use common::{apiclient::ControllerClient, crd::OS, values::SOCK_PATH};
+pub mod controller;
+use common::{crd::OS, apiclient::ControllerClient};
 
-const PROXY_VERSION: Option<&'static str> = option_env!("CARGO_PKG_VERSION");
+const OPERATOR_VERSION: Option<&'static str> = option_env!("CARGO_PKG_VERSION");
 #[tokio::main]
 async fn main() -> Result<()> {
-    Builder::from_env(Env::default().default_filter_or("proxy=info")).target(Target::Stdout).init();
+    Builder::from_env(Env::default().default_filter_or("operator=info")).target(Target::Stdout).init();
     let client = Client::try_default().await?;
     let os: Api<OS> = Api::all(client.clone());
     let controller_client = ControllerClient::new(client.clone());
-    let agent_call_client = AgentCallClient::default();
-    let agent_client = AgentClient::new(SOCK_PATH, agent_call_client);
-    let proxy_controller = ProxyController::new(client, controller_client, agent_client);
-    info!("os-proxy version is {}, start renconcile", PROXY_VERSION.unwrap_or("Not Found"));
+    let os_reconciler = OperatorController::new(client.clone(), controller_client.clone());
+    info!(
+        "os-operator version is {}, starting operator manager",
+        OPERATOR_VERSION.unwrap_or("Not Found")
+    );
     Controller::new(os, ListParams::default())
-        .run(reconcile, error_policy, Context::new(proxy_controller))
+        .run(reconcile, error_policy, Context::new(os_reconciler))
         .for_each(|res| async move {
             match res {
-                Ok(_o) => {},
+                Ok(_) => {}
                 Err(e) => error!("reconcile failed: {}", e.to_string()),
             }
         })
         .await;
-    info!("os-proxy terminated");
+    signal::ctrl_c().await?;
+    info!("os-operator terminated");
     Ok(())
 }

@@ -80,6 +80,9 @@ rust-proxy:
 rust-agent:
 	cd KubeOS-Rust && ${RUSTFLAGS} cargo build --profile release --target-dir ../bin/rust --package os-agent
 
+rust-operator:
+	cd KubeOS-Rust && ${RUSTFLAGS} cargo build --profile release --target-dir ../bin/rust --package operator
+
 rust-kbimg:
 	cd KubeOS-Rust && ${RUSTFLAGS} cargo build --profile release --target-dir ../bin/rust --package kbimg
 

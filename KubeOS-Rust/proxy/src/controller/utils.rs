@@ -12,7 +12,7 @@
 
 use log::{debug, info};
 
-use super::{
+use common::{
     crd::{Configs, OSInstance, OSInstanceStatus, OS},
     values::{NODE_STATUS_CONFIG, NODE_STATUS_IDLE, NODE_STATUS_UPGRADE},
 };

@@ -239,6 +239,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "common"
+version = "1.0.6"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "k8s-openapi",
+ "kube",
+ "schemars",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "tokio-retry",
+]
+
+[[package]]
 name = "core-foundation"
 version = "0.9.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1521,6 +1537,38 @@ dependencies = [
 ]
 
 [[package]]
+name = "operator"
+version = "1.0.6"
+dependencies = [
+ "anyhow",
+ "assert-json-diff",
+ "async-trait",
+ "cli",
+ "common",
+ "env_logger",
+ "futures",
+ "h2 0.3.16",
+ "http 0.2.9",
+ "hyper 0.14.25",
+ "k8s-openapi",
+ "kube",
+ "log",
+ "manager",
+ "mockall",
+ "regex",
+ "reqwest",
+ "schemars",
+ "serde",
+ "serde_json",
+ "socket2 0.4.9",
+ "thiserror",
+ "thread_local",
+ "tokio",
+ "tokio-retry",
+ "tower-test",
+]
+
+[[package]]
 name = "ordered-float"
 version = "2.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1730,6 +1778,7 @@ dependencies = [
  "assert-json-diff",
  "async-trait",
  "cli",
+ "common",
  "env_logger",
  "futures",
  "h2 0.3.16",

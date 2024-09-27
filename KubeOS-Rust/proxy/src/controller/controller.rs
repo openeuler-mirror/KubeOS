@@ -26,9 +26,12 @@ use reconciler_error::Error;
 
 use super::{
     agentclient::{AgentCall, AgentClient, AgentMethod, ConfigInfo, KeyInfo, Sysconfig, UpgradeInfo},
-    apiclient::ApplyApi,
-    crd::{Configs, Content, OSInstance, OS},
     utils::{check_version, get_config_version, ConfigOperation, ConfigType},
+};
+
+use common::{
+    apiclient::ApplyApi, 
+    crd::{Configs, Content, OSInstance, OS},
     values::{
         LABEL_UPGRADING, NODE_STATUS_CONFIG, NODE_STATUS_IDLE, OPERATION_TYPE_ROLLBACK, OPERATION_TYPE_UPGRADE, 
         OSINSTANCE_NAMESPACE, REQUEUE_ERROR, REQUEUE_NORMAL,LABEL_CONFIGURING, NO_REQUEUE,
@@ -416,8 +419,8 @@ fn convert_to_config_hashmap(contents: Vec<Content>) -> Option<HashMap<String, K
 
 pub mod reconciler_error {
     use thiserror::Error;
-
-    use crate::controller::{agentclient::agent_error, apiclient::apiclient_error};
+    use crate::controller::agentclient::agent_error;
+    use common::apiclient::apiclient_error;
     #[derive(Error, Debug)]
     pub enum Error {
         #[error("Kubernetes reported error: {source}")]
@@ -463,10 +466,8 @@ mod test {
     use std::env;
 
     use super::{error_policy, reconcile, Context, OSInstance, ProxyController, OS};
-    use crate::controller::{
-        apiserver_mock::{timeout_after_5s, MockAgentCallClient, Testcases},
-        ControllerClient,
-    };
+    use crate::controller::apiserver_mock::{timeout_after_5s, MockAgentCallClient, Testcases};
+    use common::apiclient::ControllerClient;
 
     #[tokio::test]
     async fn test_create_osinstance_with_no_upgrade_or_configuration() {
@@ -539,7 +540,7 @@ mod test {
     async fn test_config_normal() {
         let (test_proxy_controller, fakeserver) = ProxyController::<ControllerClient, MockAgentCallClient>::test();
         env::set_var("NODE_NAME", "openeuler");
-        let os = OS::set_os_syscon_v2_opstype_config();
+        let os = OS::set_os_syscon_v2_opstype_config_proxy();
         let context = Context::new(test_proxy_controller);
         let mocksrv = fakeserver
             .run(Testcases::ConfigNormal(OSInstance::set_osi_nodestatus_config_syscon_v2("openeuler", "default")));
@@ -551,7 +552,7 @@ mod test {
     async fn test_sysconfig_version_mismatch_reassign() {
         let (test_proxy_controller, fakeserver) = ProxyController::<ControllerClient, MockAgentCallClient>::test();
         env::set_var("NODE_NAME", "openeuler");
-        let os = OS::set_os_syscon_v2_opstype_config();
+        let os = OS::set_os_syscon_v2_opstype_config_proxy();
         let context = Context::new(test_proxy_controller);
         let mocksrv = fakeserver.run(Testcases::ConfigVersionMismatchReassign(OSInstance::set_osi_nodestatus_config(
             "openeuler",
@@ -565,7 +566,7 @@ mod test {
     async fn test_sysconfig_version_mismatch_update() {
         let (test_proxy_controller, fakeserver) = ProxyController::<ControllerClient, MockAgentCallClient>::test();
         env::set_var("NODE_NAME", "openeuler");
-        let os = OS::set_os_syscon_v2_opstype_config();
+        let os = OS::set_os_syscon_v2_opstype_config_proxy();
         let context = Context::new(test_proxy_controller);
         let mocksrv = fakeserver.run(Testcases::ConfigVersionMismatchUpdate(OSInstance::set_osi_nodestatus_upgrade(
             "openeuler",
