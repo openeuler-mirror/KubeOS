@@ -10,7 +10,7 @@
  * See the Mulan PSL v2 for more details.
  */
 
-use kubeos_manager::api;
+use manager::api;
 use serde_json::value::RawValue;
 
 use crate::method::callable_method::RpcMethod;

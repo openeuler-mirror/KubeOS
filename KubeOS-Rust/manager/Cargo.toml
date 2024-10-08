@@ -1,25 +1,25 @@
 [package]
 description = "KubeOS os-agent manager"
-edition = "2021"
-license = "MulanPSL-2.0"
+edition.workspace = true
+license.workspace = true
 name = "manager"
-version = "1.0.6"
+version.workspace = true
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [dev-dependencies]
-mockall = { version = "=0.11.3" }
-mockito = { version = "0.31.1", default-features = false }
-predicates = { version = "=2.0.1" }
-tempfile = { version = "3.6.0" }
+mockall = { workspace = true }
+mockito = { workspace = true }
+predicates = { workspace = true }
+tempfile = { workspace = true }
 
 [dependencies]
-anyhow = { version = "1.0" }
-env_logger = { version = "0.9" }
-lazy_static = { version = "1.4" }
-log = { version = "0.4" }
-nix = { version = "0.26.2" }
-regex = { version = "1.7.3" }
-reqwest = { version = "=0.12.2", features = ["blocking", "rustls-tls"] }
-serde = { version = "1.0", features = ["derive"] }
-serde_json = { version = "1.0" }
-sha2 = { version = "0.10.8" }
+anyhow = { workspace = true }
+env_logger = { workspace = true }
+lazy_static = { workspace = true }
+log = { workspace = true }
+nix = { workspace = true }
+regex = { workspace = true }
+reqwest = { workspace = true, features = ["blocking", "default", "rustls-tls"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
