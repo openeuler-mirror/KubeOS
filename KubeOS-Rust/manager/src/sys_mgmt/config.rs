@@ -371,7 +371,7 @@ mod tests {
         let mut executor = MockCommandExec::new();
 
         // the output shows that current root menuentry is A
-        let command_output1 = "sda\nsda1 /boot/efi vfat\nsda2 / ext4\nsda3  ext4\nsda4 /persist ext4\nsr0  iso9660\n";
+        let command_output1 = "sda\nsda1 /boot/efi vfat 98566144\nsda2 / ext4 13000245248\nsda3  ext4 13000245248\nsda4 /persist ext4 453458788352\nsr0  iso9660 964689261\n";
         executor.expect_run_command_with_output().times(1).returning(|_, _| Ok(command_output1.to_string()));
 
         let result = grub_cmdline.get_config_partition(executor).unwrap();
@@ -381,7 +381,7 @@ mod tests {
         let mut executor = MockCommandExec::new();
 
         // the output shows that current root menuentry is A
-        let command_output1 = "sda\nsda1 /boot/efi vfat\nsda2 / ext4\nsda3  ext4\nsda4 /persist ext4\nsr0  iso9660\n";
+        let command_output1 = "sda\nsda1 /boot/efi vfat 98566144\nsda2 / ext4 13000245248\nsda3  ext4 13000245248\nsda4 /persist ext4 453458788352\nsr0  iso9660 964689261\n";
         executor.expect_run_command_with_output().times(1).returning(|_, _| Ok(command_output1.to_string()));
         grub_cmdline.is_cur_partition = false;
         let result = grub_cmdline.get_config_partition(executor).unwrap();
