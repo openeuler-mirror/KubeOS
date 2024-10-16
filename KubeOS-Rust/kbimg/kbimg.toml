@@ -1,0 +1,87 @@
+[from_repo]
+agent_path = "/root/KubeOS/bin/os-agent"
+image_type = "vm-repo"
+legacy_bios = false
+repo_path = "/etc/yum.repos.d/openEuler.repo"
+root_passwd = "$1$xyz$RdLyKTL32WEvK3lg8CXID0"
+version = "v1"
+rpmlist = [
+    "NetworkManager",
+    "conntrack-tools",
+    "containernetworking-plugins",
+    "coreutils",
+    "dhcp",
+    "docker",
+    "dosfstools",
+    "dracut",
+    "ebtables",
+    "ethtool",
+    "gawk",
+    "hwinfo",
+    "kernel",
+    "kubernetes-kubeadm",
+    "kubernetes-kubelet",
+    "lvm2",
+    "net-tools",
+    "openssh-server",
+    "passwd",
+    "parted",
+    "rsyslog",
+    "socat",
+    "sudo",
+    "vi",
+]
+
+# [from_dockerimg]
+# docker_img = ""
+# image_type = "vm-docker"
+
+# [admin_container]
+# dockerfile = ""
+# docker_img = ""
+
+# [pxe_config]
+# rootfs_name = "kubeos.tar"
+# disk = "/dev/sda"
+# server_ip = "192.168.1.50"
+# local_ip = "192.168.1.100"
+# route_ip = "192.168.1.1"
+# netmask = "255.255.255.0"
+# net_name = "eth0"
+
+# [[users]]
+# groups = ["admin"]
+# name = "foo"
+# passwd = "foo"
+# sudo = "ALL=(ALL) ALL"
+
+# [[users]]
+# groups = ["example"]
+# name = "bar"
+# passwd = "bar"
+
+# [[copy_files]]
+# dst = "/root/ztest2"
+# src = "/root/KubeOS/ztest2"
+
+# [[copy_files]]
+# dst = "/root/ztest1"
+# src = "/root/KubeOS/ztest1/*"
+
+# [grub]
+# passwd = "foo"
+
+# [systemd_service]
+# name = ["kubelet", "containerd"]
+
+# [chroot_script]
+# path = "../../ztest/myscript.sh"
+
+# [disk_partition]
+# first = 100
+# second = 2500
+# third = 2300
+# img_size = 30
+
+# [persist_mkdir]
+# name = ["lv_data"]

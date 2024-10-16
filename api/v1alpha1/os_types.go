@@ -24,10 +24,12 @@ type OSSpec struct {
 	CheckSum       string `json:"checksum"`
 	FlagSafe       bool   `json:"flagSafe"`
 	MTLS           bool   `json:"mtls"`
+	// +kubebuilder:validation:Enum=docker;disk;containerd
 	ImageType      string `json:"imagetype"`
 	ContainerImage string `json:"containerimage"`
-	OpsType        string `json:"opstype"`
-	EvictPodForce  bool   `json:"evictpodforce"`
+	// +kubebuilder:validation:Enum=upgrade;config;rollback
+	OpsType       string `json:"opstype"`
+	EvictPodForce bool   `json:"evictpodforce"`
 	// +kubebuilder:validation:Optional
 	CaCert string `json:"cacert"`
 	// +kubebuilder:validation:Optional
@@ -39,7 +41,17 @@ type OSSpec struct {
 	// +kubebuilder:validation:Optional
 	UpgradeConfigs SysConfigs `json:"upgradeconfigs"`
 	// +kubebuilder:validation:Optional
+	// +kubebuilder:default:=no-label
 	NodeSelector string `json:"nodeselector"`
+	// +kubebuilder:validation:Optional
+	TimeWindow TimeWindow `json:"timewindow"`
+	// +kubebuilder:validation:Optional
+	// +kubebuilder:default:=15
+	TimeInterval int `json:"timeinterval"`
+	// +kubebuilder:validation:Optional
+	// +kubebuilder:validation:Enum=serial;parallel
+	// +kubebuilder:default:=parallel
+	ExecutionMode string `json:"executionmode"`
 }
 
 // +kubebuilder:subresource:status
@@ -90,6 +102,11 @@ type Content struct {
 	Operation string `json:"operation"`
 }
 
+type TimeWindow struct {
+	StartTime string `json:"starttime"`
+	EndTime   string `json:"endtime"`
+}
+
 // +kubebuilder:subresource:status
 // +kubebuilder:object:root=true
 
@@ -116,9 +133,19 @@ type OSInstanceSpec struct {
 	// +kubebuilder:validation:Optional
 	NodeStatus string `json:"nodestatus"`
 	// +kubebuilder:validation:Optional
+	NamespacedName NamespacedName `json:"namespacedname"`
+	// +kubebuilder:validation:Optional
 	SysConfigs SysConfigs `json:"sysconfigs"`
 	// +kubebuilder:validation:Optional
 	UpgradeConfigs SysConfigs `json:"upgradeconfigs"`
+}
+
+// NamespacedName defines name and namespace of os corresponding to osinstance
+type NamespacedName struct {
+	// +kubebuilder:validation:Optional
+	Name string `json:"name"`
+	// +kubebuilder:validation:Optional
+	Namespace string `json:"namespace"`
 }
 
 // +kubebuilder:object:root=true

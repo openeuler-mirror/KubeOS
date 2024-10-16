@@ -1,1 +1,11 @@
+# vscode settings
+.vscode
+
+# rust dependencies
+target/
+
+# KubeOS bin
 /bin
+
+# scripts-auto
+/scripts-auto

@@ -3,7 +3,7 @@ kind: Secret
 metadata:
   name: root-secret
 data:
-  ssh-pub-key: your-ssh-pub-key
+  ssh-pub-key: <your-ssh-pub-key-encoded-with-base64>
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -11,7 +11,7 @@ metadata:
   name: admin-container-sysmaster
   namespace: default
   labels:
-      control-plane: admin-container-sysmaster
+    control-plane: admin-container-sysmaster
 spec:
   selector:
     matchLabels:
@@ -24,24 +24,24 @@ spec:
     spec:
       hostPID: true
       containers:
-      - name: admin-container-sysmaster
-        image: your_imageRepository/admin_imageName:version
-        imagePullPolicy: Always
-        securityContext:
-          privileged: true
-        ports:
-          - containerPort: 22
-        # sysmaster要求
-        env:
-          - name: container
-            value: containerd
-        volumeMounts:
-        # name 必须与下面的卷名匹配
-        - name: secret-volume
-        # mountPath必须为/etc/secret-volume
-          mountPath: /etc/secret-volume
-          readOnly: true
-      nodeName: your-worker-node-name
+        - name: admin-container-sysmaster
+          image: <your_imageRepository/admin_imageName:version>
+          imagePullPolicy: Always
+          securityContext:
+            privileged: true
+          ports:
+            - containerPort: 22
+          # sysmaster要求
+          env:
+            - name: container
+              value: containerd
+          volumeMounts:
+            # name 必须与下面的卷名匹配
+            - name: secret-volume
+              # mountPath必须为/etc/secret-volume
+              mountPath: /etc/secret-volume
+              readOnly: true
+      nodeName: <your-worker-node-name>
       volumes:
         - name: secret-volume
           secret:
@@ -58,6 +58,6 @@ spec:
   ports:
     - port: 22
       targetPort: 22
-      nodePort: your-exposed-port
+      nodePort: <your-exposed-port>
   selector:
-      control-plane: admin-container-sysmaster
+    control-plane: admin-container-sysmaster
