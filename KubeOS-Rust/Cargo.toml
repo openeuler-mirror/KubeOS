@@ -9,42 +9,45 @@ version = "1.0.6"
 
 [workspace.dependencies]
 anyhow = { version = "1.0" }
-assert-json-diff = { version = "2.0.2" }
 async-trait = { version = "0.1" }
-clap = { version = "=3.2.23", features = ["derive"] }
+clap = { version = "~4.3", default-features = false }
 cli = { version = "1.0.6", path = "./cli" }
-env_logger = { version = "0.9" }
-futures = { version = "0.3.17" }
-h2 = { version = "=0.3.16" }
-http = { version = "0.2.9" }
-hyper = { version = "0.14.25" }
-jsonrpc = { version = "0.13", features = ["simple_uds"] }
+env_logger = { version = "~0.10" }
+futures = { version = "0.3" }
+jsonrpc = { version = "~0.13.0", features = ["simple_uds"] }
 jsonrpc-core = { version = "18.0" }
 jsonrpc-derive = { version = "18.0" }
 jsonrpc-ipc-server = { version = "18.0" }
-k8s-openapi = { version = "0.13.1", features = ["v1_22"] }
-kube = { version = "0.66.0", features = ["derive", "runtime"] }
-lazy_static = { version = "1.4" }
-log = { version = "= 0.4.15" }
+k8s-openapi = { version = "=0.13.1", features = ["v1_22"] }
+kube = { version = "=0.66.0", features = ["derive", "runtime"] }
+lazy_static = { version = "1.5" }
+log = { version = "0.4" }
 manager = { version = "1.0.6", path = "./manager" }
-mockall = { version = "=0.11.3" }
-mockito = { version = "0.31.1", default-features = false }
-nix = { version = "0.26.2" }
-predicates = { version = "=2.0.1" }
-regex = { version = "1.7.3" }
-reqwest = { version = "=0.12.2", default-features = false }
-schemars = { version = "=0.8.10" }
-serde = { version = "1.0", features = ["derive"] }
-serde_json = { version = "1.0" }
-sha2 = { version = "0.10.8" }
-socket2 = { version = "=0.4.9" }
+nix = { version = "=0.26.4" }
+regex = { version = "~1.9" }
+reqwest = { version = "0.12.9", default-features = false }
+schemars = { version = "=0.8.21" }
+serde = { version = "1.0.215", features = ["derive"] }
+serde_json = { version = "1.0.133" }
+sha2 = { version = "=0.10.8" }
 sysinfo = { version = "=0.29.11" }
-tempfile = { version = "3.6.0" }
-thiserror = { version = "1.0.29" }
-thread_local = { version = "=1.1.4" }
-tokio = { version = "=1.28.0", default-features = false }
+thiserror = { version = "2.0" }
+tokio = { version = "~1.38.0", default-features = false }
 tokio-retry = { version = "0.3" }
 toml = { version = "=0.7.6" }
+
+# dev-dependencies
+mockall = { version = "=0.12.1" }
+
+# manager dev-dependencies
+mockito = { version = "=0.31.1", default-features = false }
+predicates = { version = "=3.0.3" }
+tempfile = { version = "3.14.0" }
+
+# proxy dev-dependencies
+assert-json-diff = { version = "2.0" }
+http = { version = "=0.2.12" }
+hyper = { version = "=0.14.25" }
 tower-test = { version = "0.4.0" }
 
 [profile.release]
