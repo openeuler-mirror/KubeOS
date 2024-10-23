@@ -52,8 +52,12 @@ impl<T: CommandExecutor> UpgradeImageManager<T> {
     pub fn create_image_file(&self, permission: u32) -> Result<()> {
         let image_str = self.image_path_str()?;
 
-        debug!("Create image {}", image_str);
-        self.executor.run_command("dd", &["if=/dev/zero", &format!("of={}", image_str), "bs=2M", "count=1024"])?;
+        // convert bytes to the count of 2MB block
+        let count = self.next_partition.size / ( 2 << 20 );
+
+        debug!("Create image {}, count {}", image_str, count);
+
+        self.executor.run_command("dd", &["if=/dev/zero", &format!("of={}", image_str), "bs=2M", &format!("count={}", count)])?;
         fs::set_permissions(&self.paths.image_path, Permissions::from_mode(permission))?;
         Ok(())
     }
@@ -193,7 +197,7 @@ mod tests {
                 tar_path: "/tmp/update/image.tar".into(),
                 rootfs_file: "image.tar".into(),
             },
-            PartitionInfo { device: "/dev/sda3".into(), fs_type: "ext4".into(), menuentry: "B".into() },
+            PartitionInfo { device: "/dev/sda3".into(), fs_type: "ext4".into(), menuentry: "B".into(), size:13000245248},
             mock,
         );
 

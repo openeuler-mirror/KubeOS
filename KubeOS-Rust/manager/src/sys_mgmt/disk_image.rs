@@ -372,7 +372,7 @@ mod tests {
         let mock_executor = MockCommandExec::new();
         let mut handler = DiskImageHandler::new(PreparePath::default(), mock_executor, String::new());
         handler.executor.expect_clone().times(1).returning(|| MockCommandExec::new());
-        let command_output1 = "sda\nsda1 /boot/efi vfat\nsda2 / ext4\nsda3  ext4\nsda4 /persist ext4\nsr0  iso9660\n";
+        let command_output1 = "sda\nsda1 /boot/efi vfat 94M\nsda2 / ext4 12.1G\nsda3  ext4 12.1G\nsda4 /persist ext4 422.3G\nsr0  iso9660 0.9G\n";
         handler.executor.expect_run_command_with_output().times(1).returning(|_, _| Ok(command_output1.to_string()));
         handler.paths.image_path = tmp_file.path().to_path_buf();
         assert_eq!(true, handler.paths.image_path.exists());
