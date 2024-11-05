@@ -194,8 +194,13 @@ impl<T: ApplyApi, U: AgentCall> ProxyController<T, U> {
                 Ok(())
             },
             Err(kube::Error::Api(ErrorResponse { reason, .. })) if &reason == "NotFound" => {
-                info!("Create OSInstance {}", node_name);
-                self.controller_client.create_osinstance(node_name, OSINSTANCE_NAMESPACE).await?;
+                let node_api: Api<Node> = Api::all(self.k8s_client.clone());
+                if node_api.get(node_name).await.is_ok() {
+                    info!("Create OSInstance {}", node_name);
+                    self.controller_client.create_osinstance(node_name, OSINSTANCE_NAMESPACE).await?;
+                } else {
+                    info!("Skip creating OSInstance because of node {} not found", node_name);
+                }
                 Ok(())
             },
             Err(err) => Err(Error::KubeClient { source: err }),

@@ -73,6 +73,9 @@ impl ApiServerVerifier {
                     self.handler_osinstance_get_not_exist(osi.clone())
                         .await
                         .unwrap()
+                        .handler_node_get(osi.clone())
+                        .await
+                        .unwrap()
                         .handler_osinstance_creation(osi.clone())
                         .await
                         .unwrap()
