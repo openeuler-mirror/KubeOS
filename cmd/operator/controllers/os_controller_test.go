@@ -14,6 +14,7 @@ package controllers
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"reflect"
 	"testing"
@@ -24,6 +25,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	v1 "k8s.io/api/core/v1"
+	apiextensions "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
@@ -406,6 +408,11 @@ var _ = Describe("OsController", func() {
 			}, timeout, interval).Should(BeTrue())
 			Expect(createdOSIns.ObjectMeta.Name).Should(Equal(node2Name))
 
+			var value1, value2 apiextensions.JSON
+			value1.Raw, err = json.Marshal("a")
+			Expect(err).ToNot(HaveOccurred())
+			value2.Raw, err = json.Marshal("b")
+			Expect(err).ToNot(HaveOccurred())
 			OS := &upgradev1.OS{
 				TypeMeta: metav1.TypeMeta{
 					APIVersion: "upgrade.openeuler.org/v1alpha1",
@@ -428,8 +435,8 @@ var _ = Describe("OsController", func() {
 							{
 								Model: "kernel.sysctl",
 								Contents: []upgradev1.Content{
-									{Key: "key1", Value: "a"},
-									{Key: "key2", Value: "b"},
+									{Key: "key1", Value: value1},
+									{Key: "key2", Value: value2},
 								},
 							},
 						},
@@ -688,6 +695,11 @@ var _ = Describe("OsController", func() {
 			Expect(createdOSIns.ObjectMeta.Name).Should(Equal(node2Name))
 
 			// create OS CR
+			var value1, value2 apiextensions.JSON
+			value1.Raw, err = json.Marshal("1")
+			Expect(err).ToNot(HaveOccurred())
+			value2.Raw, err = json.Marshal("2")
+			Expect(err).ToNot(HaveOccurred())
 			OS := &upgradev1.OS{
 				TypeMeta: metav1.TypeMeta{
 					APIVersion: "upgrade.openeuler.org/v1alpha1",
@@ -707,15 +719,15 @@ var _ = Describe("OsController", func() {
 					SysConfigs: upgradev1.SysConfigs{
 						Version: "v2",
 						Configs: []upgradev1.SysConfig{
-							{Model: "grub.cmdline.current", Contents: []upgradev1.Content{{Key: "a", Value: "1"}}},
-							{Model: "grub.cmdline.next", Contents: []upgradev1.Content{{Key: "b", Value: "2"}}},
+							{Model: "grub.cmdline.current", Contents: []upgradev1.Content{{Key: "a", Value: value1}}},
+							{Model: "grub.cmdline.next", Contents: []upgradev1.Content{{Key: "b", Value: value2}}},
 						},
 					},
 					UpgradeConfigs: upgradev1.SysConfigs{
 						Version: "v2",
 						Configs: []upgradev1.SysConfig{
-							{Model: "grub.cmdline.current", Contents: []upgradev1.Content{{Key: "a", Value: "1"}}},
-							{Model: "grub.cmdline.next", Contents: []upgradev1.Content{{Key: "b", Value: "2"}}},
+							{Model: "grub.cmdline.current", Contents: []upgradev1.Content{{Key: "a", Value: value1}}},
+							{Model: "grub.cmdline.next", Contents: []upgradev1.Content{{Key: "b", Value: value2}}},
 						},
 					},
 				},
@@ -738,9 +750,9 @@ var _ = Describe("OsController", func() {
 				err := k8sClient.Get(ctx, osInsCRLookupKey1, createdOSIns)
 				return err == nil
 			}, timeout, interval).Should(BeTrue())
-			Expect(createdOSIns.Spec.SysConfigs.Configs[0]).Should(Equal(upgradev1.SysConfig{Model: "grub.cmdline.next", Contents: []upgradev1.Content{{Key: "a", Value: "1"}}}))
-			Expect(createdOSIns.Spec.SysConfigs.Configs[1]).Should(Equal(upgradev1.SysConfig{Model: "grub.cmdline.current", Contents: []upgradev1.Content{{Key: "b", Value: "2"}}}))
-			Expect(createdOSIns.Spec.UpgradeConfigs.Configs[0]).Should(Equal(upgradev1.SysConfig{Model: "grub.cmdline.current", Contents: []upgradev1.Content{{Key: "a", Value: "1"}}}))
+			Expect(createdOSIns.Spec.SysConfigs.Configs[0]).Should(Equal(upgradev1.SysConfig{Model: "grub.cmdline.next", Contents: []upgradev1.Content{{Key: "a", Value: value1}}}))
+			Expect(createdOSIns.Spec.SysConfigs.Configs[1]).Should(Equal(upgradev1.SysConfig{Model: "grub.cmdline.current", Contents: []upgradev1.Content{{Key: "b", Value: value2}}}))
+			Expect(createdOSIns.Spec.UpgradeConfigs.Configs[0]).Should(Equal(upgradev1.SysConfig{Model: "grub.cmdline.current", Contents: []upgradev1.Content{{Key: "a", Value: value1}}}))
 			Expect(createdOSIns.Spec.NodeStatus).Should(Equal(values.NodeStatusUpgrade.String()))
 
 			// check node2 osinstance
@@ -750,9 +762,9 @@ var _ = Describe("OsController", func() {
 				return err == nil
 			}, timeout, interval).Should(BeTrue())
 			Expect(createdOSIns2.Spec.NodeStatus).Should(Equal(values.NodeStatusUpgrade.String()))
-			Expect(createdOSIns2.Spec.SysConfigs.Configs[0]).Should(Equal(upgradev1.SysConfig{Model: "grub.cmdline.next", Contents: []upgradev1.Content{{Key: "a", Value: "1"}}}))
-			Expect(createdOSIns2.Spec.SysConfigs.Configs[1]).Should(Equal(upgradev1.SysConfig{Model: "grub.cmdline.current", Contents: []upgradev1.Content{{Key: "b", Value: "2"}}}))
-			Expect(createdOSIns2.Spec.UpgradeConfigs.Configs[0]).Should(Equal(upgradev1.SysConfig{Model: "grub.cmdline.current", Contents: []upgradev1.Content{{Key: "a", Value: "1"}}}))
+			Expect(createdOSIns2.Spec.SysConfigs.Configs[0]).Should(Equal(upgradev1.SysConfig{Model: "grub.cmdline.next", Contents: []upgradev1.Content{{Key: "a", Value: value1}}}))
+			Expect(createdOSIns2.Spec.SysConfigs.Configs[1]).Should(Equal(upgradev1.SysConfig{Model: "grub.cmdline.current", Contents: []upgradev1.Content{{Key: "b", Value: value2}}}))
+			Expect(createdOSIns2.Spec.UpgradeConfigs.Configs[0]).Should(Equal(upgradev1.SysConfig{Model: "grub.cmdline.current", Contents: []upgradev1.Content{{Key: "a", Value: value1}}}))
 
 			// check os cr spec
 			osCRLookupKey = types.NamespacedName{Name: OSName, Namespace: testNamespace}
@@ -761,8 +773,8 @@ var _ = Describe("OsController", func() {
 				err := k8sClient.Get(ctx, osCRLookupKey, createdOS)
 				return err == nil
 			}, timeout, interval).Should(BeTrue())
-			Expect(createdOS.Spec.SysConfigs.Configs[0]).Should(Equal(upgradev1.SysConfig{Model: "grub.cmdline.current", Contents: []upgradev1.Content{{Key: "a", Value: "1"}}}))
-			Expect(createdOS.Spec.SysConfigs.Configs[1]).Should(Equal(upgradev1.SysConfig{Model: "grub.cmdline.next", Contents: []upgradev1.Content{{Key: "b", Value: "2"}}}))
+			Expect(createdOS.Spec.SysConfigs.Configs[0]).Should(Equal(upgradev1.SysConfig{Model: "grub.cmdline.current", Contents: []upgradev1.Content{{Key: "a", Value: value1}}}))
+			Expect(createdOS.Spec.SysConfigs.Configs[1]).Should(Equal(upgradev1.SysConfig{Model: "grub.cmdline.next", Contents: []upgradev1.Content{{Key: "b", Value: value2}}}))
 		})
 	})
 
@@ -890,6 +902,11 @@ var _ = Describe("OsController", func() {
 			}, timeout, interval).Should(BeTrue())
 			Expect(createdOSIns.ObjectMeta.Name).Should(Equal(node2Name))
 
+			var value1, value2 apiextensions.JSON
+			value1.Raw, err = json.Marshal("a")
+			Expect(err).ToNot(HaveOccurred())
+			value2.Raw, err = json.Marshal("b")
+			Expect(err).ToNot(HaveOccurred())
 			OS := &upgradev1.OS{
 				TypeMeta: metav1.TypeMeta{
 					APIVersion: "upgrade.openeuler.org/v1alpha1",
@@ -913,8 +930,8 @@ var _ = Describe("OsController", func() {
 							{
 								Model: "kernel.sysctl",
 								Contents: []upgradev1.Content{
-									{Key: "key1", Value: "a"},
-									{Key: "key2", Value: "b"},
+									{Key: "key1", Value: value1},
+									{Key: "key2", Value: value2},
 								},
 							},
 						},
@@ -924,8 +941,8 @@ var _ = Describe("OsController", func() {
 						Configs: []upgradev1.SysConfig{
 							{Model: "kernel.sysctl.persist",
 								Contents: []upgradev1.Content{
-									{Key: "key1", Value: "a"},
-									{Key: "key2", Value: "b"},
+									{Key: "key1", Value: value1},
+									{Key: "key2", Value: value2},
 								},
 							}},
 					},
@@ -1101,6 +1118,11 @@ var _ = Describe("OsController", func() {
 			}, timeout, interval).Should(BeTrue())
 			Expect(createdOSIns.ObjectMeta.Name).Should(Equal(node2Name))
 
+			var value1, value2 apiextensions.JSON
+			value1.Raw, err = json.Marshal("a")
+			Expect(err).ToNot(HaveOccurred())
+			value2.Raw, err = json.Marshal("b")
+			Expect(err).ToNot(HaveOccurred())
 			OS := &upgradev1.OS{
 				TypeMeta: metav1.TypeMeta{
 					APIVersion: "upgrade.openeuler.org/v1alpha1",
@@ -1124,8 +1146,8 @@ var _ = Describe("OsController", func() {
 							{
 								Model: "kernel.sysctl",
 								Contents: []upgradev1.Content{
-									{Key: "key1", Value: "a"},
-									{Key: "key2", Value: "b"},
+									{Key: "key1", Value: value1},
+									{Key: "key2", Value: value2},
 								},
 							},
 						},
@@ -1251,63 +1273,57 @@ func Test_getNodes(t *testing.T) {
 	}
 }
 
-func Test_getAndUpdateOS(t *testing.T) {
+func Test_getOSCr(t *testing.T) {
 	type args struct {
 		ctx  context.Context
 		r    common.ReadStatusWriter
 		name types.NamespacedName
 	}
 	tests := []struct {
-		name        string
-		args        args
-		wantOs      upgradev1.OS
-		wantNodeNum int
-		wantErr     bool
+		name    string
+		args    args
+		want    upgradev1.OS
+		wantErr bool
 	}{
 		{
-			name: "label error",
+			name: "get os cr error",
 			args: args{
 				ctx:  context.Background(),
 				r:    &OSReconciler{},
 				name: types.NamespacedName{Namespace: "test_ns", Name: "test"},
 			},
-			wantOs:      upgradev1.OS{},
-			wantNodeNum: 0,
-			wantErr:     true,
+			want:    upgradev1.OS{},
+			wantErr: true,
 		},
 		{
-			name: "get nodes error",
+			name: "check nodeselector error",
 			args: args{
 				ctx:  context.Background(),
 				r:    &OSReconciler{},
 				name: types.NamespacedName{Namespace: "test_ns", Name: "test"},
 			},
-			wantOs:      upgradev1.OS{},
-			wantNodeNum: 0,
-			wantErr:     true,
+			want:    upgradev1.OS{},
+			wantErr: true,
 		},
 	}
-	patchGet := gomonkey.ApplyMethodReturn(&OSReconciler{}, "Get", nil)
-	defer patchGet.Reset()
-	patchNewRequirement := gomonkey.ApplyFuncSeq(labels.NewRequirement, []gomonkey.OutputCell{
-		{Values: gomonkey.Params{nil, fmt.Errorf("label error")}},
-		{Values: gomonkey.Params{&labels.Requirement{}, nil}},
+	patchGet := gomonkey.ApplyMethodReturn(&OSReconciler{}, "Get", []gomonkey.OutputCell{
+		{Values: gomonkey.Params{fmt.Errorf("get os error")}},
+		{Values: gomonkey.Params{nil}},
 	})
-	defer patchNewRequirement.Reset()
-	patchGetNodes := gomonkey.ApplyFuncReturn(getNodes, nil, fmt.Errorf("get nodes error"))
-	defer patchGetNodes.Reset()
+	defer patchGet.Reset()
+	patchList := gomonkey.ApplyFunc(checkNodeSelector, func(_ context.Context, _ common.ReadStatusWriter, _ upgradev1.OS) error {
+		return fmt.Errorf("check nodeselector error")
+	})
+	defer patchList.Reset()
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			gotOs, gotNodeNum, err := getAndUpdateOS(tt.args.ctx, tt.args.r, tt.args.name)
+			got, err := getOSCr(tt.args.ctx, tt.args.r, tt.args.name)
 			if (err != nil) != tt.wantErr {
-				t.Errorf("getAndUpdateOS() error = %v, wantErr %v", err, tt.wantErr)
+				t.Errorf("getOSCr() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
-			if !reflect.DeepEqual(gotOs, tt.wantOs) {
-				t.Errorf("getAndUpdateOS() gotOs = %v, want %v", gotOs, tt.wantOs)
-			}
-			if gotNodeNum != tt.wantNodeNum {
-				t.Errorf("getAndUpdateOS() gotNodeNum = %v, want %v", gotNodeNum, tt.wantNodeNum)
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("getOSCr() = %v, want %v", got, tt.want)
 			}
 		})
 	}

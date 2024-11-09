@@ -16,6 +16,8 @@ option go_package = "openeuler.org/kubeos/api/agent";
 
 package agent;
 
+import "google/protobuf/struct.proto";
+
 service OS {
   rpc Update(UpdateRequest) returns (UpdateResponse) {}
   rpc Rollback(RollbackRequest) returns (RollbackResponse) {}
@@ -64,6 +66,6 @@ message SysConfig {
 }
 
 message KeyInfo {
-  string value = 1;
+  google.protobuf.Struct value = 1;
   string operation = 2;
 }

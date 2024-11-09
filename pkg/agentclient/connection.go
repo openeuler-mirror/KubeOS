@@ -20,6 +20,7 @@ import (
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/backoff"
+	"google.golang.org/protobuf/types/known/structpb"
 
 	pb "openeuler.org/KubeOS/cmd/agent/api"
 )
@@ -57,7 +58,7 @@ type SysConfig struct {
 
 // KeyInfo contains value and operation (i.e. delete, update or add) of a given key for configuration
 type KeyInfo struct {
-	Value     string
+	Value     interface{}
 	Operation string
 }
 
@@ -119,8 +120,12 @@ func (c *Client) ConfigureSpec(configsInfo *ConfigsInfo) error {
 		}
 		sysContents := make(map[string]*pb.KeyInfo)
 		for configName, content := range config.Contents {
+			structValue, err := structpb.NewValue(content.Value)
+			if err != nil {
+				return err
+			}
 			sysContents[configName] = &pb.KeyInfo{
-				Value:     content.Value,
+				Value:     structValue.GetStructValue(),
 				Operation: content.Operation,
 			}
 		}

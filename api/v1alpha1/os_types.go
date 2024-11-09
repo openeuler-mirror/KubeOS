@@ -13,6 +13,7 @@
 package v1alpha1
 
 import (
+	apiextensions "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -97,7 +98,7 @@ type Content struct {
 	// +kubebuilder:validation:Optional
 	Key string `json:"key"`
 	// +kubebuilder:validation:Optional
-	Value string `json:"value"`
+	Value apiextensions.JSON `json:"value"`
 	// +kubebuilder:validation:Optional
 	Operation string `json:"operation"`
 }

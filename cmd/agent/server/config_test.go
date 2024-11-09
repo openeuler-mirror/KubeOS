@@ -23,6 +23,7 @@ import (
 	"testing"
 
 	"github.com/agiledragon/gomonkey/v2"
+	"google.golang.org/protobuf/types/known/structpb"
 	agent "openeuler.org/KubeOS/cmd/agent/api"
 )
 
@@ -41,8 +42,8 @@ func TestKernelSysctl_SetConfig(t *testing.T) {
 			k:    KernelSysctl{},
 			args: args{config: &agent.SysConfig{
 				Contents: map[string]*agent.KeyInfo{
-					"a": {Value: "1"},
-					"b": {Value: "2"},
+					"a": {Value: structpb.NewStringValue("1").GetStructValue()},
+					"b": {Value: structpb.NewStringValue("2").GetStructValue()},
 				},
 			}},
 			wantErr: false,
@@ -71,7 +72,7 @@ func TestKernelSysctl_SetConfig(t *testing.T) {
 			k:    KernelSysctl{},
 			args: args{config: &agent.SysConfig{
 				Contents: map[string]*agent.KeyInfo{
-					"d": {Value: ""},
+					"d": {Value: structpb.NewStringValue("").GetStructValue()},
 				},
 			}},
 		},
@@ -80,7 +81,7 @@ func TestKernelSysctl_SetConfig(t *testing.T) {
 			k:    KernelSysctl{},
 			args: args{config: &agent.SysConfig{
 				Contents: map[string]*agent.KeyInfo{
-					"": {Value: "1"},
+					"": {Value: structpb.NewStringValue("1").GetStructValue()},
 				},
 			}},
 			wantErr: true,
@@ -128,13 +129,13 @@ func TestKerSysctlPersist_SetConfig(t *testing.T) {
 				config: &agent.SysConfig{
 					ConfigPath: persistPath,
 					Contents: map[string]*agent.KeyInfo{
-						"a":   {Value: "1"},
-						"b":   {Value: "2"},
-						"c":   {Value: ""},
-						"":    {Value: "4"},
-						"e":   {Value: "5", Operation: "xxx"},
-						"y=1": {Value: "26"},
-						"z":   {Value: "x=1"},
+						"a":   {Value: structpb.NewStringValue("1").GetStructValue()},
+						"b":   {Value: structpb.NewStringValue("2").GetStructValue()},
+						"c":   {Value: structpb.NewStringValue("").GetStructValue()},
+						"":    {Value: structpb.NewStringValue("4").GetStructValue()},
+						"e":   {Value: structpb.NewStringValue("5").GetStructValue(), Operation: "xxx"},
+						"y=1": {Value: structpb.NewStringValue("26").GetStructValue()},
+						"z":   {Value: structpb.NewStringValue("x=1").GetStructValue()},
 					},
 				},
 			},
@@ -152,9 +153,9 @@ func TestKerSysctlPersist_SetConfig(t *testing.T) {
 				config: &agent.SysConfig{
 					ConfigPath: persistPath,
 					Contents: map[string]*agent.KeyInfo{
-						"a": {Value: "2"},
-						"b": {Value: ""},
-						"z": {Value: "x=2", Operation: "zzz"},
+						"a": {Value: structpb.NewStringValue("2").GetStructValue()},
+						"b": {Value: structpb.NewStringValue("").GetStructValue()},
+						"z": {Value: structpb.NewStringValue("x=2").GetStructValue(), Operation: "zzz"},
 					},
 				},
 			},
@@ -172,12 +173,12 @@ func TestKerSysctlPersist_SetConfig(t *testing.T) {
 				config: &agent.SysConfig{
 					ConfigPath: persistPath,
 					Contents: map[string]*agent.KeyInfo{
-						"a": {Value: "1", Operation: "delete"},
-						"b": {Value: "2", Operation: "delete"},
-						"c": {Value: "3", Operation: "delete"},
-						"e": {Value: "5", Operation: "remove"},
-						"f": {Value: "6", Operation: "remove"},
-						"z": {Value: "x=2", Operation: "delete"},
+						"a": {Value: structpb.NewStringValue("1").GetStructValue(), Operation: "delete"},
+						"b": {Value: structpb.NewStringValue("2").GetStructValue(), Operation: "delete"},
+						"c": {Value: structpb.NewStringValue("3").GetStructValue(), Operation: "delete"},
+						"e": {Value: structpb.NewStringValue("5").GetStructValue(), Operation: "remove"},
+						"f": {Value: structpb.NewStringValue("6").GetStructValue(), Operation: "remove"},
+						"z": {Value: structpb.NewStringValue("x=2").GetStructValue(), Operation: "delete"},
 					},
 				},
 			},
@@ -262,17 +263,17 @@ menuentry 'B' --class KubeOS --class gnu-linux --class gnu --class os --unrestri
 			args: args{
 				config: &agent.SysConfig{
 					Contents: map[string]*agent.KeyInfo{
-						"debug":            {},                                  // add key
-						"pci":              {Value: "nomis"},                    // add kv
-						"quiet":            {Value: "", Operation: "delete"},    // delete existent key
-						"panic":            {Value: "5"},                        // update existent kv
-						"nomodeset":        {Operation: "update"},               // invalid operation, default to update existent key
-						"softlockup_panic": {Value: "0", Operation: "update"},   // invalid operation, default to update existent kv
-						"oops":             {Value: ""},                         // warning, skip, update existent kv with null value
-						"":                 {Value: "test"},                     // warning, skip, failed to add kv with empty key
-						"selinux":          {Value: "1", Operation: "delete"},   // failed to delete inconsistent kv
-						"acpi":             {Value: "off", Operation: "delete"}, // failed to delete inexistent kv
-						"ro":               {Value: "1"},                        // update key to kv
+						"debug":            {},                                                                            // add key
+						"pci":              {Value: structpb.NewStringValue("nomis").GetStructValue()},                    // add kv
+						"quiet":            {Value: structpb.NewStringValue("").GetStructValue(), Operation: "delete"},    // delete existent key
+						"panic":            {Value: structpb.NewStringValue("5").GetStructValue()},                        // update existent kv
+						"nomodeset":        {Operation: "update"},                                                         // invalid operation, default to update existent key
+						"softlockup_panic": {Value: structpb.NewStringValue("0").GetStructValue(), Operation: "update"},   // invalid operation, default to update existent kv
+						"oops":             {Value: structpb.NewStringValue("").GetStructValue()},                         // warning, skip, update existent kv with null value
+						"":                 {Value: structpb.NewStringValue("test").GetStructValue()},                     // warning, skip, failed to add kv with empty key
+						"selinux":          {Value: structpb.NewStringValue("1").GetStructValue(), Operation: "delete"},   // failed to delete inconsistent kv
+						"acpi":             {Value: structpb.NewStringValue("off").GetStructValue(), Operation: "delete"}, // failed to delete inexistent kv
+						"ro":               {Value: structpb.NewStringValue("1").GetStructValue()},                        // update key to kv
 					},
 				},
 			},
@@ -285,11 +286,11 @@ menuentry 'B' --class KubeOS --class gnu-linux --class gnu --class os --unrestri
 			args: args{
 				config: &agent.SysConfig{
 					Contents: map[string]*agent.KeyInfo{
-						"debug":     {Operation: "delete"},                 // delete key
-						"pci":       {Value: "nomis", Operation: "delete"}, // delete kv
-						"debugpat":  {Value: "", Operation: "add"},         // passed key, operation is invalid, default to add key
-						"audit":     {Value: "1", Operation: "add"},        // passed kv, key is inexistent, operation is invalid, default to add kv
-						"nomodeset": {Value: "1", Operation: "delete"},     // delete key with inconsistent value
+						"debug":     {Operation: "delete"},                                                           // delete key
+						"pci":       {Value: structpb.NewStringValue("nomis").GetStructValue(), Operation: "delete"}, // delete kv
+						"debugpat":  {Value: structpb.NewStringValue("").GetStructValue(), Operation: "add"},         // passed key, operation is invalid, default to add key
+						"audit":     {Value: structpb.NewStringValue("1").GetStructValue(), Operation: "add"},        // passed kv, key is inexistent, operation is invalid, default to add kv
+						"nomodeset": {Value: structpb.NewStringValue("1").GetStructValue(), Operation: "delete"},     // delete key with inconsistent value
 					},
 				},
 			},
@@ -303,16 +304,16 @@ menuentry 'B' --class KubeOS --class gnu-linux --class gnu --class os --unrestri
 				config: &agent.SysConfig{
 					Contents: map[string]*agent.KeyInfo{
 						"debug":            {},
-						"pci":              {Value: "nomis"},
-						"quiet":            {Value: "", Operation: "delete"},
-						"panic":            {Value: "4"},
-						"nomodeset":        {Operation: "update"},             // invalid operation, default to update existent key
-						"softlockup_panic": {Value: "0", Operation: "update"}, // invalid operation, default to update existent kv
-						"oops":             {Value: ""},                       // update existent kv with null value
-						"":                 {Value: "test"},                   // warning, skip, failed to add kv with empty key
-						"selinux":          {Value: "1", Operation: "delete"},
-						"acpi":             {Value: "off", Operation: "delete"},
-						"ro":               {Value: ""},
+						"pci":              {Value: structpb.NewStringValue("nomis").GetStructValue()},
+						"quiet":            {Value: structpb.NewStringValue("").GetStructValue(), Operation: "delete"},
+						"panic":            {Value: structpb.NewStringValue("4").GetStructValue()},
+						"nomodeset":        {Operation: "update"},                                                       // invalid operation, default to update existent key
+						"softlockup_panic": {Value: structpb.NewStringValue("0").GetStructValue(), Operation: "update"}, // invalid operation, default to update existent kv
+						"oops":             {Value: structpb.NewStringValue("").GetStructValue()},                       // update existent kv with null value
+						"":                 {Value: structpb.NewStringValue("test").GetStructValue()},                   // warning, skip, failed to add kv with empty key
+						"selinux":          {Value: structpb.NewStringValue("1").GetStructValue(), Operation: "delete"},
+						"acpi":             {Value: structpb.NewStringValue("off").GetStructValue(), Operation: "delete"},
+						"ro":               {Value: structpb.NewStringValue("").GetStructValue()},
 					},
 				},
 			},

@@ -19,7 +19,7 @@ use std::{
     string::String,
 };
 
-use anyhow::{bail, Context, Result};
+use anyhow::{bail, Context, Ok, Result};
 use lazy_static::lazy_static;
 use log::{debug, info, trace, warn};
 use regex::Regex;
@@ -69,9 +69,16 @@ impl Configuration for KernelSysctl {
         info!("Start setting kernel.sysctl");
         for (key, key_info) in config.contents.iter() {
             let proc_path = self.get_proc_path(key);
+            let (key_info_value, is_recognized) = convert_json_value_to_string(&key_info.value);
+            if is_recognized {
+                warn!(
+                    "Failed to handle keyinfo.value, the type of it is not in range of number, string, boolean, null"
+                );
+                continue;
+            }
             if key_info.operation == "delete" {
                 warn!("Failed to delete kernel.sysctl config with key \"{}\"", key);
-            } else if !key_info.value.is_empty() && key_info.operation.is_empty() {
+            } else if !key_info_value.is_empty() && key_info.operation.is_empty() {
                 fs::write(&proc_path, format!("{}\n", &key_info.value).as_bytes())
                     .with_context(|| format!("Failed to write kernel.sysctl with key: \"{}\"", key))?;
                 info!("Configured kernel.sysctl {}={}", key, key_info.value);
@@ -171,18 +178,23 @@ fn write_configs_to_file(config_path: &str, configs: &Vec<String>) -> Result<()>
 
 fn handle_delete_key(config_kv: &[&str], new_config_info: &KeyInfo) -> String {
     let key = config_kv[0];
-    if config_kv.len() == 1 && new_config_info.value.is_empty() {
+    let (new_config_info_value, is_recognized) = convert_json_value_to_string(&new_config_info.value);
+    if is_recognized {
+        warn!("Failed to handle keyinfo.value, the type of it is not in range of number, string, boolean, null");
+        return String::from("");
+    }
+    if config_kv.len() == 1 && new_config_info_value.is_empty() {
         info!("Delete configuration key: \"{}\"", key);
         return String::from("");
-    } else if config_kv.len() == 1 && !new_config_info.value.is_empty() {
-        warn!("Failed to delete key \"{}\" with inconsistent values \"nil\" and \"{}\"", key, new_config_info.value);
+    } else if config_kv.len() == 1 && !new_config_info_value.is_empty() {
+        warn!("Failed to delete key \"{}\" with inconsistent values \"nil\" and \"{}\"", key, new_config_info_value);
         return key.to_string();
     }
     let old_value = config_kv[1];
-    if old_value != new_config_info.value {
+    if old_value != new_config_info_value {
         warn!(
             "Failed to delete key \"{}\" with inconsistent values \"{}\" and \"{}\"",
-            key, old_value, new_config_info.value
+            key, old_value, new_config_info_value
         );
         return config_kv.join("=");
     }
@@ -198,15 +210,20 @@ fn handle_update_key(config_kv: &[&str], new_config_info: &KeyInfo) -> String {
             new_config_info.operation, key, new_config_info.value
         );
     }
-    if config_kv.len() == values::ONLY_KEY && new_config_info.value.is_empty() {
+    let (new_config_info_value, is_recognized) = convert_json_value_to_string(&new_config_info.value);
+    if is_recognized {
+        warn!("Failed to handle keyinfo.value, the type of it is not in range of number, string, boolean, null");
+        return String::from("");
+    }
+    if config_kv.len() == values::ONLY_KEY && new_config_info_value.is_empty() {
         return key.to_string();
     }
-    let new_value = new_config_info.value.trim();
-    if config_kv.len() == values::ONLY_KEY && !new_config_info.value.is_empty() {
+    let new_value = new_config_info_value.trim();
+    if config_kv.len() == values::ONLY_KEY && !new_config_info_value.is_empty() {
         info!("Update configuration \"{}={}\"", key, new_value);
         return format!("{}={}", key, new_value);
     }
-    if new_config_info.value.is_empty() {
+    if new_config_info_value.is_empty() {
         warn!("Failed to update key \"{}\" with \"null\" value", key);
         return config_kv.join("=");
     }
@@ -231,7 +248,12 @@ fn handle_add_key(expect_configs: &HashMap<String, KeyInfo>, is_only_key_valid: 
                 config_info.operation, key, config_info.value
             );
         }
-        let (k, v) = (key.trim(), config_info.value.trim());
+        let (config_info_value, is_recognized) = convert_json_value_to_string(&config_info.value);
+        if is_recognized {
+            warn!("Failed to handle keyinfo.value, the type of it is not in range of number, string, boolean, null");
+            continue;
+        }
+        let (k, v) = (key.trim(), config_info_value.trim());
         if v.is_empty() && is_only_key_valid {
             info!("Add configuration \"{}\"", k);
             configs_write.push(k.to_string());
@@ -338,11 +360,27 @@ fn modify_boot_cfg(expect_configs: &mut HashMap<String, KeyInfo>, line: &String)
     Ok(new_configs.join(" "))
 }
 
+fn convert_json_value_to_string(value: &serde_json::Value) -> (String, bool) {
+    if value.is_null() {
+        return ("".to_string(), false);
+    }
+    if value.is_string() {
+        // Even if value is "", the value will not be none after as_str is executed.
+        // Therefore, the value will never be none here. unwrap() is safe.
+        return (value.as_str().unwrap().to_string(), false);
+    }
+    if value.is_number() || value.is_boolean() {
+        return (value.to_string(), false);
+    }
+    return ("".to_string(), true);
+}
+
 #[cfg(test)]
 mod tests {
     use std::fs;
 
     use mockall::{mock, predicate::*};
+    use serde_json::json;
     use tempfile::{NamedTempFile, TempDir};
 
     use super::*;
@@ -411,11 +449,11 @@ vda4 /persist  ext4   17791188992 PERSIST
         let kernel_sysctl = KernelSysctl::new(tmp_dir.path().to_str().unwrap());
 
         let config_detail = HashMap::from([
-            ("a".to_string(), KeyInfo { value: "1".to_string(), operation: "".to_string() }),
-            ("b".to_string(), KeyInfo { value: "2".to_string(), operation: "delete".to_string() }),
-            ("c".to_string(), KeyInfo { value: "3".to_string(), operation: "add".to_string() }),
-            ("d".to_string(), KeyInfo { value: "".to_string(), operation: "".to_string() }),
-            ("e".to_string(), KeyInfo { value: "".to_string(), operation: "delete".to_string() }),
+            ("a".to_string(), KeyInfo { value: serde_json::Value::from(json!(1)), operation: "".to_string() }),
+            ("b".to_string(), KeyInfo { value: serde_json::Value::from(json!(2)), operation: "delete".to_string() }),
+            ("c".to_string(), KeyInfo { value: serde_json::Value::from(json!(3)), operation: "add".to_string() }),
+            ("d".to_string(), KeyInfo { value: serde_json::Value::from(json!("")), operation: "".to_string() }),
+            ("e".to_string(), KeyInfo { value: serde_json::Value::from(json!("")), operation: "delete".to_string() }),
         ]);
 
         let mut config =
@@ -439,15 +477,15 @@ vda4 /persist  ext4   17791188992 PERSIST
         writeln!(tmp_file, "g=7").unwrap();
         let kernel_sysctl_persist = KernelSysctlPersist {};
         let config_detail = HashMap::from([
-            ("a".to_string(), KeyInfo { value: "1".to_string(), operation: "".to_string() }),
-            ("b".to_string(), KeyInfo { value: "2".to_string(), operation: "delete".to_string() }),
-            ("c".to_string(), KeyInfo { value: "3".to_string(), operation: "add".to_string() }),
-            ("d".to_string(), KeyInfo { value: "".to_string(), operation: "".to_string() }),
-            ("e".to_string(), KeyInfo { value: "".to_string(), operation: "delete".to_string() }),
-            ("f".to_string(), KeyInfo { value: "".to_string(), operation: "add".to_string() }),
-            ("g".to_string(), KeyInfo { value: "7".to_string(), operation: "delete".to_string() }),
-            ("".to_string(), KeyInfo { value: "8".to_string(), operation: "".to_string() }),
-            ("s=x".to_string(), KeyInfo { value: "8".to_string(), operation: "".to_string() }),
+            ("a".to_string(), KeyInfo { value: serde_json::Value::from(json!(1)), operation: "".to_string() }),
+            ("b".to_string(), KeyInfo { value: serde_json::Value::from(json!(2)), operation: "delete".to_string() }),
+            ("c".to_string(), KeyInfo { value: serde_json::Value::from(json!(3)), operation: "add".to_string() }),
+            ("d".to_string(), KeyInfo { value: serde_json::Value::from(json!("")), operation: "".to_string() }),
+            ("e".to_string(), KeyInfo { value: serde_json::Value::from(json!("")), operation: "delete".to_string() }),
+            ("f".to_string(), KeyInfo { value: serde_json::Value::from(json!("")), operation: "add".to_string() }),
+            ("g".to_string(), KeyInfo { value: serde_json::Value::from(json!(7)), operation: "delete".to_string() }),
+            ("".to_string(), KeyInfo { value: serde_json::Value::from(json!(8)), operation: "".to_string() }),
+            ("s=x".to_string(), KeyInfo { value: serde_json::Value::from(json!(8)), operation: "".to_string() }),
         ]);
         let mut config = Sysconfig {
             model: KERNEL_SYSCTL_PERSIST.to_string(),
@@ -506,15 +544,42 @@ menuentry 'B' --class KubeOS --class gnu-linux --class gnu --class os --unrestri
 }";
         writeln!(tmp_file, "{}", grub_cfg).unwrap();
         let config_second_part = HashMap::from([
-            ("debug".to_string(), KeyInfo { value: "".to_string(), operation: "".to_string() }),
-            ("quiet".to_string(), KeyInfo { value: "".to_string(), operation: "delete".to_string() }),
-            ("panic".to_string(), KeyInfo { value: "5".to_string(), operation: "".to_string() }),
-            ("nomodeset".to_string(), KeyInfo { value: "".to_string(), operation: "update".to_string() }),
-            ("oops".to_string(), KeyInfo { value: "".to_string(), operation: "".to_string() }),
-            ("".to_string(), KeyInfo { value: "test".to_string(), operation: "".to_string() }),
-            ("selinux".to_string(), KeyInfo { value: "1".to_string(), operation: "delete".to_string() }),
-            ("acpi".to_string(), KeyInfo { value: "off".to_string(), operation: "delete".to_string() }),
-            ("ro".to_string(), KeyInfo { value: "1".to_string(), operation: "".to_string() }),
+            (
+                "debug".to_string(),
+                KeyInfo { value: serde_json::Value::String("".to_string()), operation: "".to_string() },
+            ),
+            (
+                "quiet".to_string(),
+                KeyInfo { value: serde_json::Value::String("".to_string()), operation: "delete".to_string() },
+            ),
+            (
+                "panic".to_string(),
+                KeyInfo { value: serde_json::Value::String("5".to_string()), operation: "".to_string() },
+            ),
+            (
+                "nomodeset".to_string(),
+                KeyInfo { value: serde_json::Value::String("".to_string()), operation: "update".to_string() },
+            ),
+            (
+                "oops".to_string(),
+                KeyInfo { value: serde_json::Value::String("".to_string()), operation: "".to_string() },
+            ),
+            (
+                "".to_string(),
+                KeyInfo { value: serde_json::Value::String("test".to_string()), operation: "".to_string() },
+            ),
+            (
+                "selinux".to_string(),
+                KeyInfo { value: serde_json::Value::String("1".to_string()), operation: "delete".to_string() },
+            ),
+            (
+                "acpi".to_string(),
+                KeyInfo { value: serde_json::Value::String("off".to_string()), operation: "delete".to_string() },
+            ),
+            (
+                "ro".to_string(),
+                KeyInfo { value: serde_json::Value::String("1".to_string()), operation: "".to_string() },
+            ),
         ]);
         let mut config = Sysconfig {
             model: GRUB_CMDLINE_CURRENT.to_string(),
@@ -524,9 +589,18 @@ menuentry 'B' --class KubeOS --class gnu-linux --class gnu --class os --unrestri
         grub_cmdline.set_config(&mut config).unwrap();
         grub_cmdline.is_cur_partition = false;
         let config_first_part = HashMap::from([
-            ("pci".to_string(), KeyInfo { value: "nomis".to_string(), operation: "".to_string() }),
-            ("quiet".to_string(), KeyInfo { value: "11".to_string(), operation: "delete".to_string() }),
-            ("panic".to_string(), KeyInfo { value: "5".to_string(), operation: "update".to_string() }),
+            (
+                "pci".to_string(),
+                KeyInfo { value: serde_json::Value::String("nomis".to_string()), operation: "".to_string() },
+            ),
+            (
+                "quiet".to_string(),
+                KeyInfo { value: serde_json::Value::String("11".to_string()), operation: "delete".to_string() },
+            ),
+            (
+                "panic".to_string(),
+                KeyInfo { value: serde_json::Value::String("5".to_string()), operation: "update".to_string() },
+            ),
         ]);
         config.contents = config_first_part;
         config.model = GRUB_CMDLINE_NEXT.to_string();

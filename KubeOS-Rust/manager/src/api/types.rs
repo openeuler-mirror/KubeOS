@@ -41,7 +41,7 @@ pub struct CertsInfo {
 
 #[derive(Deserialize, Serialize, Debug)]
 pub struct KeyInfo {
-    pub value: String,
+    pub value: serde_json::Value,
     pub operation: String,
 }
 
