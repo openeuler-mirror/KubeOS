@@ -14,11 +14,15 @@ pub const KERNEL_SYSCTL: &str = "kernel.sysctl";
 pub const KERNEL_SYSCTL_PERSIST: &str = "kernel.sysctl.persist";
 pub const GRUB_CMDLINE_CURRENT: &str = "grub.cmdline.current";
 pub const GRUB_CMDLINE_NEXT: &str = "grub.cmdline.next";
+pub const KUBERNETES_KUBELET:&str  = "kubernetes.kubelet";
+pub const CONTAINER_CONTAINERD:&str = "container.containerd";
 
 pub const DEFAULT_PROC_PATH: &str = "/proc/sys/";
 pub const DEFAULT_KERNEL_CONFIG_PATH: &str = "/etc/sysctl.conf";
 pub const DEFAULT_GRUB_CFG_PATH: &str = "/boot/efi/EFI/openEuler/grub.cfg";
 pub const DEFAULT_GRUBENV_PATH: &str = "/boot/efi/EFI/openEuler/grubenv";
+pub const DEFAULT_KUBELET_CONFIG_PATH: &str  = "/var/lib/kubelet/config.yaml";
+pub const DEFAULT_CONTAINERD_CONFIG_PATH: &str  = "/etc/containerd/config.toml";
 
 pub const PERSIST_DIR: &str = "/persist";
 pub const ROOTFS_ARCHIVE: &str = "os.tar";

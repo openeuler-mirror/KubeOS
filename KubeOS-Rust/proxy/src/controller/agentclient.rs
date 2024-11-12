@@ -46,8 +46,8 @@ pub struct Sysconfig {
 }
 
 pub struct KeyInfo {
-    pub value: String,
-    pub operation: serde_json::Value,
+    pub value: serde_json::Value,
+    pub operation: String,
 }
 
 pub trait AgentMethod {

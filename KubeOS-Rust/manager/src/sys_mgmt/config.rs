@@ -23,6 +23,7 @@ use anyhow::{bail, Context, Ok, Result};
 use lazy_static::lazy_static;
 use log::{debug, info, trace, warn};
 use regex::Regex;
+use serde_yaml::Value;
 
 use crate::{api::*, sys_mgmt::values, utils::*};
 
@@ -63,6 +64,10 @@ pub struct GrubCmdline {
     pub grub_path: String,
     pub is_cur_partition: bool,
 }
+
+pub struct KubernetesKubelet;
+
+pub struct ContainerContainerd;
 
 impl Configuration for KernelSysctl {
     fn set_config(&self, config: &mut Sysconfig) -> Result<()> {
@@ -179,16 +184,18 @@ fn write_configs_to_file(config_path: &str, configs: &Vec<String>) -> Result<()>
 fn handle_delete_key(config_kv: &[&str], new_config_info: &KeyInfo) -> String {
     let key = config_kv[0];
     let (new_config_info_value, is_recognized) = convert_json_value_to_string(&new_config_info.value);
-    if is_recognized {
-        warn!("Failed to handle keyinfo.value, the type of it is not in range of number, string, boolean, null");
-        return String::from("");
-    }
-    if config_kv.len() == 1 && new_config_info_value.is_empty() {
+    if config_kv.len() == values::ONLY_KEY && new_config_info_value.is_empty() {
         info!("Delete configuration key: \"{}\"", key);
         return String::from("");
-    } else if config_kv.len() == 1 && !new_config_info_value.is_empty() {
+    } else if config_kv.len() == values::ONLY_KEY && !new_config_info_value.is_empty() {
         warn!("Failed to delete key \"{}\" with inconsistent values \"nil\" and \"{}\"", key, new_config_info_value);
         return key.to_string();
+    } else if config_kv.len() == values::ONLY_KEY && !is_recognized {
+        warn!("Failed to handle keyinfo.value, the type of it is not in range of number, string, boolean, null");
+        return key.to_string();
+    } else if !is_recognized {
+        warn!("Failed to handle keyinfo.value, the type of it is not in range of number, string, boolean, null");
+        return config_kv.join("=");
     }
     let old_value = config_kv[1];
     if old_value != new_config_info_value {
@@ -211,12 +218,14 @@ fn handle_update_key(config_kv: &[&str], new_config_info: &KeyInfo) -> String {
         );
     }
     let (new_config_info_value, is_recognized) = convert_json_value_to_string(&new_config_info.value);
-    if is_recognized {
-        warn!("Failed to handle keyinfo.value, the type of it is not in range of number, string, boolean, null");
-        return String::from("");
-    }
     if config_kv.len() == values::ONLY_KEY && new_config_info_value.is_empty() {
         return key.to_string();
+    } else if config_kv.len() == values::ONLY_KEY && !is_recognized {
+        warn!("Failed to handle keyinfo.value, the type of it is not in range of number, string, boolean, null");
+        return key.to_string();
+    } else if !is_recognized {
+        warn!("Failed to handle keyinfo.value, the type of it is not in range of number, string, boolean, null");
+        return config_kv.join("=");
     }
     let new_value = new_config_info_value.trim();
     if config_kv.len() == values::ONLY_KEY && !new_config_info_value.is_empty() {
@@ -362,17 +371,122 @@ fn modify_boot_cfg(expect_configs: &mut HashMap<String, KeyInfo>, line: &String)
 
 fn convert_json_value_to_string(value: &serde_json::Value) -> (String, bool) {
     if value.is_null() {
-        return ("".to_string(), false);
+        return ("".to_string(), true);
     }
     if value.is_string() {
         // Even if value is "", the value will not be none after as_str is executed.
         // Therefore, the value will never be none here. unwrap() is safe.
-        return (value.as_str().unwrap().to_string(), false);
+        return (value.as_str().unwrap().to_string(), true);
     }
     if value.is_number() || value.is_boolean() {
-        return (value.to_string(), false);
+        return (value.to_string(), true);
     }
-    return ("".to_string(), true);
+    return ("".to_string(), false);
+}
+
+impl Configuration for KubernetesKubelet {
+    fn set_config(&self, config: &mut Sysconfig) -> Result<()> {
+        info!("Start setting kubernetes.kubelet");
+        let mut config_path = &values::DEFAULT_KUBELET_CONFIG_PATH.to_string();
+        if !config.config_path.is_empty() {
+            config_path = &config.config_path;
+        }
+        debug!("kubernetes.kubelet config_path: \"{}\"", config_path);
+
+        create_config_file(config_path).with_context(|| format!("Failed to find config path \"{}\"", config_path))?;
+        let file: File = std::fs::File::open(config_path)
+            .with_context(|| format!("Failed to open kubelet config file \"{}\"", config_path))?;
+        let mut value: serde_yaml::Value = serde_yaml::from_reader(file)
+            .with_context(|| format!("Failed to read from config file \"{}\"", config_path))?;
+        let pattern = Regex::new(r#"[^\."']+|"([^"]*)"|'([^']*)'"#)
+            .with_context(|| format!("Failed to create regex used by split key"))?;
+        if value.is_null() {
+            value = serde_yaml::Value::Mapping(serde_yaml::Mapping::new());
+        }
+        for (key, key_info) in config.contents.iter() {
+            debug!("Start configuration of key={}", key);
+            if key.is_empty() {
+                warn!("Failed to add \"null\" key, key: \"{}\"", key);
+                continue;
+            }
+            let key_list: Vec<String> = pattern.find_iter(&key).map(|m| m.as_str().to_string()).collect();
+            let mut value_iter = &mut value;
+            for (i, k_tmp) in key_list.clone().iter().enumerate() {
+                let k = &k_tmp.replace("\"", "");
+                debug!("    Current part is {}, part of key {}", k, key);
+                if let Some(_) = value_iter.get(k) {
+                    // if key exsit, update or delete
+                    if i == key_list.len() - 1 {
+                        if key_info.operation == "delete" {
+                            let value_mapping = value_iter.as_mapping_mut().unwrap();
+                            let file_value = value_mapping.get(k).unwrap();
+                            info!("Delete configuration {}={}", key, serde_yaml::to_string(file_value).unwrap());
+                            value_mapping.remove(k);
+                            break;
+                        }
+                        if !key_info.operation.is_empty() {
+                            warn!(
+                                "Unknown operation \"{}\", updating key \"{}\" with value \"{}\" by default",
+                                key_info.operation,
+                                key,
+                                serde_json::to_string(&key_info.value).unwrap()
+                            );
+                        }
+
+                        value_iter = value_iter.get_mut(k).unwrap();
+                        let json_value = serde_json::to_string(&key_info.value).unwrap();
+                        let config_value: Value = serde_yaml::from_str(&json_value)?;
+                        // if value type is array need insert
+                        if value_iter.is_sequence() {
+                            let value_array = value_iter
+                                .as_sequence_mut()
+                                .with_context(|| format!("Failed to convert yaml Value to sequence"))?;
+                            let config_value_array = config_value
+                                .as_sequence()
+                                .with_context(|| format!("Failed to convert yaml Value to sequence"))?;
+                            value_array.extend_from_slice(config_value_array);
+                            info!("Update configuration {}: {}", key, key_info.value.to_string());
+                            break;
+                        }
+                        *value_iter = config_value.into();
+                        info!("Update configuration {}: {}", key, key_info.value.to_string());
+                        break;
+                    }
+                    // Has check on the condition of if, unwrap is safe
+                    value_iter = value_iter.get_mut(k).unwrap();
+                } else {
+                    if key_info.operation == "delete" {
+                        warn!("Failed to delete inexistent key: \"{}\"", key);
+                        continue;
+                    }
+                    // create if not contains key
+                    let json_value = serde_json::to_string(&key_info.value).unwrap();
+                    let mut config_value: Value = serde_yaml::from_str(&json_value)?;
+                    let mut key_index = key_list.len() - 1;
+                    while key_index > i {
+                        let mut value_map = serde_yaml::Mapping::new();
+                        value_map.insert(Value::String(key_list[key_index].replace("\"", "")).clone(), config_value);
+                        config_value = serde_yaml::Value::Mapping(value_map);
+                        key_index = key_index - 1;
+                    }
+                    if value_iter.is_null() {
+                        *value_iter = serde_yaml::Value::Mapping(serde_yaml::Mapping::new());
+                    }
+                    let value_mapping = value_iter.as_mapping_mut().unwrap();
+                    value_mapping.insert(Value::String(k.to_string()).into(), config_value);
+                    break;
+                }
+            }
+        }
+        let file = std::fs::OpenOptions::new()
+            .write(true)
+            .truncate(true)
+            .open(config_path)
+            .with_context(|| format!("Failed to open kubelet config file \"{}\"", config_path))?;
+        serde_yaml::to_writer(file, &value)
+            .with_context(|| format!("Failed to write yaml file \"{}\"", config_path))?;
+        return Ok(());
+    }
 }
 
 #[cfg(test)]
@@ -382,6 +496,7 @@ mod tests {
     use mockall::{mock, predicate::*};
     use serde_json::json;
     use tempfile::{NamedTempFile, TempDir};
+    use values::KUBERNETES_KUBELET;
 
     use super::*;
     use crate::sys_mgmt::{GRUB_CMDLINE_CURRENT, GRUB_CMDLINE_NEXT, KERNEL_SYSCTL, KERNEL_SYSCTL_PERSIST};
@@ -642,5 +757,145 @@ menuentry 'B' --class KubeOS --class gnu-linux --class gnu --class os --unrestri
         create_config_file(&tmp_file).unwrap();
         assert!(is_file_exist(&tmp_file));
         fs::remove_file(tmp_file).unwrap();
+    }
+
+    #[test]
+    fn test_kubernetes_kubelet() {
+        init();
+        let config_kubelet_add = HashMap::from([
+            (
+                "apiVersion".to_string(),
+                KeyInfo {
+                    value: serde_json::Value::from(json!("kubelet.config.k8s.io/v1beta1")),
+                    operation: "".to_string(),
+                },
+            ),
+            (
+                "kind".to_string(),
+                KeyInfo { value: serde_json::Value::from(json!("KubeletConfiguration")), operation: "".to_string() },
+            ),
+            (
+                "address".to_string(),
+                KeyInfo { value: serde_json::Value::from(json!("192.168.0.8")), operation: "".to_string() },
+            ),
+            ("port".to_string(), KeyInfo { value: serde_json::Value::from(json!(20250)), operation: "".to_string() }),
+            (
+                "evictionHard.\"memory.available\"".to_string(),
+                KeyInfo { value: serde_json::Value::from(json!("100Mi")), operation: "".to_string() },
+            ),
+            (
+                "evictionHard.\"nodefs.available\"".to_string(),
+                KeyInfo { value: serde_json::Value::from(json!("10%")), operation: "".to_string() },
+            ),
+            (
+                "authorization.mode".to_string(),
+                KeyInfo { value: serde_json::Value::from(json!("Webhook")), operation: "".to_string() },
+            ),
+            (
+                "logging.options.json.infoBufferSize".to_string(),
+                KeyInfo { value: serde_json::Value::from(json!("0")), operation: "".to_string() },
+            ),
+            (
+                "clusterDNS".to_string(),
+                KeyInfo { value: serde_json::Value::from(json!(["10.96.0.10"])), operation: "".to_string() },
+            ),
+        ]);
+        let mut sysconfig_add = Sysconfig {
+            model: KUBERNETES_KUBELET.to_string(),
+            config_path: "test.yaml".to_string(),
+            contents: config_kubelet_add.clone(),
+        };
+        let k8s_kubelet = KubernetesKubelet {};
+        let res_add = k8s_kubelet.set_config(&mut sysconfig_add);
+        assert!(!res_add.is_err());
+
+        // check value
+        let file = std::fs::File::open("test.yaml").expect("create yaml file failed");
+        let mut value: serde_yaml::Value = serde_yaml::from_reader(file).unwrap();
+        let pattern = Regex::new(r#"[^\."']+|"([^"]*)"|'([^']*)'"#)
+            .with_context(|| format!("Failed to create regex used by split key"))
+            .unwrap();
+
+        for (key, key_info) in config_kubelet_add {
+            let mut value_iter = &mut value;
+            let key_list: Vec<String> = pattern.find_iter(&key).map(|m| m.as_str().to_string()).collect();
+            for (i, k_tmp) in key_list.clone().iter().enumerate() {
+                let k = &k_tmp.replace("\"", "");
+                if i == key_list.len() - 1 {
+                    let config_value: Value =
+                        serde_yaml::from_str(&serde_json::to_string(&key_info.value).unwrap()).unwrap();
+                    let file_value = value_iter.get(k).unwrap();
+                    assert!(config_value.eq(file_value));
+                    break;
+                }
+                value_iter = value_iter.get_mut(k).unwrap();
+            }
+        }
+
+        let config_kubelet = HashMap::from([
+            //normal update，value type is string, boolean, null and list
+            (
+                "evictionHard.\"memory.available\"".to_string(),
+                KeyInfo { value: serde_json::Value::from(json!("500Mi".to_string())), operation: "".to_string() },
+            ),
+            (
+                "serializeImagePulls".to_string(),
+                KeyInfo { value: serde_json::Value::from(json!(true)), operation: "".to_string() },
+            ),
+            ("port".to_string(), KeyInfo { value: serde_json::Value::from(json!(20000)), operation: "".to_string() }),
+            (
+                "logging.options.json".to_string(),
+                KeyInfo { value: serde_json::Value::default(), operation: "".to_string() },
+            ),
+            (
+                "clusterDNS".to_string(),
+                KeyInfo {
+                    value: serde_json::Value::from(json!(["10.96.0.11", "10.96.0.12"])),
+                    operation: "".to_string(),
+                },
+            ),
+            // normal delete
+            (
+                "evictionHard.\"nodefs.inodesFree\"".to_string(),
+                KeyInfo { value: serde_json::Value::from(json!("")), operation: "delete".to_string() },
+            ),
+            (
+                "authoriazation".to_string(),
+                KeyInfo { value: serde_json::Value::from(json!("")), operation: "delete".to_string() },
+            ),
+            // normal add
+            (
+                "evictionHard.\"test.test\"".to_string(),
+                KeyInfo { value: serde_json::Value::from(json!("test")), operation: "".to_string() },
+            ),
+            ("testA".to_string(), KeyInfo { value: serde_json::Value::from(json!(true)), operation: "".to_string() }),
+            (
+                "logging.options.testB.testC.testD.testE".to_string(),
+                KeyInfo { value: serde_json::Value::from(json!(2.34)), operation: "".to_string() },
+            ),
+            //abnormal
+
+            // delete but key is not exisst
+            (
+                "evictionHard.key.not.exist".to_string(),
+                KeyInfo { value: serde_json::Value::from("".to_string()), operation: "delete".to_string() },
+            ),
+            // key is empty
+            (
+                "".to_string(),
+                KeyInfo { value: serde_json::Value::String("".to_string()), operation: "delete".to_string() },
+            ),
+        ]);
+        let mut config = Sysconfig {
+            model: KUBERNETES_KUBELET.to_string(),
+            config_path: "test.yaml".to_string(),
+            contents: config_kubelet,
+        };
+        let k8s_kubelet = KubernetesKubelet {};
+        let res = k8s_kubelet.set_config(&mut config);
+        assert!(!res.is_err());
+
+        let del_res = std::fs::remove_file("test.yaml");
+        assert!(!del_res.is_err());
     }
 }
