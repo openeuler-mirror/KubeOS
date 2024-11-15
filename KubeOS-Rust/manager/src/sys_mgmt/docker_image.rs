@@ -3,7 +3,7 @@ use log::{debug, info, trace};
 
 use crate::{
     api::{ImageHandler, UpgradeRequest},
-    sys_mgmt::{IMAGE_PERMISSION, NEED_BYTES},
+    sys_mgmt::{DMV_BOOT_IMG, DMV_HASH_IMG, DMV_ROOT_IMG, IMAGE_PERMISSION, NEED_BYTES},
     utils::*,
 };
 
@@ -11,6 +11,7 @@ pub struct DockerImageHandler<T: CommandExecutor> {
     pub paths: PreparePath,
     pub container_name: String,
     pub executor: T,
+    pub dmv: bool,
 }
 
 impl<T: CommandExecutor> ImageHandler<T> for DockerImageHandler<T> {
@@ -19,22 +20,36 @@ impl<T: CommandExecutor> ImageHandler<T> for DockerImageHandler<T> {
         self.get_image(req)?;
         self.get_rootfs_archive(req)?;
 
+        if self.dmv {
+            return Ok(UpgradeImageManager::new(
+                self.paths.clone(),
+                PartitionInfo::default(),
+                self.executor.clone(),
+                self.dmv,
+            ));
+        }
         let (_, next_partition_info) = get_partition_info(&self.executor)?;
-        let img_manager = UpgradeImageManager::new(self.paths.clone(), next_partition_info, self.executor.clone());
+        let img_manager =
+            UpgradeImageManager::new(self.paths.clone(), next_partition_info, self.executor.clone(), false);
         img_manager.create_os_image(IMAGE_PERMISSION)
     }
 }
 
 impl Default for DockerImageHandler<RealCommandExecutor> {
     fn default() -> Self {
-        Self { paths: PreparePath::default(), container_name: "kubeos-temp".into(), executor: RealCommandExecutor {} }
+        Self {
+            paths: PreparePath::default(),
+            container_name: "kubeos-temp".into(),
+            executor: RealCommandExecutor {},
+            dmv: false,
+        }
     }
 }
 
 impl<T: CommandExecutor> DockerImageHandler<T> {
     #[cfg(test)]
-    pub fn new(paths: PreparePath, container_name: String, executor: T) -> Self {
-        Self { paths, container_name, executor }
+    pub fn new(paths: PreparePath, container_name: String, executor: T, dmv: bool) -> Self {
+        Self { paths, container_name, executor, dmv }
     }
 
     fn get_image(&self, req: &UpgradeRequest) -> Result<()> {
@@ -56,15 +71,11 @@ impl<T: CommandExecutor> DockerImageHandler<T> {
         debug!("Create container {}", self.container_name);
         let container_id =
             self.executor.run_command_with_output("docker", &["create", "--name", &self.container_name, image_name])?;
-        debug!("Copy rootfs from container {} to {}", container_id, self.paths.update_path.display());
-        self.executor.run_command(
-            "docker",
-            &[
-                "cp",
-                format!("{}:/{}", container_id, self.paths.rootfs_file).as_str(),
-                self.paths.update_path.to_str().unwrap(),
-            ],
-        )?;
+        if self.dmv {
+            self.dmv_copy_upgrade_files(container_id.as_str())?;
+        } else {
+            self.normal_copy_upgrade_files(container_id.as_str())?;
+        }
         self.check_and_rm_container().with_context(|| "Failed to remove kubeos-temp container".to_string())?;
         Ok(())
     }
@@ -77,6 +88,36 @@ impl<T: CommandExecutor> DockerImageHandler<T> {
             info!("Remove container {} {} for cleaning environment", self.container_name, exist_id);
             self.executor.run_command("docker", &["rm", exist_id.as_str()])?;
         }
+        Ok(())
+    }
+
+    fn normal_copy_upgrade_files(&self, container_id: &str) -> Result<()> {
+        debug!("Copy rootfs from container {} to {}", container_id, self.paths.update_path.display());
+        self.executor.run_command(
+            "docker",
+            &[
+                "cp",
+                format!("{}:/{}", container_id, self.paths.rootfs_file).as_str(),
+                self.paths.update_path.to_str().unwrap(),
+            ],
+        )?;
+        Ok(())
+    }
+
+    fn dmv_copy_upgrade_files(&self, container_id: &str) -> Result<()> {
+        debug!("Copy dm-verity upgrade files from container {} to {}", container_id, self.paths.persist_path.display());
+        self.executor.run_command(
+            "docker",
+            &["cp", format!("{}:/{}", container_id, DMV_BOOT_IMG).as_str(), self.paths.update_path.to_str().unwrap()],
+        )?;
+        self.executor.run_command(
+            "docker",
+            &["cp", format!("{}:/{}", container_id, DMV_ROOT_IMG).as_str(), self.paths.persist_path.to_str().unwrap()],
+        )?;
+        self.executor.run_command(
+            "docker",
+            &["cp", format!("{}:/{}", container_id, DMV_HASH_IMG).as_str(), self.paths.persist_path.to_str().unwrap()],
+        )?;
         Ok(())
     }
 }
@@ -126,8 +167,8 @@ mod tests {
             .times(1)
             .returning(|_, _| Ok(()));
 
-        let result =
-            DockerImageHandler::new(PreparePath::default(), "test".into(), mock_executor).check_and_rm_container();
+        let result = DockerImageHandler::new(PreparePath::default(), "test".into(), mock_executor, false)
+            .check_and_rm_container();
         assert!(result.is_ok());
 
         assert_eq!(DockerImageHandler::default().container_name, "kubeos-temp");
@@ -176,7 +217,7 @@ mod tests {
             .times(1)
             .returning(|_, _| Ok(command_output2.to_string()));
 
-        let docker = DockerImageHandler::new(PreparePath::default(), "kubeos-temp".into(), mock_executor);
+        let docker = DockerImageHandler::new(PreparePath::default(), "kubeos-temp".into(), mock_executor, false);
         let result = docker.get_image(&req);
         assert!(result.is_ok());
     }
@@ -229,7 +270,7 @@ mod tests {
             .times(1)
             .returning(|_, _| Ok(()));
 
-        let docker = DockerImageHandler::new(PreparePath::default(), "kubeos-temp".into(), mock_executor);
+        let docker = DockerImageHandler::new(PreparePath::default(), "kubeos-temp".into(), mock_executor, false);
         let result = docker.get_rootfs_archive(&req);
         assert!(result.is_ok());
     }

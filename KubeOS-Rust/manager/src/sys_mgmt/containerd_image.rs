@@ -17,13 +17,14 @@ use log::{debug, info};
 
 use crate::{
     api::{ImageHandler, UpgradeRequest},
-    sys_mgmt::{IMAGE_PERMISSION, NEED_BYTES},
+    sys_mgmt::{DMV_BOOT_IMG, DMV_HASH_IMG, DMV_ROOT_IMG, IMAGE_PERMISSION, NEED_BYTES},
     utils::*,
 };
 
 pub struct CtrImageHandler<T: CommandExecutor> {
     pub paths: PreparePath,
     pub executor: T,
+    pub dmv: bool,
 }
 
 const DEFAULT_NAMESPACE: &str = "k8s.io";
@@ -34,22 +35,31 @@ impl<T: CommandExecutor> ImageHandler<T> for CtrImageHandler<T> {
         self.get_image(req)?;
         self.get_rootfs_archive(req, IMAGE_PERMISSION)?;
 
+        if self.dmv {
+            return Ok(UpgradeImageManager::new(
+                self.paths.clone(),
+                PartitionInfo::default(),
+                self.executor.clone(),
+                self.dmv,
+            ));
+        }
         let (_, next_partition_info) = get_partition_info(&self.executor)?;
-        let img_manager = UpgradeImageManager::new(self.paths.clone(), next_partition_info, self.executor.clone());
+        let img_manager =
+            UpgradeImageManager::new(self.paths.clone(), next_partition_info, self.executor.clone(), false);
         img_manager.create_os_image(IMAGE_PERMISSION)
     }
 }
 
 impl Default for CtrImageHandler<RealCommandExecutor> {
     fn default() -> Self {
-        Self { paths: PreparePath::default(), executor: RealCommandExecutor {} }
+        Self { paths: PreparePath::default(), executor: RealCommandExecutor {}, dmv: false }
     }
 }
 
 impl<T: CommandExecutor> CtrImageHandler<T> {
     #[cfg(test)]
-    pub fn new(paths: PreparePath, executor: T) -> Self {
-        Self { paths, executor }
+    pub fn new(paths: PreparePath, executor: T, dmv: bool) -> Self {
+        Self { paths, executor, dmv }
     }
 
     fn get_image(&self, req: &UpgradeRequest) -> Result<()> {
@@ -76,8 +86,27 @@ impl<T: CommandExecutor> CtrImageHandler<T> {
         self.check_and_unmount(mount_path).with_context(|| "Failed to clean containerd environment".to_string())?;
         self.executor
             .run_command("ctr", &["-n", DEFAULT_NAMESPACE, "images", "mount", "--rw", image_name, mount_path])?;
-        // copy os.tar from mount_path to its partent dir
-        self.copy_file(self.paths.mount_path.join(&self.paths.rootfs_file), &self.paths.tar_path, permission)?;
+        if self.dmv {
+            // copy update-boot.img/update-root.img/update-hash.img from mount_path to /persist
+            self.copy_file(
+                self.paths.mount_path.join(DMV_BOOT_IMG),
+                &self.paths.persist_path.join(DMV_BOOT_IMG),
+                permission,
+            )?;
+            self.copy_file(
+                self.paths.mount_path.join(DMV_ROOT_IMG),
+                &self.paths.persist_path.join(DMV_ROOT_IMG),
+                permission,
+            )?;
+            self.copy_file(
+                self.paths.mount_path.join(DMV_HASH_IMG),
+                &self.paths.persist_path.join(DMV_HASH_IMG),
+                permission,
+            )?;
+        } else {
+            // copy os.tar from mount_path to its partent dir
+            self.copy_file(self.paths.mount_path.join(&self.paths.rootfs_file), &self.paths.tar_path, permission)?;
+        }
         self.check_and_unmount(mount_path).with_context(|| "Failed to clean containerd environment".to_string())?;
         Ok(())
     }
@@ -179,7 +208,7 @@ mod tests {
             })
             .times(1)
             .returning(|_, _| Ok(command_output2.to_string()));
-        let ctr = CtrImageHandler::new(PreparePath::default(), mock_executor);
+        let ctr = CtrImageHandler::new(PreparePath::default(), mock_executor, false);
         let result = ctr.get_image(&req);
         assert!(result.is_ok());
     }
@@ -240,7 +269,7 @@ mod tests {
             .times(1)
             .returning(|_, _| Ok("".to_string()));
 
-        let ctr = CtrImageHandler::new(paths, mock_executor);
+        let ctr = CtrImageHandler::new(paths, mock_executor, false);
         let result = ctr.get_rootfs_archive(&req, IMAGE_PERMISSION);
         assert!(result.is_ok());
     }
@@ -294,7 +323,8 @@ mod tests {
             .times(1)
             .returning(|_, _| Ok(()));
 
-        let result = CtrImageHandler::new(PreparePath::default(), mock_executor).check_and_unmount("test_mount_path");
+        let result =
+            CtrImageHandler::new(PreparePath::default(), mock_executor, false).check_and_unmount("test_mount_path");
 
         assert!(result.is_ok());
     }

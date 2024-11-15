@@ -247,6 +247,11 @@ fn handle_add_key(expect_configs: &HashMap<String, KeyInfo>, is_only_key_valid: 
 
 impl Configuration for GrubCmdline {
     fn set_config(&self, config: &mut Sysconfig) -> Result<()> {
+        let c = RealCommandExecutor {};
+        if is_dmv_mode(&c) {
+            warn!("dm-verity mode is enabled, skip setting grub.cmdline configuration");
+            return Ok(());
+        }
         if self.is_cur_partition {
             info!("Start setting grub.cmdline.current configuration");
         } else {
@@ -258,8 +263,7 @@ impl Configuration for GrubCmdline {
         let config_partition = if cfg!(test) {
             self.is_cur_partition
         } else {
-            self.get_config_partition(RealCommandExecutor {})
-                .with_context(|| "Failed to get config partition".to_string())?
+            self.get_config_partition(c).with_context(|| "Failed to get config partition".to_string())?
         };
         debug!("Config_partition: {} (false means partition A, true means partition B)", config_partition);
         let configs = get_and_set_grubcfg(&mut config.contents, &self.grub_path, config_partition)
@@ -371,7 +375,12 @@ mod tests {
         let mut executor = MockCommandExec::new();
 
         // the output shows that current root menuentry is A
-        let command_output1 = "sda\nsda1 /boot/efi vfat 98566144\nsda2 / ext4 13000245248\nsda3  ext4 13000245248\nsda4 /persist ext4 453458788352\nsr0  iso9660 964689261\n";
+        let command_output1 = r#"vda                   23622320128
+vda1 /boot/efi vfat      61865984 BOOT
+vda2 /         ext4    3145728000 ROOT-A
+vda3           ext4    2621440000 ROOT-B
+vda4 /persist  ext4   17791188992 PERSIST
+"#;
         executor.expect_run_command_with_output().times(1).returning(|_, _| Ok(command_output1.to_string()));
 
         let result = grub_cmdline.get_config_partition(executor).unwrap();
@@ -381,7 +390,12 @@ mod tests {
         let mut executor = MockCommandExec::new();
 
         // the output shows that current root menuentry is A
-        let command_output1 = "sda\nsda1 /boot/efi vfat 98566144\nsda2 / ext4 13000245248\nsda3  ext4 13000245248\nsda4 /persist ext4 453458788352\nsr0  iso9660 964689261\n";
+        let command_output1 = r#"vda                   23622320128
+vda1 /boot/efi vfat      61865984 BOOT
+vda2 /         ext4    3145728000 ROOT-A
+vda3           ext4    2621440000 ROOT-B
+vda4 /persist  ext4   17791188992 PERSIST
+"#;
         executor.expect_run_command_with_output().times(1).returning(|_, _| Ok(command_output1.to_string()));
         grub_cmdline.is_cur_partition = false;
         let result = grub_cmdline.get_config_partition(executor).unwrap();
