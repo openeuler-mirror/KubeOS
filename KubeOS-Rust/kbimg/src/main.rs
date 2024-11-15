@@ -1,5 +1,5 @@
 /*
- * Copyright (c) Huawei Technologies Co., Ltd. 2023. All rights reserved.
+ * Copyright (c) Huawei Technologies Co., Ltd. 2024. All rights reserved.
  * KubeOS is licensed under the Mulan PSL v2.
  * You can use this software according to the terms and conditions of the Mulan PSL v2.
  * You may obtain a copy of Mulan PSL v2 at:
@@ -12,111 +12,126 @@
 
 use std::{fs, path::PathBuf, process::exit};
 
-use anyhow::{bail, Result};
+use anyhow::Result;
 use clap::Parser;
 use env_logger::{Builder, Env, Target};
-use log::{debug, error, info};
+use log::{debug, error};
 
 mod admin_container;
 mod commands;
+mod custom;
 mod docker_img;
 mod repo;
 mod scripts_gen;
 mod utils;
 mod values;
 
-use utils::{execute_scripts, get_arch};
-use values::SCRIPTS_DIR;
+use utils::{check_config_toml, execute_scripts, get_arch};
+use values::{DIR_PERMISSION, SCRIPTS_DIR};
 
-use crate::commands::{Cli, Commands, Config};
+use crate::commands::{Cli, Config};
 
 trait CreateImage {
     /// validate cmd args, check disk size and other prepare work
     fn prepare(&self, config: &mut Config) -> Result<()>;
-    /// generate scripts for creating image. If debug is enabled, keep the scripts, otherwise execute them
+    /// generate scripts for creating image. If debug is enabled, just generate the scripts without execution.
     fn generate_scripts(&self, config: &Config) -> Result<PathBuf>;
 }
 
-fn process(info: Box<dyn CreateImage>, mut config: Config) -> Result<()> {
-    match fs::create_dir_all(SCRIPTS_DIR) {
-        Ok(_) => {
-            info.prepare(&mut config)?;
-            let path = info.generate_scripts(&config)?;
-            execute_scripts(path)?;
-            Ok(())
-        },
-        Err(e) => bail!(e),
+fn process(info: Box<dyn CreateImage>, mut config: Config, debug: bool) -> Result<()> {
+    let dir = PathBuf::from(SCRIPTS_DIR);
+    if dir.exists() {
+        debug!("Removing existing scripts directory");
+        fs::remove_dir_all(&dir)?;
     }
+    fs::create_dir_all(&dir)?;
+    utils::set_permissions(&dir, DIR_PERMISSION)?;
+    info.prepare(&mut config)?;
+    let path = info.generate_scripts(&config)?;
+    if !debug {
+        execute_scripts(path)?;
+    } else {
+        debug!("Executed following command to generate KubeOS image: bash {:?}", path);
+    }
+    Ok(())
 }
 
 fn main() {
     let cli = Cli::parse();
     let default_log_level: &str = if cli.debug { "debug" } else { "info" };
     Builder::from_env(Env::default().default_filter_or(default_log_level)).target(Target::Stdout).init();
-    match cli.config {
-        Some(config) => {
-            info!("Loading config file");
-            debug!("Config file path: {:?}", config);
-            let content = fs::read_to_string(config).unwrap();
-            let data: Config = toml::from_str(&content).unwrap();
-            debug!("Config: {:?}", data);
-            let info = if let Some(mut info) = data.from_repo.clone() {
-                info.arch = Some(get_arch());
-                Some(Box::new(info) as Box<dyn CreateImage>)
-            } else if let Some(info) = data.from_dockerimg.clone() {
-                Some(Box::new(info) as Box<dyn CreateImage>)
-            } else if let Some(info) = data.admin_container.clone() {
-                Some(Box::new(info) as Box<dyn CreateImage>)
-            } else {
-                None
-            };
-            if let Some(i) = info {
-                match process(i, data) {
-                    Ok(_) => {
-                        info!("Image created successfully");
-                    },
-                    Err(e) => {
-                        error!("Failed to create image: {:?}", e);
-                    },
-                }
-            }
-            exit(0);
-        },
-        None => {},
-    }
-    let info = match cli.commands {
-        Some(Commands::UpgradeImage(mut info)) => {
-            info.image_type = "upgrade".to_string();
-            Some(Box::new(info) as Box<dyn CreateImage>)
-        },
-        Some(Commands::VMRepo(mut info)) => {
-            info.image_type = "vm-repo".to_string();
-            debug!("VMRepo: {:?}", info);
-            Some(Box::new(info) as Box<dyn CreateImage>)
-        },
-        Some(Commands::VMDocker(mut info)) => {
-            info.image_type = "vm-docker".to_string();
-            Some(Box::new(info) as Box<dyn CreateImage>)
-        },
-        Some(Commands::PxeRepo(mut info)) => {
-            info.image_type = "pxe-repo".to_string();
-            Some(Box::new(info) as Box<dyn CreateImage>)
-        },
-        Some(Commands::PxeDocker(mut info)) => {
-            info.image_type = "pxe-docker".to_string();
-            Some(Box::new(info) as Box<dyn CreateImage>)
-        },
-        Some(Commands::AdminContainer(info)) => Some(Box::new(info) as Box<dyn CreateImage>),
-        None => None,
+
+    let arch = get_arch().expect("Failed to get architecture");
+    debug!("Architecture: {:?}", arch);
+    let (create_type, config) = match cli.commands {
+        commands::Commands::Create { image_type, file } => (image_type, file),
     };
+    debug!("Config file path: {:?}", config);
+    let content = fs::read_to_string(config).expect("Failed to read config file");
+    let data: Config = toml::from_str(&content).expect("Failed to parse toml file");
+    debug!("Config: {:?}", data);
+
+    let info;
+    match create_type {
+        commands::CreateType::VM => {
+            check_config_toml(&data).unwrap();
+            if let Some(mut i) = data.from_repo.clone() {
+                i.arch = Some(arch);
+                i.image_type = Some(commands::ImageType::VMRepo);
+                info = Some(Box::new(i) as Box<dyn CreateImage>)
+            } else if let Some(mut i) = data.from_dockerimg.clone() {
+                i.arch = Some(arch);
+                i.image_type = Some(commands::ImageType::VMDocker);
+                info = Some(Box::new(i) as Box<dyn CreateImage>)
+            } else {
+                error!("Missing required fields in config file for creating vm image");
+                exit(1);
+            }
+        },
+        commands::CreateType::PXE => {
+            check_config_toml(&data).unwrap();
+            if let Some(mut i) = data.from_repo.clone() {
+                i.arch = Some(arch);
+                i.image_type = Some(commands::ImageType::PxeRepo);
+                info = Some(Box::new(i) as Box<dyn CreateImage>)
+            } else if let Some(mut i) = data.from_dockerimg.clone() {
+                i.arch = Some(arch);
+                i.image_type = Some(commands::ImageType::PxeDocker);
+                info = Some(Box::new(i) as Box<dyn CreateImage>)
+            } else {
+                error!("Missing required fields in config file for creating pxe image");
+                exit(1);
+            }
+        },
+        commands::CreateType::Upgrade => {
+            if let Some(mut i) = data.from_repo.clone() {
+                i.arch = Some(arch);
+                i.image_type = Some(commands::ImageType::UpgradeImage);
+                info = Some(Box::new(i) as Box<dyn CreateImage>)
+            } else {
+                error!("Missing from_repo in config file for creating upgrade image");
+                exit(1);
+            }
+        },
+        commands::CreateType::AdminContainer => {
+            if let Some(i) = data.admin_container.clone() {
+                info = Some(Box::new(i) as Box<dyn CreateImage>)
+            } else {
+                error!("Missing admin_container in config file for creating admin container image");
+                exit(1);
+            }
+        },
+    }
+
     if let Some(i) = info {
-        match process(i, Config::default()) {
+        match process(i, data, cli.debug) {
             Ok(_) => {
-                info!("Image created successfully");
+                println!("Image created successfully");
             },
             Err(e) => {
                 error!("Failed to create image: {:?}", e);
             },
         }
     }
+    exit(0);
 }

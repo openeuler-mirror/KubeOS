@@ -1,5 +1,5 @@
 /*
- * Copyright (c) Huawei Technologies Co., Ltd. 2023. All rights reserved.
+ * Copyright (c) Huawei Technologies Co., Ltd. 2024. All rights reserved.
  * KubeOS is licensed under the Mulan PSL v2.
  * You can use this software according to the terms and conditions of the Mulan PSL v2.
  * You may obtain a copy of Mulan PSL v2 at:
@@ -12,99 +12,89 @@
 
 use std::path::PathBuf;
 
-use clap::{Args, Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 use serde::Deserialize;
 
 #[derive(Parser)]
 #[clap(name = "kbimg")]
 #[clap(author, version, about)]
-#[clap(long_about = "A tool for creating KubeOS images.")]
+#[clap(about = "CLI tool for generating various types of image for KubeOS")]
 pub struct Cli {
-    /// Path to the detailed configuration toml file
-    #[clap(short, long, value_parser)]
-    pub config: Option<PathBuf>,
-    /// Enable debug mode, keep the scripts after execution
+    /// Enable debug mode, generate the scripts without execution
     #[clap(short, long, action)]
     pub debug: bool,
     #[clap(subcommand)]
-    pub commands: Option<Commands>,
+    pub commands: Commands,
 }
 
-#[derive(Subcommand, Debug, Deserialize)]
+#[derive(Subcommand, Debug)]
 pub enum Commands {
-    /// Create a new container image for upgrading KubeOS
-    #[clap(name = "upgrade")]
-    UpgradeImage(RepoInfo),
-    /// Create a new KubeOS vm image from repo
-    #[clap(name = "vm-repo")]
-    VMRepo(RepoInfo),
-    /// Create a new KubeOS vm image from docker image
-    #[clap(name = "vm-docker")]
-    VMDocker(DockerInfo),
-    /// Create a new KubeOS pxe image from repo
-    #[clap(name = "pxe-repo")]
-    PxeRepo(RepoInfo),
-    /// Create a new KubeOS pxe image from docker image
-    #[clap(name = "pxe-docker")]
-    PxeDocker(DockerInfo),
-    /// Create a KubeOS admin-container image
-    #[clap(name = "admin-container")]
-    AdminContainer(AdminContainerInfo),
+    /// Create a new KubeOS image
+    Create {
+        #[arg(value_enum)]
+        image_type: CreateType,
+        /// Path to the configuration file
+        #[arg(short, long, value_parser)]
+        file: PathBuf,
+    },
 }
 
-#[derive(Args, Debug, Deserialize, Clone)]
+#[derive(ValueEnum, Clone, Debug)]
+pub enum CreateType {
+    #[clap(name = "vm-img")]
+    VM,
+    #[clap(name = "pxe-img")]
+    PXE,
+    #[clap(name = "upgrade-img")]
+    Upgrade,
+    #[clap(name = "admin-container")]
+    AdminContainer,
+}
+
+#[derive(Debug, Deserialize, Clone)]
 pub struct RepoInfo {
     /// Required: KubeOS version
-    #[clap(short, long, value_parser)]
     pub version: String,
     /// Required: Repo path for installing packages
-    #[clap(short = 'p', long, value_parser)]
     pub repo_path: PathBuf,
-    /// Required: Path to the agent binary
-    #[clap(short = 'b', long, value_parser)]
+    /// Required: Path to the os-agent binary
     pub agent_path: PathBuf,
     /// Required: Encrypted password for root user
-    #[clap(short = 'e', long, value_parser)]
     pub root_passwd: String,
-    /// Required for upgrade
-    #[clap(short = 'd', long, value_parser)]
-    pub docker_img: Option<String>,
+    /// Required for creating upgrade docker image
+    pub upgrade_img: Option<String>,
     /// Required: RPM packages
-    #[clap(short = 'r', long, value_parser)]
     pub rpmlist: Vec<String>,
     /// Optional: boot mode, default is uefi, enable this flag for legacy bios
-    #[clap(short, long, value_parser)]
     pub legacy_bios: bool,
-    #[clap(skip)]
-    pub image_type: String,
-    #[clap(skip)]
+    pub image_type: Option<ImageType>,
     pub arch: Option<String>,
 }
 
-#[derive(Args, Debug, Deserialize, Clone)]
-pub struct DockerInfo {
+#[derive(Debug, Deserialize, Clone)]
+pub struct DockerImgInfo {
     /// Required: Name of the container image
-    #[clap(short, long, value_parser)]
-    pub docker_img: String,
-    #[clap(skip)]
-    pub image_type: String,
+    pub upgrade_img: String,
+    /// Optional: boot mode, default is uefi, enable this flag for legacy bios
+    pub legacy_bios: bool,
+    pub image_type: Option<ImageType>,
+    pub arch: Option<String>,
 }
 
-#[derive(Args, Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct AdminContainerInfo {
     /// Required: Name of the container image
-    #[clap(short, long, value_parser)]
-    pub docker_img: String,
-    /// Required: Path to the Dockerfile
-    #[clap(short, long, value_parser)]
-    pub dockerfile: PathBuf,
+    pub img_name: String,
+    /// Required: Path to the hostshell binary
+    pub hostshell: PathBuf,
 }
 
 #[derive(Debug, Deserialize, Default, Clone)]
 pub struct Config {
     pub from_repo: Option<RepoInfo>,
-    pub from_dockerimg: Option<DockerInfo>,
+    pub from_dockerimg: Option<DockerImgInfo>,
     pub admin_container: Option<AdminContainerInfo>,
+    pub pxe_config: Option<PxeConfig>,
     pub users: Option<Vec<User>>,
     pub copy_files: Option<Vec<CopyFile>>,
     pub grub: Option<Grub>,
@@ -112,26 +102,27 @@ pub struct Config {
     pub chroot_script: Option<ChrootScript>,
     pub disk_partition: Option<DiskPartition>,
     pub persist_mkdir: Option<PersistMkdir>,
-    pub pxe_config: Option<PxeConfig>,
+    pub dm_verity: Option<DmVerity>,
 }
 
 #[derive(Deserialize, Debug, Clone)]
 pub struct User {
     pub name: String,
     pub passwd: String,
+    pub primary_group: Option<String>,
     pub groups: Option<Vec<String>>,
-    pub sudo: Option<String>,
 }
 
 #[derive(Deserialize, Debug, Clone)]
 pub struct CopyFile {
     pub src: String,
     pub dst: String,
+    pub create_dir: Option<String>,
 }
 
 #[derive(Deserialize, Debug, Clone)]
 pub struct Grub {
-    pub passwd: Option<String>,
+    pub passwd: String,
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -141,15 +132,14 @@ pub struct SystemdService {
 
 #[derive(Deserialize, Debug, Clone)]
 pub struct ChrootScript {
-    pub path: String,
+    pub path: PathBuf,
+    pub rm: Option<bool>,
 }
 
 #[derive(Deserialize, Debug, Clone)]
 pub struct DiskPartition {
-    pub first: u32,
-    pub second: u32,
-    pub third: u32,
-    pub img_size: u32,
+    pub root: u32,
+    pub img_size: Option<u32>,
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -157,14 +147,52 @@ pub struct PersistMkdir {
     pub name: Vec<String>,
 }
 
-// pxe config
 #[derive(Debug, Deserialize, Clone)]
 pub struct PxeConfig {
     pub rootfs_name: String,
     pub disk: String,
     pub server_ip: String,
-    pub local_ip: String,
+    pub local_ip: Option<String>,
     pub route_ip: String,
-    pub netmask: String,
-    pub net_name: String,
+    pub netmask: Option<String>,
+    pub net_name: Option<String>,
+    pub dhcp: Option<bool>,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct DmVerity {
+    pub efi_key: String,
+    pub grub_key: String,
+    pub keys_dir: Option<PathBuf>,
+}
+
+#[derive(Debug, Deserialize, Clone, Default, PartialEq)]
+pub enum ImageType {
+    #[default]
+    #[serde(rename = "vm-repo")]
+    VMRepo,
+    #[serde(rename = "vm-docker")]
+    VMDocker,
+    #[serde(rename = "pxe-repo")]
+    PxeRepo,
+    #[serde(rename = "pxe-docker")]
+    PxeDocker,
+    #[serde(rename = "admin-container")]
+    AdminContainer,
+    #[serde(rename = "upgrade")]
+    UpgradeImage,
+}
+
+impl From<&str> for ImageType {
+    fn from(input: &str) -> Self {
+        match input {
+            "vm-repo" => ImageType::VMRepo,
+            "vm-docker" => ImageType::VMDocker,
+            "pxe-repo" => ImageType::PxeRepo,
+            "pxe-docker" => ImageType::PxeDocker,
+            "admin-container" => ImageType::AdminContainer,
+            "upgrade" => ImageType::UpgradeImage,
+            _ => ImageType::VMRepo,
+        }
+    }
 }

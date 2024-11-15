@@ -1,59 +1,59 @@
 [from_repo]
-agent_path = "/root/KubeOS/bin/os-agent"
-image_type = "vm-repo"
+agent_path = "./bin/rust/release/os-agent"
 legacy_bios = false
 repo_path = "/etc/yum.repos.d/openEuler.repo"
-root_passwd = "$1$xyz$RdLyKTL32WEvK3lg8CXID0"
-version = "v1"
+root_passwd = "$1$xyz$RdLyKTL32WEvK3lg8CXID0" # default passwd: openEuler12#$, use "openssl passwd -6 -salt $(head -c18 /dev/urandom | openssl base64)" to generate your passwd
 rpmlist = [
     "NetworkManager",
+    "cloud-init",
     "conntrack-tools",
+    "containerd",
     "containernetworking-plugins",
-    "coreutils",
+    "cri-tools",
     "dhcp",
-    "docker",
-    "dosfstools",
-    "dracut",
     "ebtables",
     "ethtool",
-    "gawk",
-    "hwinfo",
+    "iptables",
     "kernel",
     "kubernetes-kubeadm",
     "kubernetes-kubelet",
-    "lvm2",
-    "net-tools",
     "openssh-server",
     "passwd",
-    "parted",
     "rsyslog",
     "socat",
-    "sudo",
+    "tar",
     "vi",
+    # Below packages are required for pxe-image. Uncomment them if you want to generate pxe-image.
+    # "coreutils",
+    # "dosfstools",
+    # "dracut",
+    # "gawk",
+    # "hwinfo",
+    # "net-tools",
+    # "parted",
 ]
-
-# [from_dockerimg]
-# docker_img = ""
-# image_type = "vm-docker"
+upgrade_img = "kubeos-upgrade:v1"
+version = "v1"
 
 # [admin_container]
-# dockerfile = ""
-# docker_img = ""
+# img_name = "kubeos-admin-container:v1"
+# hostshell = "./bin/hostshell"
 
 # [pxe_config]
-# rootfs_name = "kubeos.tar"
-# disk = "/dev/sda"
-# server_ip = "192.168.1.50"
+# dhcp = false
+# disk = "/dev/vda"
 # local_ip = "192.168.1.100"
-# route_ip = "192.168.1.1"
-# netmask = "255.255.255.0"
 # net_name = "eth0"
+# netmask = "255.255.255.0"
+# rootfs_name = "kubeos.tar"
+# route_ip = "192.168.1.1"
+# server_ip = "192.168.1.50"
 
 # [[users]]
-# groups = ["admin"]
+# groups = ["admin", "wheel"]
 # name = "foo"
 # passwd = "foo"
-# sudo = "ALL=(ALL) ALL"
+# primary_group = "foo"
 
 # [[users]]
 # groups = ["example"]
@@ -61,27 +61,32 @@ rpmlist = [
 # passwd = "bar"
 
 # [[copy_files]]
-# dst = "/root/ztest2"
-# src = "/root/KubeOS/ztest2"
+# create_dir = "/root/test"
+# dst = "/root/test/foo.txt"
+# src = "/root/KubeOS/foo.txt"
 
 # [[copy_files]]
-# dst = "/root/ztest1"
-# src = "/root/KubeOS/ztest1/*"
+# dst = "/etc/bar.txt"
+# src = "../bar.txt"
 
 # [grub]
 # passwd = "foo"
 
 # [systemd_service]
-# name = ["kubelet", "containerd"]
+# name = ["containerd", "kubelet"]
 
 # [chroot_script]
-# path = "../../ztest/myscript.sh"
+# path = "./my_chroot.sh"
+# rm = true
 
 # [disk_partition]
-# first = 100
-# second = 2500
-# third = 2300
-# img_size = 30
+# img_size = 30 # GB
+# root = 3000  # MiB
 
 # [persist_mkdir]
-# name = ["lv_data"]
+# name = ["bar", "foo"]
+
+# [dm_verity]
+# efi_key = "foo"
+# grub_key = "bar"
+# keys_dir = "./keys"

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) Huawei Technologies Co., Ltd. 2023. All rights reserved.
+ * Copyright (c) Huawei Technologies Co., Ltd. 2024. All rights reserved.
  * KubeOS is licensed under the Mulan PSL v2.
  * You can use this software according to the terms and conditions of the Mulan PSL v2.
  * You may obtain a copy of Mulan PSL v2 at:
@@ -10,13 +10,18 @@
  * See the Mulan PSL v2 for more details.
  */
 
-use std::{fs, os::unix::fs::PermissionsExt, path::PathBuf, process::Command};
+use std::{
+    fs,
+    os::unix::fs::PermissionsExt,
+    path::{Path, PathBuf},
+    process::Command,
+};
 
-use anyhow::bail;
+use anyhow::{bail, Result};
 
-use crate::commands::PxeConfig;
+use crate::commands::Config;
 
-pub(crate) fn execute_scripts(script: PathBuf) -> anyhow::Result<()> {
+pub(crate) fn execute_scripts(script: PathBuf) -> Result<()> {
     if !script.exists() {
         bail!("Script does not exist: {:?}", script);
     }
@@ -27,8 +32,8 @@ pub(crate) fn execute_scripts(script: PathBuf) -> anyhow::Result<()> {
     Ok(())
 }
 
-pub(crate) fn set_permissions(path: &str, permission_value: u32) -> anyhow::Result<()> {
-    let metadata = fs::metadata(path)?;
+pub(crate) fn set_permissions<P: AsRef<Path>>(path: P, permission_value: u32) -> Result<()> {
+    let metadata = fs::metadata(&path)?;
     let mut permissions = metadata.permissions();
     permissions.set_mode(permission_value);
     fs::set_permissions(path, permissions)?;
@@ -42,7 +47,7 @@ pub(crate) fn is_valid_param<S: AsRef<str> + std::fmt::Debug>(param: S) -> bool 
 }
 
 /// Check if the path exists and is indeed a file
-pub(crate) fn is_file_valid(msg: &str, path: &PathBuf) -> anyhow::Result<()> {
+pub(crate) fn is_file_valid(msg: &str, path: &PathBuf) -> Result<()> {
     if !path.exists() {
         bail!("{} does not exist: {:?}", msg, path);
     }
@@ -71,27 +76,21 @@ pub(crate) fn is_addr_valid(addr: &str) -> bool {
     true
 }
 
-/// Check pxe config
-pub(crate) fn check_pxe_conf_valid(pxe_config: &PxeConfig) -> anyhow::Result<()> {
-    if !is_addr_valid(&pxe_config.server_ip) {
-        bail!("address {} is invalid, please check input", &pxe_config.server_ip)
+/// Get architecture
+pub(crate) fn get_arch() -> Result<String> {
+    let output = std::process::Command::new("arch").output().expect("Failed to execute `arch` command");
+    let arch = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if arch != "x86_64" && arch != "aarch64" {
+        bail!("Unsupported architecture: {}", arch);
     }
-    if !is_addr_valid(&pxe_config.local_ip) {
-        bail!("address {} is invalid, please check input", &pxe_config.local_ip)
-    }
-    if !is_addr_valid(&pxe_config.route_ip) {
-        bail!("address {} is invalid, please check input", &pxe_config.route_ip)
-    }
-    if !is_addr_valid(&pxe_config.netmask) {
-        bail!("address {} is invalid, please check input", &pxe_config.netmask)
-    }
-    Ok(())
+    Ok(arch)
 }
 
-/// Get architecture
-pub(crate) fn get_arch() -> String {
-    let output = std::process::Command::new("arch").output().expect("Failed to execute `arch` command");
-    String::from_utf8_lossy(&output.stdout).trim().to_string()
+pub(crate) fn check_config_toml(config: &Config) -> Result<()> {
+    if config.from_repo.is_some() && config.from_dockerimg.is_some() {
+        bail!("Both from_repo and from_dockerimg are provided in config file. Please provide only one of them")
+    }
+    Ok(())
 }
 
 #[cfg(test)]
