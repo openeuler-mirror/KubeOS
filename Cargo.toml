@@ -1,5 +1,11 @@
 [workspace]
-members = ["agent", "cli", "kbimg", "manager", "proxy"]
+members = [
+    "KubeOS-Rust/agent",
+    "KubeOS-Rust/cli",
+    "KubeOS-Rust/kbimg",
+    "KubeOS-Rust/manager",
+    "KubeOS-Rust/proxy",
+]
 resolver = "2"
 
 [workspace.package]
@@ -11,7 +17,7 @@ version = "1.0.6"
 anyhow = { version = "1.0" }
 async-trait = { version = "0.1" }
 clap = { version = "~4.3", default-features = false }
-cli = { version = "1.0.6", path = "./cli" }
+cli = { version = "1.0.6", path = "./KubeOS-Rust/cli" }
 env_logger = { version = "~0.10" }
 futures = { version = "0.3" }
 jsonrpc = { version = "~0.13.0", features = ["simple_uds"] }
@@ -22,7 +28,7 @@ k8s-openapi = { version = "=0.13.1", features = ["v1_22"] }
 kube = { version = "=0.66.0", features = ["derive", "runtime"] }
 lazy_static = { version = "1.5" }
 log = { version = "0.4" }
-manager = { version = "1.0.6", path = "./manager" }
+manager = { version = "1.0.6", path = "./KubeOS-Rust/manager" }
 nix = { version = "=0.26.4" }
 regex = { version = "~1.9" }
 reqwest = { version = "0.12.9", default-features = false }
