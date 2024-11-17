@@ -1355,7 +1355,7 @@ function dmvmain() {
 }"#;
 
 pub const DMV_UPGRADE_ROLLBACK_SH: &str = r#"set -eux
-if [ "$1" != "upgrade" ] && [ "$1" != "rollback" ]; then
+if [ "$1" != "upgrade" ] && [ "$1" != "switch" ]; then
     echo "Invalid argument: $1"
     exit 1
 fi

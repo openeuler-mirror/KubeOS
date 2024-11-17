@@ -90,7 +90,7 @@ impl AgentImpl {
         let dmv_mode = is_dmv_mode(&command_executor);
         info!("dm-verity mode: {}", dmv_mode);
         if dmv_mode {
-            command_executor.run_command("/usr/bin/kubeos-dmv", &["rollback"])?;
+            command_executor.run_command("/usr/bin/kubeos-dmv", &["switch"])?;
             info!("Switch to next boot partition and reboot");
             self.reboot()?;
             return Ok(Response { status: AgentStatus::Upgraded });
@@ -136,7 +136,7 @@ impl AgentImpl {
         let dmv_mode = is_dmv_mode(&command_executor);
         info!("dm-verity mode: {}", dmv_mode);
         if dmv_mode {
-            command_executor.run_command("/usr/bin/kubeos-dmv", &["rollback"])?;
+            command_executor.run_command("/usr/bin/kubeos-dmv", &["switch"])?;
             info!("Switch to next boot partition and reboot");
             self.reboot()?;
             return Ok(Response { status: AgentStatus::Upgraded });
