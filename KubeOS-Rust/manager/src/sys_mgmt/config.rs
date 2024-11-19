@@ -19,11 +19,12 @@ use std::{
     string::String,
 };
 
-use anyhow::{bail, Context, Ok, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use lazy_static::lazy_static;
 use log::{debug, info, trace, warn};
 use regex::Regex;
 use serde_yaml::Value;
+use toml::{map::Map, Table};
 
 use crate::{api::*, sys_mgmt::values, utils::*};
 
@@ -47,6 +48,14 @@ lazy_static! {
             values::GRUB_CMDLINE_NEXT.to_string(),
             Box::new(GrubCmdline { grub_path: values::DEFAULT_GRUB_CFG_PATH.to_string(), is_cur_partition: false })
                 as Box<dyn Configuration + Sync>,
+        );
+        config_map.insert(
+            values::KUBERNETES_KUBELET.to_string(),
+            Box::new(KubernetesKubelet) as Box<dyn Configuration + Sync>,
+        );
+        config_map.insert(
+            values::CONTAINER_CONTAINERD.to_string(),
+            Box::new(ContainerContainerd) as Box<dyn Configuration + Sync>,
         );
         config_map
     };
@@ -395,7 +404,7 @@ impl Configuration for KubernetesKubelet {
 
         create_config_file(config_path).with_context(|| format!("Failed to find config path \"{}\"", config_path))?;
         let file: File = std::fs::File::open(config_path)
-            .with_context(|| format!("Failed to open kubelet config file \"{}\"", config_path))?;
+            .with_context(|| format!("Failed to open config file \"{}\"", config_path))?;
         let mut value: serde_yaml::Value = serde_yaml::from_reader(file)
             .with_context(|| format!("Failed to read from config file \"{}\"", config_path))?;
         let pattern = Regex::new(r#"[^\."']+|"([^"]*)"|'([^']*)'"#)
@@ -432,18 +441,26 @@ impl Configuration for KubernetesKubelet {
                                 serde_json::to_string(&key_info.value).unwrap()
                             );
                         }
-
                         value_iter = value_iter.get_mut(k).unwrap();
                         let json_value = serde_json::to_string(&key_info.value).unwrap();
                         let config_value: Value = serde_yaml::from_str(&json_value)?;
                         // if value type is array need insert
+                       
                         if value_iter.is_sequence() {
-                            let value_array = value_iter
-                                .as_sequence_mut()
-                                .with_context(|| format!("Failed to convert yaml Value to sequence"))?;
-                            let config_value_array = config_value
-                                .as_sequence()
-                                .with_context(|| format!("Failed to convert yaml Value to sequence"))?;
+                            let value_array = match value_iter.as_sequence_mut(){
+                                Some(v) => v,
+                                None => {
+                                    warn!("Failed to convert yaml Value to sequence, skip this value");
+                                    break;
+                                }
+                            };
+                            let config_value_array = match config_value.as_sequence(){
+                                Some(v) => v,
+                                None => {
+                                    warn!("Failed to convert yaml Value to sequence, skip this value");
+                                    break;
+                                }
+                            };
                             value_array.extend_from_slice(config_value_array);
                             info!("Update configuration {}: {}", key, key_info.value.to_string());
                             break;
@@ -489,6 +506,158 @@ impl Configuration for KubernetesKubelet {
     }
 }
 
+impl Configuration for ContainerContainerd {
+    fn set_config(&self, config: &mut Sysconfig) -> Result<()> {
+        info!("Start setting container.containerd");
+        let mut config_path = &values::DEFAULT_CONTAINERD_CONFIG_PATH.to_string();
+        if !config.config_path.is_empty() {
+            config_path = &config.config_path;
+        }
+        debug!("container.containerd config_path: \"{}\"", config_path);
+
+        create_config_file(config_path).with_context(|| format!("Failed to find config path \"{}\"", config_path))?;
+        let file = std::fs::read_to_string(config_path)
+            .with_context(|| format!("Failed to open config file \"{}\"", config_path))?;
+        let mut value: Table =
+            toml::from_str(&file).with_context(|| format!("Failed to read from config file \"{}\"", config_path))?;
+        if value.is_empty() {
+            value = toml::map::Map::new();
+        }
+        let pattern = Regex::new(r#"[^\."']+|"([^"]*)"|'([^']*)'"#)
+            .with_context(|| format!("Failed to create regex used by split key"))?;
+
+        for (key, key_info) in config.contents.iter() {
+            debug!("Start configuration of key={}", key);
+            if key.is_empty() {
+                warn!("Failed to add \"null\" key, key: \"{}\"", key);
+                continue;
+            }
+            let key_list: Vec<String> = pattern.find_iter(&key).map(|m| m.as_str().to_string()).collect();
+            let mut value_iter = &mut value;
+            for (i, k_tmp) in key_list.clone().iter().enumerate() {
+                let k = &k_tmp.replace("\"", "");
+                debug!("    Current part is {}, part of key {}", k, key);
+                if let Some(_) = value_iter.get(k) {
+                    debug!("        Key {} is exist", k);
+                    if i == key_list.len() - 1 {
+                        if key_info.operation == "delete" {
+                            let file_value = value_iter.get(k).unwrap();
+                            info!("Delete configuration {}={}", key, serde_json::to_string(file_value).unwrap());
+                            value_iter.remove(k);
+                            break;
+                        }
+                        if !key_info.operation.is_empty() {
+                            warn!(
+                                "Unknown operation \"{}\", updating key \"{}\" with value \"{}\" by default",
+                                key_info.operation,
+                                key,
+                                serde_json::to_string(&key_info.value).unwrap()
+                            );
+                        }
+                        let value_last = value_iter.get_mut(k).unwrap();
+                        let config_value = match convert_json_to_toml(key_info.value.clone()){
+                            Ok(toml_config) => toml_config,
+                            Err(_) => break,
+                        };
+                        // if value type is array need insert
+                        if value_last.is_array() {
+                            let value_array = match value_last.as_array_mut(){
+                                Some(v) => v,
+                                None => {
+                                    warn!("Failed to convert toml Value to sequence, skip this value");
+                                    break;
+                                }
+                            };
+                            let config_value_array = match config_value.as_array(){
+                                Some(v) => v,
+                                None => {
+                                    warn!("Failed to convert toml Value to sequence, skip this value");
+                                    break;
+                                }
+                            };
+                            value_array.extend_from_slice(config_value_array);
+                            info!("Update configuration {}: {}", key, key_info.value.to_string());
+                            break;
+                        }
+                        *value_last = config_value.into();
+                        info!("Update configuration {}: {}", key, key_info.value.to_string());
+                        break;
+                    }
+                    // Has check value.get() is Some() on the condition of if, value.get(k).unwrap() is safe
+                    value_iter = match value_iter.get_mut(k).unwrap().as_table_mut(){
+                        Some(value_table) => value_table,
+                        None => {
+                            warn!("Failed to convert value to table, skip this value");
+                            break;
+                        },
+                    };
+                } else {
+                    debug!("        Key {} is not exist", k);
+                    if key_info.operation == "delete" {
+                        warn!("Failed to delete inexistent key: \"{}\"", key);
+                        break;
+                    }
+                    // create if not contains key
+                    let mut config_value = match convert_json_to_toml(key_info.value.clone()){
+                        Ok(toml_config) => toml_config,
+                        Err(_) => break,
+                    };
+                    let mut key_index = key_list.len()-1;
+                    while key_index > i{
+                        let key_trim = key_list[key_index].replace("\"", "");
+                        debug!("Start add key {}", key_trim);
+                        let mut value_tmp  = toml::Table::from(Map::new());
+                        value_tmp.insert(key_trim, config_value.into());
+                        config_value = toml::Value::Table(value_tmp);
+                        key_index = key_index-1;
+                    }
+                    debug!("Add key is {}, value is {:?}",key_list[i..].join("."), config_value);
+                    value_iter.insert(k.to_string(), config_value);
+                    break;
+                }
+            }
+        }
+        let toml_string = toml::to_string(&value).with_context(|| format!("Failed to convert value to string"))?;
+        std::fs::write(config_path, toml_string).with_context(|| format!("Failed to write file {}", config_path))?;
+        Ok(())
+    }
+}
+
+fn convert_json_to_toml(config: serde_json::Value) -> Result<toml::Value> {
+    match config {
+        serde_json::Value::Number(c) => {
+            if c.is_i64() || c.is_u64() {
+                // the type of value is number,value cannot be none, unwrap() is safe
+                return Ok(c.as_i64().unwrap().into());
+            }
+            if c.is_f64() {
+                // the type of value is number,value cannot be none, unwrap() is safe
+                return Ok(c.as_f64().unwrap().into());
+            }
+            warn!("Not support number type of value in configuration");
+            return Err(anyhow!("Not support number type of value in configuration"));
+        },
+        serde_json::Value::String(c) => return Ok(c.to_string().into()),
+        serde_json::Value::Bool(c) => return Ok(c.into()),
+        serde_json::Value::Array(c) => {
+            let mut res: Vec<toml::Value> = Vec::new();
+            for value in c.iter() {
+                let toml_value = match convert_json_to_toml(value.clone()) {
+                    Ok(v) => v,
+                    Err(_) => continue,
+                };
+                res.push(toml_value);
+            }
+            return Ok(toml::Value::Array(res));
+        },
+        serde_json::Value::Null => {
+            warn!("Failed to convert null value, skip this value");
+            return Err(anyhow!("Failed to convert null value"));
+        },
+        _ => bail!("Not support type of value in configuration, skip this value"),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::fs;
@@ -496,7 +665,7 @@ mod tests {
     use mockall::{mock, predicate::*};
     use serde_json::json;
     use tempfile::{NamedTempFile, TempDir};
-    use values::KUBERNETES_KUBELET;
+    use values::{CONTAINER_CONTAINERD, KUBERNETES_KUBELET};
 
     use super::*;
     use crate::sys_mgmt::{GRUB_CMDLINE_CURRENT, GRUB_CMDLINE_NEXT, KERNEL_SYSCTL, KERNEL_SYSCTL_PERSIST};
@@ -762,6 +931,7 @@ menuentry 'B' --class KubeOS --class gnu-linux --class gnu --class os --unrestri
     #[test]
     fn test_kubernetes_kubelet() {
         init();
+        let test_file="test.yaml";
         let config_kubelet_add = HashMap::from([
             (
                 "apiVersion".to_string(),
@@ -802,7 +972,7 @@ menuentry 'B' --class KubeOS --class gnu-linux --class gnu --class os --unrestri
         ]);
         let mut sysconfig_add = Sysconfig {
             model: KUBERNETES_KUBELET.to_string(),
-            config_path: "test.yaml".to_string(),
+            config_path: test_file.to_string(),
             contents: config_kubelet_add.clone(),
         };
         let k8s_kubelet = KubernetesKubelet {};
@@ -810,7 +980,7 @@ menuentry 'B' --class KubeOS --class gnu-linux --class gnu --class os --unrestri
         assert!(!res_add.is_err());
 
         // check value
-        let file = std::fs::File::open("test.yaml").expect("create yaml file failed");
+        let file = std::fs::File::open(test_file).expect("create yaml file failed");
         let mut value: serde_yaml::Value = serde_yaml::from_reader(file).unwrap();
         let pattern = Regex::new(r#"[^\."']+|"([^"]*)"|'([^']*)'"#)
             .with_context(|| format!("Failed to create regex used by split key"))
@@ -888,14 +1058,119 @@ menuentry 'B' --class KubeOS --class gnu-linux --class gnu --class os --unrestri
         ]);
         let mut config = Sysconfig {
             model: KUBERNETES_KUBELET.to_string(),
-            config_path: "test.yaml".to_string(),
+            config_path: test_file.to_string(),
             contents: config_kubelet,
         };
         let k8s_kubelet = KubernetesKubelet {};
         let res = k8s_kubelet.set_config(&mut config);
         assert!(!res.is_err());
 
-        let del_res = std::fs::remove_file("test.yaml");
+        let del_res = std::fs::remove_file(test_file);
+        assert!(!del_res.is_err());
+    }
+
+    #[test]
+    fn test_container_containerd() {
+        init();
+        let test_file = "test.toml";
+        let config_contained_add = HashMap::from([
+            (
+                "disabled_plugins".to_string(),
+                KeyInfo { value: serde_json::Value::from(json!([1,2,3])), operation: "".to_string() },
+            ),
+            (
+                "grpc.address".to_string(),
+                KeyInfo {
+                    value: serde_json::Value::from(json!("/run/containerd/containerd.sock")),
+                    operation: "".to_string(),
+                },
+            ),
+            ("grpc.uid".to_string(), KeyInfo { value: serde_json::Value::from(json!(0)), operation: "".to_string() }),
+            (
+                "grpc.client_tls_auto".to_string(),
+                KeyInfo { value: serde_json::Value::from(json!(true)), operation: "".to_string() },
+            ),
+            (
+                "plugins.\"io.containerd.grpc.v1.cri\".containerd.default_runtime_name".to_string(),
+                KeyInfo { value: serde_json::Value::from(json!("runc")), operation: "".to_string() },
+            ),
+            (
+                "plugins.\"io.containerd.grpc.v1.cri\".image.pause_image".to_string(),
+                KeyInfo { value: serde_json::Value::from(json!("k8s.gcr.io/pause:3.2")), operation: "".to_string() },
+            ),
+            (
+                "plugins.\"io.containerd.gc.v1.scheduler\".deletion_threshold".to_string(),
+                KeyInfo { value: serde_json::Value::from(json!(0)), operation: "".to_string() },
+            ),
+            (
+                "timeouts.\"io.containerd.timeout.bolt.open\"".to_string(),
+                KeyInfo { value: serde_json::Value::from(json!("0s")), operation: "".to_string() },
+            ),
+        ]);
+        let mut sysconfig_add = Sysconfig {
+            model: CONTAINER_CONTAINERD.to_string(),
+            config_path: test_file.to_string(),
+            contents: config_contained_add.clone(),
+        };
+        let con_containerd = ContainerContainerd {};
+        let res_add = con_containerd.set_config(&mut sysconfig_add);
+        assert!(!res_add.is_err());
+
+        let config_contained= HashMap::from([
+            // normal update, value type is number, bool, list
+            (
+                "disabled_plugins".to_string(),
+                KeyInfo { value: serde_json::Value::from(json!([4,5,6])), operation: "".to_string() },
+            ),
+            ("grpc.uid".to_string(), KeyInfo { value: serde_json::Value::from(json!(1)), operation: "update".to_string() }),
+            (
+                "grpc.client_tls_auto".to_string(),
+                KeyInfo { value: serde_json::Value::from(json!(false)), operation: "".to_string() },
+            ),
+            (
+                "plugins.\"io.containerd.grpc.v1.cri\".image.pause_image".to_string(),
+                KeyInfo { value: serde_json::Value::from(json!("k8s.gcr.io/pause:3.2")), operation: "".to_string() },
+            ),
+
+            (
+                "plugins.\"io.containerd.grpc.v1.cri\".containerd.default_runtime_name".to_string(),
+                KeyInfo { value: serde_json::Value::from(json!("runc")), operation: "delete".to_string() },
+            ),
+
+            // normal add
+            (
+                "plugins.\"io.containerd.snapshotter.v1.native\".root_path".to_string(),
+                KeyInfo { value: serde_json::Value::from(json!(0)), operation: "".to_string() },
+            ),
+            (
+                "timeouts.\"io.containerd.timeout.shim.cleanup\"".to_string(),
+                KeyInfo { value: serde_json::Value::from(json!("0s")), operation: "".to_string() },
+            ),
+            // abnormal
+            // key is empty
+            (
+                "".to_string(),
+                KeyInfo { value: serde_json::Value::from(json!("0s")), operation: "".to_string() },
+            ),
+            // delete key which does not exist
+            (
+                "timeouts.\"io.containerd.timeout.shim.test\"".to_string(),
+                KeyInfo { value: serde_json::Value::from(json!("0s")), operation: "delete".to_string() },
+            ),
+            (
+                "timeouts.\"io.containerd.timeout.shim.test.test\"".to_string(),
+                KeyInfo { value: serde_json::Value::from(json!(null)), operation: "".to_string() },
+            ),
+        ]);
+        let mut sysconfig = Sysconfig {
+            model: CONTAINER_CONTAINERD.to_string(),
+            config_path: test_file.to_string(),
+            contents: config_contained.clone(),
+        };
+        let res_add = con_containerd.set_config(&mut sysconfig);
+        assert!(!res_add.is_err());
+
+        let del_res = std::fs::remove_file(test_file);
         assert!(!del_res.is_err());
     }
 }
