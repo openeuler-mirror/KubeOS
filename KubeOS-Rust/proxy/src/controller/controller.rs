@@ -30,8 +30,8 @@ use super::{
     crd::{Configs, Content, OSInstance, OS},
     utils::{check_version, get_config_version, ConfigOperation, ConfigType},
     values::{
-        LABEL_UPGRADING, NODE_STATUS_CONFIG, NODE_STATUS_IDLE, OPERATION_TYPE_ROLLBACK, OPERATION_TYPE_UPGRADE, 
-        OSINSTANCE_NAMESPACE, REQUEUE_ERROR, REQUEUE_NORMAL,LABEL_CONFIGURING, NO_REQUEUE,
+        LABEL_CONFIGURING, LABEL_UPGRADING, NODE_STATUS_CONFIG, NODE_STATUS_IDLE, NO_REQUEUE, OPERATION_TYPE_ROLLBACK,
+        OPERATION_TYPE_UPGRADE, OSINSTANCE_NAMESPACE, REQUEUE_ERROR, REQUEUE_NORMAL,
     },
 };
 
@@ -50,15 +50,18 @@ pub async fn reconcile<T: ApplyApi, U: AgentCall>(
     let controller_res = proxy_controller.get_resources(&node_name).await?;
     let node = controller_res.node;
     let mut osinstance = controller_res.osinstance;
-    if let Some(namespacedname) = osinstance.spec.namespacedname.as_ref(){
-        debug!("osinstance correspending os name is {}, namespace is {}",namespacedname.name,namespacedname.namespace);
-        if !(namespacedname.name == os_cr.name() && namespacedname.namespace == namespace){
-            debug!("current os cr name:{}, namespace:{} is not belong to this node",os_cr.name(),namespace);
-            return Ok(NO_REQUEUE)
+    if let Some(namespacedname) = osinstance.spec.namespacedname.as_ref() {
+        debug!(
+            "osinstance correspending os name is {}, namespace is {}",
+            namespacedname.name, namespacedname.namespace
+        );
+        if !(namespacedname.name == os_cr.name() && namespacedname.namespace == namespace) {
+            debug!("current os cr name:{}, namespace:{} is not belong to this node", os_cr.name(), namespace);
+            return Ok(NO_REQUEUE);
         }
-    }else {
+    } else {
         debug!("osinstance correspending os name is None, not in upgrading or configuring");
-        return Ok(REQUEUE_NORMAL)
+        return Ok(REQUEUE_NORMAL);
     }
 
     let node_os_image = &node
@@ -110,10 +113,15 @@ pub async fn reconcile<T: ApplyApi, U: AgentCall>(
                     .await?;
                 return Ok(REQUEUE_NORMAL);
             }
-        proxy_controller.set_config(&mut osinstance, ConfigType::SysConfig).await?;
-        proxy_controller
-            .refresh_node(node, osinstance, &get_config_version(os_cr.spec.sysconfigs.as_ref()), ConfigType::SysConfig)
-            .await?;
+            proxy_controller.set_config(&mut osinstance, ConfigType::SysConfig).await?;
+            proxy_controller
+                .refresh_node(
+                    node,
+                    osinstance,
+                    &get_config_version(os_cr.spec.sysconfigs.as_ref()),
+                    ConfigType::SysConfig,
+                )
+                .await?;
         }
     } else {
         if os_cr.spec.opstype == NODE_STATUS_CONFIG {
@@ -186,8 +194,13 @@ impl<T: ApplyApi, U: AgentCall> ProxyController<T, U> {
                 Ok(())
             },
             Err(kube::Error::Api(ErrorResponse { reason, .. })) if &reason == "NotFound" => {
-                info!("Create OSInstance {}", node_name);
-                self.controller_client.create_osinstance(node_name, OSINSTANCE_NAMESPACE).await?;
+                let node_api: Api<Node> = Api::all(self.k8s_client.clone());
+                if node_api.get(node_name).await.is_ok() {
+                    info!("Create OSInstance {}", node_name);
+                    self.controller_client.create_osinstance(node_name, OSINSTANCE_NAMESPACE).await?;
+                } else {
+                    info!("Skip creating OSInstance because of node {} not found", node_name);
+                }
                 Ok(())
             },
             Err(err) => Err(Error::KubeClient { source: err }),
@@ -216,7 +229,7 @@ impl<T: ApplyApi, U: AgentCall> ProxyController<T, U> {
             debug!("delete label {}", LABEL_UPGRADING);
             labels.remove(LABEL_UPGRADING);
             node = node_api.replace(&node.name(), &PostParams::default(), &node).await?;
-        }else if labels.contains_key(LABEL_CONFIGURING){
+        } else if labels.contains_key(LABEL_CONFIGURING) {
             debug!("delete label {}", LABEL_CONFIGURING);
             labels.remove(LABEL_CONFIGURING);
             node = node_api.replace(&node.name(), &PostParams::default(), &node).await?;

@@ -32,11 +32,10 @@ pub struct OSSpec {
     pub clientkey: Option<String>,
     pub sysconfigs: Option<Configs>,
     pub upgradeconfigs: Option<Configs>,
-    pub nodeselector:Option<String>,
+    pub nodeselector: Option<String>,
     pub timewindow: Option<TimeWindow>,
-	pub timeinterval: Option<i64>,
-	pub executionmode:Option<String>,
-
+    pub timeinterval: Option<i64>,
+    pub executionmode: Option<String>,
 }
 
 #[derive(CustomResource, Debug, Clone, Deserialize, Serialize, JsonSchema)]
@@ -83,12 +82,12 @@ pub struct Content {
 }
 
 #[derive(Clone, Deserialize, Serialize, Debug, Eq, PartialEq, JsonSchema)]
-pub struct NamespacedName{
+pub struct NamespacedName {
     pub namespace: String,
     pub name: String,
 }
 #[derive(Clone, Deserialize, Serialize, Debug, Eq, PartialEq, JsonSchema)]
-pub struct TimeWindow{
-    pub starttime:String,
-    pub endtime:String,
+pub struct TimeWindow {
+    pub starttime: String,
+    pub endtime: String,
 }
