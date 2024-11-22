@@ -1,9 +1,9 @@
 [package]
 description = "KubeOS os-proxy"
-edition = "2021"
-license = "MulanPSL-2.0"
+edition.workspace = true
+license.workspace = true
 name = "proxy"
-version = "1.0.6"
+version.workspace = true
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [lib]
@@ -15,35 +15,27 @@ name = "proxy"
 path = "src/main.rs"
 
 [dependencies]
-anyhow = "1.0.44"
-async-trait = "0.1"
-cli = { version = "1.0.6", path = "../cli" }
-env_logger = "0.9.0"
-futures = "0.3.17"
-h2 = "=0.3.16"
-k8s-openapi = { version = "0.13.1", features = ["v1_22"] }
-kube = { version = "0.66.0", features = ["derive", "runtime"] }
-log = "=0.4.15"
-manager = { version = "1.0.6", path = "../manager" }
-regex = "=1.7.3"
-reqwest = { version = "=0.12.2", default-features = false, features = [
-    "json",
-] }
-schemars = "=0.8.10"
-serde = { version = "1.0.130", features = ["derive"] }
-serde_json = "1.0.68"
-socket2 = "=0.4.9"
-thiserror = "1.0.29"
-thread_local = "=1.1.4"
-tokio = { version = "=1.28.0", default-features = false, features = [
-    "macros",
-    "rt-multi-thread",
-] }
-tokio-retry = "0.3"
+anyhow = { workspace = true }
+async-trait = { workspace = true }
+cli = { workspace = true }
+env_logger = { workspace = true }
+futures = { workspace = true }
+k8s-openapi = { workspace = true }
+kube = { workspace = true }
+log = { workspace = true }
+manager = { workspace = true }
+regex = { workspace = true }
+reqwest = { workspace = true, features = ["json"] }
+schemars = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+tokio-retry = { workspace = true }
 
 [dev-dependencies]
-assert-json-diff = "2.0.2"
-http = "0.2.9"
-hyper = "0.14.25"
-tower-test = "0.4.0"
-mockall = { version = "=0.11.3" }
+assert-json-diff = { workspace = true }
+http = { workspace = true }
+hyper = { workspace = true }
+mockall = { workspace = true }
+tower-test = { workspace = true }

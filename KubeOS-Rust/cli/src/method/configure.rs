@@ -10,7 +10,7 @@
  * See the Mulan PSL v2 for more details.
  */
 
-use kubeos_manager::api;
+use manager::api;
 use serde_json::value::{to_raw_value, RawValue};
 
 use crate::method::callable_method::RpcMethod;
@@ -41,7 +41,7 @@ impl RpcMethod for ConfigureMethod {
 }
 #[cfg(test)]
 mod tests {
-    use kubeos_manager::api::{ConfigureRequest, Sysconfig};
+    use manager::api::{ConfigureRequest, Sysconfig};
 
     use super::*;
 

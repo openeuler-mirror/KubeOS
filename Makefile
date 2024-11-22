@@ -68,16 +68,16 @@ hostshell:
 	strip bin/hostshell
 
 rust-kubeos:
-	cd KubeOS-Rust && ${RUSTFLAGS} cargo build --profile release --target-dir ../bin/rust
+	${RUSTFLAGS} cargo build --profile release --target-dir ./bin/rust
 
 rust-proxy:
-	cd KubeOS-Rust && ${RUSTFLAGS} cargo build --profile release --target-dir ../bin/rust --package proxy
+	${RUSTFLAGS} cargo build --profile release --target-dir ./bin/rust --package proxy
 
 rust-agent:
-	cd KubeOS-Rust && ${RUSTFLAGS} cargo build --profile release --target-dir ../bin/rust --package os-agent
+	${RUSTFLAGS} cargo build --profile release --target-dir ./bin/rust --package os-agent
 
 rust-kbimg:
-	cd KubeOS-Rust && ${RUSTFLAGS} cargo build --profile release --target-dir ../bin/rust --package kbimg
+	${RUSTFLAGS} cargo build --profile release --target-dir ./bin/rust --package kbimg
 
 # clean binary
 clean:
