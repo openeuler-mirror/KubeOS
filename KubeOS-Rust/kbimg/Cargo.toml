@@ -1,5 +1,5 @@
 [package]
-description = "KubeOS kbimg"
+description = "CLI tool for generating various types of image for KubeOS"
 edition.workspace = true
 license.workspace = true
 name = "kbimg"
@@ -16,8 +16,9 @@ clap = { workspace = true, features = [
     "usage",
 ] }
 env_logger = { workspace = true }
+fs2 = { workspace = true }
 log = { workspace = true }
 regex = { workspace = true }
 serde = { workspace = true }
-sysinfo = { workspace = true }
+strfmt = { workspace = true }
 toml = { workspace = true }

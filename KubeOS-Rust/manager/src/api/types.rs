@@ -116,7 +116,7 @@ mod tests {
         let mut mock_executor1 = MockCommandExec::new();
         mock_executor1.expect_run_command().returning(|_, _| Ok(()));
         mock_executor1.expect_run_command_with_output().returning(|_, _| Ok(String::new()));
-        let c_handler = CtrImageHandler::new(PreparePath::default(), mock_executor1);
+        let c_handler = CtrImageHandler::new(PreparePath::default(), mock_executor1, false);
         let image_type = ImageType::Containerd(c_handler);
         let result = image_type.download_image(&req);
         assert!(result.is_err());
@@ -124,7 +124,7 @@ mod tests {
         let mut mock_executor2 = MockCommandExec::new();
         mock_executor2.expect_run_command().returning(|_, _| Ok(()));
         mock_executor2.expect_run_command_with_output().returning(|_, _| Ok(String::new()));
-        let docker_handler = DockerImageHandler::new(PreparePath::default(), "test".into(), mock_executor2);
+        let docker_handler = DockerImageHandler::new(PreparePath::default(), "test".into(), mock_executor2, false);
         let image_type = ImageType::Docker(docker_handler);
         let result = image_type.download_image(&req);
         assert!(result.is_err());
@@ -132,7 +132,7 @@ mod tests {
         let mut mock_executor3 = MockCommandExec::new();
         mock_executor3.expect_run_command().returning(|_, _| Ok(()));
         mock_executor3.expect_run_command_with_output().returning(|_, _| Ok(String::new()));
-        let disk_handler = DiskImageHandler::new(PreparePath::default(), mock_executor3, "test".into());
+        let disk_handler = DiskImageHandler::new(PreparePath::default(), mock_executor3, "test".into(), false);
         let image_type = ImageType::Disk(disk_handler);
         let result = image_type.download_image(&req);
         assert!(result.is_err());

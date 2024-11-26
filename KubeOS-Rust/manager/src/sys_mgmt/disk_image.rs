@@ -1,6 +1,6 @@
 use std::{
     fs,
-    os::unix::fs::PermissionsExt,
+    os::unix::fs::{DirBuilderExt, PermissionsExt},
     path::{Path, PathBuf},
 };
 
@@ -21,57 +21,66 @@ pub struct DiskImageHandler<T: CommandExecutor> {
     pub paths: PreparePath,
     pub executor: T,
     pub certs_path: String,
+    pub dmv: bool,
 }
 
 impl<T: CommandExecutor> ImageHandler<T> for DiskImageHandler<T> {
     fn download_image(&self, req: &UpgradeRequest) -> Result<UpgradeImageManager<T>> {
+        if self.dmv {
+            bail!("DM-Verity doesn't support disk image upgrade");
+        }
+        clean_env(&self.paths.update_path, &self.paths.mount_path, &self.paths.image_path)?;
+        fs::DirBuilder::new().recursive(true).mode(IMAGE_PERMISSION).create(&self.paths.mount_path)?;
         self.download(req)?;
-        self.checksum_match(self.paths.image_path.to_str().unwrap_or_default(), &req.check_sum)?;
+        self.checksum_match(self.paths.tar_path.to_str().unwrap_or_default(), &req.check_sum)?;
         let (_, next_partition_info) = get_partition_info(&self.executor)?;
-        let img_manager = UpgradeImageManager::new(self.paths.clone(), next_partition_info, self.executor.clone());
-        Ok(img_manager)
+        let img_manager =
+            UpgradeImageManager::new(self.paths.clone(), next_partition_info, self.executor.clone(), false);
+        img_manager.create_os_image(IMAGE_PERMISSION)
     }
 }
 
 impl Default for DiskImageHandler<RealCommandExecutor> {
     fn default() -> Self {
-        Self { paths: PreparePath::default(), executor: RealCommandExecutor {}, certs_path: CERTS_PATH.to_string() }
+        Self {
+            paths: PreparePath::default(),
+            executor: RealCommandExecutor {},
+            certs_path: CERTS_PATH.to_string(),
+            dmv: false,
+        }
     }
 }
 
 impl<T: CommandExecutor> DiskImageHandler<T> {
     #[cfg(test)]
-    pub fn new(paths: PreparePath, executor: T, certs_path: String) -> Self {
-        Self { paths, executor, certs_path }
+    pub fn new(paths: PreparePath, executor: T, certs_path: String, dmv: bool) -> Self {
+        Self { paths, executor, certs_path, dmv }
     }
 
     fn download(&self, req: &UpgradeRequest) -> Result<()> {
         let mut resp = self.send_download_request(req)?;
         if resp.status() != reqwest::StatusCode::OK {
-            bail!("Failed to download image from {}, status: {}", req.image_url, resp.status());
+            bail!("Failed to download upgrade tar from {}, status: {}", req.image_url, resp.status());
         }
         debug!("Received response body size: {:?}", resp.content_length().unwrap_or_default());
         let need_bytes = resp.content_length().unwrap_or_default() + BUFFER;
 
         check_disk_size(
             i64::try_from(need_bytes).with_context(|| "Failed to transform content length from u64 to i64")?,
-            self.paths.image_path.parent().unwrap_or_else(|| Path::new(PERSIST_DIR)),
+            self.paths.tar_path.parent().unwrap_or_else(|| Path::new(PERSIST_DIR)),
         )?;
 
-        let mut out = fs::File::create(&self.paths.image_path)?;
-        trace!("Start to save upgrade image to path {}", &self.paths.image_path.display());
+        let dst = &self.paths.tar_path;
+        let mut out = fs::File::create(dst)?;
+        trace!("Start to save upgrade tar to path {}", dst.display());
         out.set_permissions(fs::Permissions::from_mode(IMAGE_PERMISSION))?;
         let bytes = resp.copy_to(&mut out)?;
-        info!(
-            "Download image successfully, upgrade image path: {}, write bytes: {}",
-            &self.paths.image_path.display(),
-            bytes
-        );
+        info!("Download upgrade tar successfully, upgrade tar path: {}, write bytes: {}", dst.display(), bytes);
         Ok(())
     }
 
     fn checksum_match(&self, file_path: &str, check_sum: &str) -> Result<()> {
-        info!("Start checking image checksum");
+        info!("Start checking file checksum");
         let check_sum = check_sum.to_ascii_lowercase();
         let file = fs::read(file_path)?;
         let mut hasher = Sha256::new();
@@ -93,7 +102,7 @@ impl<T: CommandExecutor> DiskImageHandler<T> {
         if !req.image_url.starts_with("https://") {
             // http request
             if !req.flag_safe {
-                bail!("The upgrade image url is not safe");
+                bail!("The upgrade tar url is not safe");
             }
             info!("Discover http request to: {}", &req.image_url);
             client = Client::new();
@@ -181,6 +190,23 @@ mod tests {
     }
 
     #[test]
+    fn test_dmv_mode() {
+        init();
+        let handler = DiskImageHandler::new(PreparePath::default(), RealCommandExecutor {}, String::new(), true);
+        let req = UpgradeRequest {
+            version: "v2".into(),
+            check_sum: "1327e27d600538354d93bd68cce86566dd089e240c126dc3019cafabdc65aa02".into(),
+            image_type: "disk".into(),
+            container_image: "".into(),
+            image_url: "https://localhost:8082/aaa.txt".to_string(),
+            flag_safe: true,
+            mtls: true,
+            certs: CertsInfo { ca_cert: "".to_string(), client_cert: "".to_string(), client_key: "".to_string() },
+        };
+        assert!(handler.download_image(&req).is_err());
+    }
+
+    #[test]
     fn test_get_certs_path() {
         init();
         let handler = DiskImageHandler::<RealCommandExecutor>::default();
@@ -193,8 +219,12 @@ mod tests {
         init();
         // generate tmp file
         let tmp_file = NamedTempFile::new().unwrap();
-        let handler =
-            DiskImageHandler::<RealCommandExecutor>::new(PreparePath::default(), RealCommandExecutor {}, String::new());
+        let handler = DiskImageHandler::<RealCommandExecutor>::new(
+            PreparePath::default(),
+            RealCommandExecutor {},
+            String::new(),
+            false,
+        );
         let res = handler.cert_exist(tmp_file.path().to_str().unwrap());
         assert!(res.is_ok());
 
@@ -365,17 +395,14 @@ mod tests {
     }
 
     #[test]
-    fn test_download_image() {
+    fn test_download() {
         init();
         let tmp_file = NamedTempFile::new().unwrap();
 
         let mock_executor = MockCommandExec::new();
-        let mut handler = DiskImageHandler::new(PreparePath::default(), mock_executor, String::new());
-        handler.executor.expect_clone().times(1).returning(|| MockCommandExec::new());
-        let command_output1 = "sda\nsda1 /boot/efi vfat 94M\nsda2 / ext4 12.1G\nsda3  ext4 12.1G\nsda4 /persist ext4 422.3G\nsr0  iso9660 0.9G\n";
-        handler.executor.expect_run_command_with_output().times(1).returning(|_, _| Ok(command_output1.to_string()));
-        handler.paths.image_path = tmp_file.path().to_path_buf();
-        assert_eq!(true, handler.paths.image_path.exists());
+        let mut handler = DiskImageHandler::new(PreparePath::default(), mock_executor, String::new(), false);
+        handler.paths.update_path = tmp_file.path().parent().unwrap().to_path_buf();
+        handler.paths.tar_path = tmp_file.path().to_path_buf();
 
         let url = mockito::server_url();
         let upgrade_request = UpgradeRequest {
@@ -392,15 +419,15 @@ mod tests {
             .with_status(200)
             .with_body("This is a test txt file for KubeOS test.\n")
             .create();
-        handler.download_image(&upgrade_request).unwrap();
-        assert_eq!(true, handler.paths.image_path.exists());
+        handler.download(&upgrade_request).unwrap();
+        assert_eq!(true, handler.paths.tar_path.exists());
         assert_eq!(
-            fs::read(handler.paths.image_path.to_str().unwrap()).unwrap(),
+            fs::read(handler.paths.tar_path.to_str().unwrap()).unwrap(),
             "This is a test txt file for KubeOS test.\n".as_bytes()
         );
 
         let _m = mockito::mock("GET", "/test.txt").with_status(404).with_body("Not found").create();
-        let res = handler.download_image(&upgrade_request);
+        let res = handler.download(&upgrade_request);
         assert!(res.is_err())
     }
 }

@@ -30,11 +30,12 @@ pub struct UpgradeImageManager<T: CommandExecutor> {
     pub paths: PreparePath,
     pub next_partition: PartitionInfo,
     pub executor: T,
+    pub dmv: bool,
 }
 
 impl<T: CommandExecutor> UpgradeImageManager<T> {
-    pub fn new(paths: PreparePath, next_partition: PartitionInfo, executor: T) -> Self {
-        Self { paths, next_partition, executor }
+    pub fn new(paths: PreparePath, next_partition: PartitionInfo, executor: T, dmv: bool) -> Self {
+        Self { paths, next_partition, executor, dmv }
     }
 
     fn image_path_str(&self) -> Result<&str> {
@@ -53,11 +54,12 @@ impl<T: CommandExecutor> UpgradeImageManager<T> {
         let image_str = self.image_path_str()?;
 
         // convert bytes to the count of 2MB block
-        let count = self.next_partition.size / ( 2 << 20 );
+        let count = self.next_partition.size / (2 << 20);
 
         debug!("Create image {}, count {}", image_str, count);
 
-        self.executor.run_command("dd", &["if=/dev/zero", &format!("of={}", image_str), "bs=2M", &format!("count={}", count)])?;
+        self.executor
+            .run_command("dd", &["if=/dev/zero", &format!("of={}", image_str), "bs=2M", &format!("count={}", count)])?;
         fs::set_permissions(&self.paths.image_path, Permissions::from_mode(permission))?;
         Ok(())
     }
@@ -99,6 +101,12 @@ impl<T: CommandExecutor> UpgradeImageManager<T> {
     }
 
     pub fn install(&self) -> Result<()> {
+        if self.dmv {
+            info!("Dm-verity mode, installing boot, root and hash images");
+            self.executor.run_command("/usr/bin/kubeos-dmv", &["upgrade"])?;
+            info!("Next boot, root and hash partitions are overwritten and unable to rollback to the previous version anymore if the eviction of node fails");
+            return Ok(());
+        }
         let image_str = self.image_path_str()?;
         let device = self.next_partition.device.as_str();
         self.executor
@@ -197,8 +205,14 @@ mod tests {
                 tar_path: "/tmp/update/image.tar".into(),
                 rootfs_file: "image.tar".into(),
             },
-            PartitionInfo { device: "/dev/sda3".into(), fs_type: "ext4".into(), menuentry: "B".into(), size:13000245248},
+            PartitionInfo {
+                device: "/dev/sda3".into(),
+                fs_type: "ext4".into(),
+                menuentry: "B".into(),
+                size: 13000245248,
+            },
             mock,
+            false,
         );
 
         let img_manager = img_manager.create_os_image(0o755).unwrap();

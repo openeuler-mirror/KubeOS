@@ -10,8 +10,8 @@
  * See the Mulan PSL v2 for more details.
  */
 
-use anyhow::{bail, Result};
-use log::{debug, trace};
+use anyhow::{bail, Context, Result};
+use log::trace;
 
 use super::executor::CommandExecutor;
 
@@ -25,37 +25,41 @@ pub struct PartitionInfo {
 
 /// get_partition_info returns the current partition info and the next partition info.
 pub fn get_partition_info<T: CommandExecutor>(executor: &T) -> Result<(PartitionInfo, PartitionInfo), anyhow::Error> {
-    let lsblk = executor.run_command_with_output("lsblk", &["-blno", "NAME,MOUNTPOINT,FSTYPE,SIZE"])?;
-    // After split whitespace, the root directory line should have 3 elements, which are "sda2 / ext4".
+    let lsblk = executor.run_command_with_output("lsblk", &["-blno", "NAME,MOUNTPOINT,FSTYPE,SIZE,LABEL"])?;
     let mut cur_partition = PartitionInfo::default();
     let mut next_partition = PartitionInfo::default();
-    let splitted_len = 4;
+    let mut found_boot = 0;
     trace!("get_partition_info lsblk command output:\n{}", lsblk);
     for line in lsblk.lines() {
         let res: Vec<&str> = line.split_whitespace().collect();
-        if res.len() == splitted_len && res[1] == "/" {
-            debug!("root directory line: device={}, fs_type={}", res[0], res[2]);
-            cur_partition.device = format!("/dev/{}", res[0]).to_string();
-            cur_partition.fs_type = res[2].to_string();
-            next_partition.fs_type = res[2].to_string();
-            // convert &str to i64. if the conversion fails, use 0.
-            cur_partition.size = res[3].parse().unwrap_or(0);
-            // root partition is the same size.
-            next_partition.size = cur_partition.size;
-            if res[0].contains('2') {
-                // root directory is mounted on sda2, so sda3 is the next partition
-                cur_partition.menuentry = String::from("A");
-                next_partition.menuentry = String::from("B");
-                next_partition.device = format!("/dev/{}", res[0].replace('2', "3")).to_string();
-            } else if res[0].contains('3') {
-                // root directory is mounted on sda3, so sda2 is the next partition
-                cur_partition.menuentry = String::from("B");
-                next_partition.menuentry = String::from("A");
-                next_partition.device = format!("/dev/{}", res[0].replace('3', "2")).to_string();
+        if res.len() == 5 && res[4] == "BOOT" {
+            trace!("Found boot partition:\n{:?}", res);
+            found_boot = 2;
+            continue;
+        }
+        if found_boot > 0 {
+            trace!("Handling two root partitions:\n{:?}", res);
+            if res[1] == "/" {
+                // current partition
+                cur_partition.device = format!("/dev/{}", res[0]).to_string();
+                cur_partition.fs_type = res[2].to_string();
+                cur_partition.size = res[3]
+                    .parse()
+                    .with_context(|| format!("Failed to parse current partition size to i64: \"{}\"", res[3]))?;
+                cur_partition.menuentry = if res[0].contains("2") { String::from("A") } else { String::from("B") };
+            } else {
+                // next partition
+                next_partition.device = format!("/dev/{}", res[0]).to_string();
+                next_partition.fs_type = res[1].to_string();
+                next_partition.size = res[2]
+                    .parse()
+                    .with_context(|| format!("Failed to parse next partition size to i64: \"{}\"", res[2]))?;
+                next_partition.menuentry = if res[0].contains("2") { String::from("A") } else { String::from("B") };
             }
+            found_boot -= 1;
         }
     }
-    if cur_partition.menuentry.is_empty() {
+    if cur_partition.menuentry.is_empty() || next_partition.menuentry.is_empty() {
         bail!("Failed to get partition info, lsblk output: {}", lsblk);
     }
     Ok((cur_partition, next_partition))
@@ -90,22 +94,52 @@ mod tests {
     #[test]
     fn test_get_partition_info() {
         init();
-        let command_output1 = "sda\nsda1 /boot/efi vfat 98566144\nsda2 / ext4 13000245248\nsda3  ext4 13000245248\nsda4 /persist ext4 453458788352\nsr0  iso9660 964689261\n";
+        let command_output1 = r#"vda                   23622320128
+vda1 /boot/efi vfat      61865984 BOOT
+vda2 /         ext4    3145728000 ROOT-A
+vda3           ext4    2621440000 ROOT-B
+vda4 /persist  ext4   17791188992 PERSIST
+"#;
         let mut mock = MockCommandExec::new();
         mock.expect_run_command_with_output().times(1).returning(|_, _| Ok(command_output1.to_string()));
         let res = get_partition_info(&mock).unwrap();
         let expect_res = (
-            PartitionInfo { device: "/dev/sda2".to_string(), menuentry: "A".to_string(), fs_type: "ext4".to_string(), size: 13000245248},
-            PartitionInfo { device: "/dev/sda3".to_string(), menuentry: "B".to_string(), fs_type: "ext4".to_string(), size: 13000245248},
+            PartitionInfo {
+                device: "/dev/vda2".to_string(),
+                menuentry: "A".to_string(),
+                fs_type: "ext4".to_string(),
+                size: 3145728000,
+            },
+            PartitionInfo {
+                device: "/dev/vda3".to_string(),
+                menuentry: "B".to_string(),
+                fs_type: "ext4".to_string(),
+                size: 2621440000,
+            },
         );
         assert_eq!(res, expect_res);
 
-        let command_output2 = "sda\nsda1 /boot/efi vfat 98566144\nsda2   ext4 13000245248\nsda3 / ext4 13000245248\nsda4 /persist ext4 453458788352\nsr0  iso9660 964689261\n";
+        let command_output2 = r#"vda                   23622320128
+vda1 /boot/efi vfat      61865984 BOOT
+vda2           ext4    3145728000 ROOT-A
+vda3 /         ext4    2621440000 ROOT-B
+vda4 /persist  ext4   17791188992 PERSIST
+"#;
         mock.expect_run_command_with_output().times(1).returning(|_, _| Ok(command_output2.to_string()));
         let res = get_partition_info(&mock).unwrap();
         let expect_res = (
-            PartitionInfo { device: "/dev/sda3".to_string(), menuentry: "B".to_string(), fs_type: "ext4".to_string(), size: 13000245248},
-            PartitionInfo { device: "/dev/sda2".to_string(), menuentry: "A".to_string(), fs_type: "ext4".to_string(), size: 13000245248},
+            PartitionInfo {
+                device: "/dev/vda3".to_string(),
+                menuentry: "B".to_string(),
+                fs_type: "ext4".to_string(),
+                size: 2621440000,
+            },
+            PartitionInfo {
+                device: "/dev/vda2".to_string(),
+                menuentry: "A".to_string(),
+                fs_type: "ext4".to_string(),
+                size: 3145728000,
+            },
         );
         assert_eq!(res, expect_res);
 

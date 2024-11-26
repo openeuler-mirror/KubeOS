@@ -27,6 +27,10 @@ pub const MOUNT_DIR: &str = "kubeos-update";
 pub const OS_IMAGE_NAME: &str = "update.img";
 pub const CERTS_PATH: &str = "/etc/KubeOS/certs/";
 
+pub const DMV_BOOT_IMG: &str = "update-boot.img";
+pub const DMV_ROOT_IMG: &str = "update-root.img";
+pub const DMV_HASH_IMG: &str = "update-hash.img";
+
 pub const DEFAULT_KERNEL_CONFIG_PERM: u32 = 0o644;
 pub const DEFAULT_GRUB_CFG_PERM: u32 = 0o751;
 pub const IMAGE_PERMISSION: u32 = 0o600;

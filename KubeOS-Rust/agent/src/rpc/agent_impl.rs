@@ -17,7 +17,7 @@ use log::{debug, info};
 use manager::{
     api::{AgentStatus, ConfigureRequest, ImageType, Response, UpgradeRequest},
     sys_mgmt::{CtrImageHandler, DiskImageHandler, DockerImageHandler, CONFIG_TEMPLATE, DEFAULT_GRUBENV_PATH},
-    utils::{get_partition_info, switch_boot_menuentry, RealCommandExecutor},
+    utils::{get_partition_info, is_dmv_mode, switch_boot_menuentry, CommandExecutor, RealCommandExecutor},
 };
 use nix::{sys::reboot::RebootMode, unistd::sync};
 
@@ -64,10 +64,12 @@ impl AgentImpl {
         debug!("Received an 'prepare upgrade' request: {:?}", req);
         info!("Start preparing for upgrading to version: {}", req.version);
 
+        let dmv_mode = is_dmv_mode(&RealCommandExecutor {});
+        info!("dm-verity mode: {}", dmv_mode);
         let handler: Box<ImageType<RealCommandExecutor>> = match req.image_type.as_str() {
-            "containerd" => Box::new(ImageType::Containerd(CtrImageHandler::default())),
-            "docker" => Box::new(ImageType::Docker(DockerImageHandler::default())),
-            "disk" => Box::new(ImageType::Disk(DiskImageHandler::default())),
+            "containerd" => Box::new(ImageType::Containerd(CtrImageHandler { dmv: dmv_mode, ..Default::default() })),
+            "docker" => Box::new(ImageType::Docker(DockerImageHandler { dmv: dmv_mode, ..Default::default() })),
+            "disk" => Box::new(ImageType::Disk(DiskImageHandler { dmv: dmv_mode, ..Default::default() })),
             _ => bail!("Invalid image type \"{}\"", req.image_type),
         };
 
@@ -85,6 +87,14 @@ impl AgentImpl {
         }
         info!("Start to upgrade");
         let command_executor = RealCommandExecutor {};
+        let dmv_mode = is_dmv_mode(&command_executor);
+        info!("dm-verity mode: {}", dmv_mode);
+        if dmv_mode {
+            command_executor.run_command("/usr/bin/kubeos-dmv", &["switch"])?;
+            info!("Switch to next boot partition and reboot");
+            self.reboot()?;
+            return Ok(Response { status: AgentStatus::Upgraded });
+        }
         let (_, next_partition_info) = get_partition_info(&command_executor)?;
 
         // based on boot mode use different command to switch boot partition
@@ -123,6 +133,14 @@ impl AgentImpl {
         }
         info!("Start to rollback");
         let command_executor = RealCommandExecutor {};
+        let dmv_mode = is_dmv_mode(&command_executor);
+        info!("dm-verity mode: {}", dmv_mode);
+        if dmv_mode {
+            command_executor.run_command("/usr/bin/kubeos-dmv", &["switch"])?;
+            info!("Switch to next boot partition and reboot");
+            self.reboot()?;
+            return Ok(Response { status: AgentStatus::Upgraded });
+        }
         let (_, next_partition_info) = get_partition_info(&command_executor)?;
         switch_boot_menuentry(
             &command_executor,

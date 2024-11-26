@@ -20,8 +20,10 @@ use anyhow::{anyhow, bail, Context, Result};
 use log::{debug, info, trace};
 use nix::{mount, mount::MntFlags};
 
-use super::executor::CommandExecutor;
-use crate::sys_mgmt::{MOUNT_DIR, OS_IMAGE_NAME, PERSIST_DIR, ROOTFS_ARCHIVE, UPDATE_DIR};
+use crate::{
+    sys_mgmt::{MOUNT_DIR, OS_IMAGE_NAME, PERSIST_DIR, ROOTFS_ARCHIVE, UPDATE_DIR},
+    utils::CommandExecutor,
+};
 
 /// * persist_path: /persist
 ///
@@ -160,7 +162,15 @@ pub fn switch_boot_menuentry<T: CommandExecutor>(
 }
 
 pub fn get_boot_mode() -> String {
-    if is_file_exist("/sys/firmware/efi") { "uefi".into() } else { "bios".into() }
+    if is_file_exist("/sys/firmware/efi") {
+        "uefi".into()
+    } else {
+        "bios".into()
+    }
+}
+
+pub fn is_dmv_mode<T: CommandExecutor>(c: &T) -> bool {
+    c.run_command("veritysetup", &["status", "kubeos-root"]).is_ok()
 }
 
 #[cfg(test)]
@@ -306,5 +316,12 @@ mod tests {
         let executor = RealCommandExecutor {};
         assert_eq!(is_command_available("ls", &executor), true);
         assert_eq!(is_command_available("aaaabb", &executor), false);
+    }
+
+    #[test]
+    fn test_is_dmv_mode() {
+        init();
+        let executor = RealCommandExecutor {};
+        assert_eq!(is_dmv_mode(&executor), false);
     }
 }
