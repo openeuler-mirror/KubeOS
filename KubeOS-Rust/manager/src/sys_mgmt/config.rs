@@ -57,6 +57,11 @@ lazy_static! {
             values::CONTAINER_CONTAINERD.to_string(),
             Box::new(ContainerContainerd) as Box<dyn Configuration + Sync>,
         );
+        config_map.insert(
+            values::PAM_LIMTS.to_string(),
+            Box::new(PamLimits{config_path: values::DEFAULT_PAM_LIMITS_PATH.to_string()}) 
+                as Box<dyn Configuration + Sync>,
+        );
         config_map
     };
 }
@@ -78,13 +83,17 @@ pub struct KubernetesKubelet;
 
 pub struct ContainerContainerd;
 
+pub struct PamLimits {
+    pub config_path: String,
+}
+
 impl Configuration for KernelSysctl {
     fn set_config(&self, config: &mut Sysconfig) -> Result<()> {
         info!("Start setting kernel.sysctl");
         for (key, key_info) in config.contents.iter() {
             let proc_path = self.get_proc_path(key);
             let (key_info_value, is_recognized) = convert_json_value_to_string(&key_info.value);
-            if is_recognized {
+            if !is_recognized {
                 warn!(
                     "Failed to handle keyinfo.value, the type of it is not in range of number, string, boolean, null"
                 );
@@ -199,20 +208,28 @@ fn handle_delete_key(config_kv: &[&str], new_config_info: &KeyInfo) -> String {
     } else if config_kv.len() == values::ONLY_KEY && !new_config_info_value.is_empty() {
         warn!("Failed to delete key \"{}\" with inconsistent values \"nil\" and \"{}\"", key, new_config_info_value);
         return key.to_string();
-    } else if config_kv.len() == values::ONLY_KEY && !is_recognized {
-        warn!("Failed to handle keyinfo.value, the type of it is not in range of number, string, boolean, null");
-        return key.to_string();
     } else if !is_recognized {
         warn!("Failed to handle keyinfo.value, the type of it is not in range of number, string, boolean, null");
-        return config_kv.join("=");
+        match config_kv.len() {
+            values::ONLY_KEY => return key.to_string(),
+            values::KV_PAIR => return config_kv.join("="),
+            values::PAM_LIMITS_KV => return config_kv.join(" "),
+            _ => return "".to_string(),
+        }
     }
-    let old_value = config_kv[1];
+    let old_value: String;
+    if config_kv.len() == values::PAM_LIMITS_KV {
+        let config_str = config_kv[1..].join(".");
+        old_value = config_str;
+    } else {
+        old_value = config_kv[1].to_string();
+    }
     if old_value != new_config_info_value {
         warn!(
             "Failed to delete key \"{}\" with inconsistent values \"{}\" and \"{}\"",
             key, old_value, new_config_info_value
         );
-        return config_kv.join("=");
+        return if config_kv.len() == values::KV_PAIR { config_kv.join("=") } else { config_kv.join(" ") };
     }
     info!("Delete configuration {}={}", key, old_value);
     String::new()
@@ -229,12 +246,14 @@ fn handle_update_key(config_kv: &[&str], new_config_info: &KeyInfo) -> String {
     let (new_config_info_value, is_recognized) = convert_json_value_to_string(&new_config_info.value);
     if config_kv.len() == values::ONLY_KEY && new_config_info_value.is_empty() {
         return key.to_string();
-    } else if config_kv.len() == values::ONLY_KEY && !is_recognized {
-        warn!("Failed to handle keyinfo.value, the type of it is not in range of number, string, boolean, null");
-        return key.to_string();
     } else if !is_recognized {
         warn!("Failed to handle keyinfo.value, the type of it is not in range of number, string, boolean, null");
-        return config_kv.join("=");
+        match config_kv.len() {
+            values::ONLY_KEY => return key.to_string(),
+            values::KV_PAIR => return config_kv.join("="),
+            values::PAM_LIMITS_KV => return config_kv.join(" "),
+            _ => return "".to_string(),
+        }
     }
     let new_value = new_config_info_value.trim();
     if config_kv.len() == values::ONLY_KEY && !new_config_info_value.is_empty() {
@@ -243,7 +262,28 @@ fn handle_update_key(config_kv: &[&str], new_config_info: &KeyInfo) -> String {
     }
     if new_config_info_value.is_empty() {
         warn!("Failed to update key \"{}\" with \"null\" value", key);
-        return config_kv.join("=");
+        return if config_kv.len() == values::KV_PAIR { config_kv.join("=") } else { config_kv.join(" ") };
+    }
+
+    if config_kv.len() == values::PAM_LIMITS_KV {
+        let value_list: Vec<&str> = new_value.split(".").collect();
+        if value_list.len() != 3 {
+            warn!(
+                "Failed to update pam limits key \"{}\" with value {} because of illegal format of value",
+                key, new_value
+            );
+            return config_kv.join(" ");
+        }
+        let mut new_value_list: Vec<&str> = Vec::new();
+        for (i, value) in value_list.iter().enumerate() {
+            if value == &"_" {
+                new_value_list.push(config_kv[i + 1]);
+                continue;
+            }
+            new_value_list.push(value_list[i]);
+        }
+        info!("Update configuration \"{} {}\"", key, new_value_list.join(" "));
+        return format!("{} {}", key, new_value_list.join(" "));
     }
     info!("Update configuration \"{}={}\"", key, new_value);
     format!("{}={}", key, new_value)
@@ -267,7 +307,7 @@ fn handle_add_key(expect_configs: &HashMap<String, KeyInfo>, is_only_key_valid: 
             );
         }
         let (config_info_value, is_recognized) = convert_json_value_to_string(&config_info.value);
-        if is_recognized {
+        if !is_recognized {
             warn!("Failed to handle keyinfo.value, the type of it is not in range of number, string, boolean, null");
             continue;
         }
@@ -445,21 +485,21 @@ impl Configuration for KubernetesKubelet {
                         let json_value = serde_json::to_string(&key_info.value).unwrap();
                         let config_value: Value = serde_yaml::from_str(&json_value)?;
                         // if value type is array need insert
-                       
+
                         if value_iter.is_sequence() {
-                            let value_array = match value_iter.as_sequence_mut(){
+                            let value_array = match value_iter.as_sequence_mut() {
                                 Some(v) => v,
                                 None => {
                                     warn!("Failed to convert yaml Value to sequence, skip this value");
                                     break;
-                                }
+                                },
                             };
-                            let config_value_array = match config_value.as_sequence(){
+                            let config_value_array = match config_value.as_sequence() {
                                 Some(v) => v,
                                 None => {
                                     warn!("Failed to convert yaml Value to sequence, skip this value");
                                     break;
-                                }
+                                },
                             };
                             value_array.extend_from_slice(config_value_array);
                             info!("Update configuration {}: {}", key, key_info.value.to_string());
@@ -555,25 +595,25 @@ impl Configuration for ContainerContainerd {
                             );
                         }
                         let value_last = value_iter.get_mut(k).unwrap();
-                        let config_value = match convert_json_to_toml(key_info.value.clone()){
+                        let config_value = match convert_json_to_toml(key_info.value.clone()) {
                             Ok(toml_config) => toml_config,
                             Err(_) => break,
                         };
                         // if value type is array need insert
                         if value_last.is_array() {
-                            let value_array = match value_last.as_array_mut(){
+                            let value_array = match value_last.as_array_mut() {
                                 Some(v) => v,
                                 None => {
                                     warn!("Failed to convert toml Value to sequence, skip this value");
                                     break;
-                                }
+                                },
                             };
-                            let config_value_array = match config_value.as_array(){
+                            let config_value_array = match config_value.as_array() {
                                 Some(v) => v,
                                 None => {
                                     warn!("Failed to convert toml Value to sequence, skip this value");
                                     break;
-                                }
+                                },
                             };
                             value_array.extend_from_slice(config_value_array);
                             info!("Update configuration {}: {}", key, key_info.value.to_string());
@@ -584,7 +624,7 @@ impl Configuration for ContainerContainerd {
                         break;
                     }
                     // Has check value.get() is Some() on the condition of if, value.get(k).unwrap() is safe
-                    value_iter = match value_iter.get_mut(k).unwrap().as_table_mut(){
+                    value_iter = match value_iter.get_mut(k).unwrap().as_table_mut() {
                         Some(value_table) => value_table,
                         None => {
                             warn!("Failed to convert value to table, skip this value");
@@ -598,20 +638,20 @@ impl Configuration for ContainerContainerd {
                         break;
                     }
                     // create if not contains key
-                    let mut config_value = match convert_json_to_toml(key_info.value.clone()){
+                    let mut config_value = match convert_json_to_toml(key_info.value.clone()) {
                         Ok(toml_config) => toml_config,
                         Err(_) => break,
                     };
-                    let mut key_index = key_list.len()-1;
-                    while key_index > i{
+                    let mut key_index = key_list.len() - 1;
+                    while key_index > i {
                         let key_trim = key_list[key_index].replace("\"", "");
                         debug!("Start add key {}", key_trim);
-                        let mut value_tmp  = toml::Table::from(Map::new());
+                        let mut value_tmp = toml::Table::from(Map::new());
                         value_tmp.insert(key_trim, config_value.into());
                         config_value = toml::Value::Table(value_tmp);
-                        key_index = key_index-1;
+                        key_index = key_index - 1;
                     }
-                    debug!("Add key is {}, value is {:?}",key_list[i..].join("."), config_value);
+                    debug!("Add key is {}, value is {:?}", key_list[i..].join("."), config_value);
                     value_iter.insert(k.to_string(), config_value);
                     break;
                 }
@@ -658,6 +698,95 @@ fn convert_json_to_toml(config: serde_json::Value) -> Result<toml::Value> {
     }
 }
 
+impl Configuration for PamLimits {
+    fn set_config(&self, config: &mut Sysconfig) -> Result<()> {
+        if !is_file_exist(&self.config_path) {
+            bail!("Failed to find file {}", values::DEFAULT_PAM_LIMITS_PATH);
+        }
+        let configs_write = get_and_set_pam_limits(&self.config_path, &mut config.contents)
+            .with_context(|| "Failed to set pam limits configs".to_string())?;
+        write_configs_to_file(&self.config_path, &configs_write)
+            .with_context(|| "Failed to write configs to file".to_string())?;
+        Ok(())
+    }
+}
+
+fn get_and_set_pam_limits(config_path: &str, configs: &mut HashMap<String, KeyInfo>) -> Result<Vec<String>> {
+    let f = File::open(config_path).with_context(|| format!("Failed to open config path \"{}\"", config_path))?;
+    let mut configs_write = Vec::new();
+    for line in io::BufReader::new(f).lines() {
+        let line = line?;
+        // if line is a comment or blank
+        if line.starts_with('#') || line.trim().is_empty() {
+            configs_write.push(line);
+            continue;
+        }
+        let config_kv: Vec<&str> = line.splitn(4, ' ').map(|s| s.trim()).collect();
+        // if config_kv is not a key-value pair
+        if config_kv.len() != 4 {
+            bail!("could not parse pam limits config {}", line);
+        }
+        let new_key_info = configs.get(config_kv[0]);
+        let new_config = match new_key_info {
+            Some(new_key_info) if new_key_info.operation == "delete" => handle_delete_key(&config_kv, new_key_info),
+            Some(new_key_info) => handle_update_key(&config_kv, new_key_info),
+            None => config_kv.join(" "),
+        };
+        if !new_config.is_empty() {
+            configs_write.push(new_config);
+        }
+        configs.remove(config_kv[0]);
+    }
+    let new_config = handle_add_key_pam_limits(&configs);
+    configs_write.extend(new_config);
+    Ok(configs_write)
+}
+
+fn handle_add_key_pam_limits(new_configs: &HashMap<String, KeyInfo>) -> Vec<String> {
+    let mut configs_write = Vec::new();
+    'configs: for (key, config_info) in new_configs.iter() {
+        if config_info.operation == "delete" {
+            warn!("Failed to delete inexistent key: \"{}\"", key);
+            continue;
+        }
+        if key.is_empty() || key.contains(' ') {
+            warn!("Failed to add \"null\" key or key containing \" \", key: \"{}\"", key);
+            continue;
+        }
+        if !config_info.operation.is_empty() {
+            warn!(
+                "Unknown operation \"{}\", adding key \"{}\" with value \"{}\" by default",
+                config_info.operation, key, config_info.value
+            );
+        }
+        let (config_info_value, is_recognized) = convert_json_value_to_string(&config_info.value);
+        if !is_recognized {
+            warn!("Failed to handle keyinfo.value, the type of it is not in range of number, string, boolean, null");
+            continue;
+        }
+        let (k, v) = (key.trim(), config_info_value.trim());
+        if v.is_empty() {
+            warn!("Failed to add key \"{}\" with \"null\" value", k);
+        }
+        let new_value_list: Vec<&str> = config_info_value.split(".").collect();
+        if new_value_list.len() != 3 {
+            warn!(
+                "Failed to update pam limits key \"{}\" with value {} because of illegal format of value",
+                key, config_info_value
+            );
+            continue;
+        }
+        for v in new_value_list.iter() {
+            if v.trim() == "_" {
+                warn!("Failed to add key \"{}\" with \"_\" value, skip this configuration", k);
+                continue 'configs;
+            }
+        }
+        configs_write.push(format!("{} {}", key, new_value_list.join(" ")));
+    }
+    configs_write
+}
+
 #[cfg(test)]
 mod tests {
     use std::fs;
@@ -665,7 +794,7 @@ mod tests {
     use mockall::{mock, predicate::*};
     use serde_json::json;
     use tempfile::{NamedTempFile, TempDir};
-    use values::{CONTAINER_CONTAINERD, KUBERNETES_KUBELET};
+    use values::{CONTAINER_CONTAINERD, KUBERNETES_KUBELET, PAM_LIMTS};
 
     use super::*;
     use crate::sys_mgmt::{GRUB_CMDLINE_CURRENT, GRUB_CMDLINE_NEXT, KERNEL_SYSCTL, KERNEL_SYSCTL_PERSIST};
@@ -931,7 +1060,7 @@ menuentry 'B' --class KubeOS --class gnu-linux --class gnu --class os --unrestri
     #[test]
     fn test_kubernetes_kubelet() {
         init();
-        let test_file="test.yaml";
+        let test_file = "test.yaml";
         let config_kubelet_add = HashMap::from([
             (
                 "apiVersion".to_string(),
@@ -1076,7 +1205,7 @@ menuentry 'B' --class KubeOS --class gnu-linux --class gnu --class os --unrestri
         let config_contained_add = HashMap::from([
             (
                 "disabled_plugins".to_string(),
-                KeyInfo { value: serde_json::Value::from(json!([1,2,3])), operation: "".to_string() },
+                KeyInfo { value: serde_json::Value::from(json!([1, 2, 3])), operation: "".to_string() },
             ),
             (
                 "grpc.address".to_string(),
@@ -1116,13 +1245,16 @@ menuentry 'B' --class KubeOS --class gnu-linux --class gnu --class os --unrestri
         let res_add = con_containerd.set_config(&mut sysconfig_add);
         assert!(!res_add.is_err());
 
-        let config_contained= HashMap::from([
+        let config_contained = HashMap::from([
             // normal update, value type is number, bool, list
             (
                 "disabled_plugins".to_string(),
-                KeyInfo { value: serde_json::Value::from(json!([4,5,6])), operation: "".to_string() },
+                KeyInfo { value: serde_json::Value::from(json!([4, 5, 6])), operation: "".to_string() },
             ),
-            ("grpc.uid".to_string(), KeyInfo { value: serde_json::Value::from(json!(1)), operation: "update".to_string() }),
+            (
+                "grpc.uid".to_string(),
+                KeyInfo { value: serde_json::Value::from(json!(1)), operation: "update".to_string() },
+            ),
             (
                 "grpc.client_tls_auto".to_string(),
                 KeyInfo { value: serde_json::Value::from(json!(false)), operation: "".to_string() },
@@ -1131,12 +1263,10 @@ menuentry 'B' --class KubeOS --class gnu-linux --class gnu --class os --unrestri
                 "plugins.\"io.containerd.grpc.v1.cri\".image.pause_image".to_string(),
                 KeyInfo { value: serde_json::Value::from(json!("k8s.gcr.io/pause:3.2")), operation: "".to_string() },
             ),
-
             (
                 "plugins.\"io.containerd.grpc.v1.cri\".containerd.default_runtime_name".to_string(),
                 KeyInfo { value: serde_json::Value::from(json!("runc")), operation: "delete".to_string() },
             ),
-
             // normal add
             (
                 "plugins.\"io.containerd.snapshotter.v1.native\".root_path".to_string(),
@@ -1148,10 +1278,7 @@ menuentry 'B' --class KubeOS --class gnu-linux --class gnu --class os --unrestri
             ),
             // abnormal
             // key is empty
-            (
-                "".to_string(),
-                KeyInfo { value: serde_json::Value::from(json!("0s")), operation: "".to_string() },
-            ),
+            ("".to_string(), KeyInfo { value: serde_json::Value::from(json!("0s")), operation: "".to_string() }),
             // delete key which does not exist
             (
                 "timeouts.\"io.containerd.timeout.shim.test\"".to_string(),
@@ -1172,5 +1299,73 @@ menuentry 'B' --class KubeOS --class gnu-linux --class gnu --class os --unrestri
 
         let del_res = std::fs::remove_file(test_file);
         assert!(!del_res.is_err());
+    }
+    #[test]
+    fn pam_limits() {
+        init();
+        let comment = r"# This file is managed by KubeOS for unit testing.";
+        let mut tmp_file = NamedTempFile::new().unwrap();
+        writeln!(tmp_file, "{}", comment).unwrap();
+        writeln!(tmp_file, "a 1 2 3").unwrap();
+        writeln!(tmp_file, "b 4 5 6").unwrap();
+        writeln!(tmp_file, "d 1 2 3").unwrap();
+        writeln!(tmp_file, "e 4 5 6").unwrap();
+        writeln!(tmp_file, "f 7 8 9").unwrap();
+        writeln!(tmp_file, "g 7 8 9").unwrap();
+        let config_pam_limits = HashMap::from([
+            //normal add
+            ("c".to_string(), KeyInfo { value: serde_json::Value::from(json!("7.8.9")), operation: "".to_string() }),
+            // normal update
+            ("a".to_string(), KeyInfo { value: serde_json::Value::from(json!("4.5.6")), operation: "".to_string() }),
+            ("b".to_string(), KeyInfo { value: serde_json::Value::from(json!("1.2._")), operation: "add".to_string() }),
+            // normal delete
+            (
+                "e".to_string(),
+                KeyInfo { value: serde_json::Value::from(json!("4.5.6")), operation: "delete".to_string() },
+            ),
+            // abnormal
+            // key is ""
+            ("".to_string(), KeyInfo { value: serde_json::Value::from(json!(20250)), operation: "".to_string() }),
+            // key has whitespace
+            (
+                "a b".to_string(),
+                KeyInfo { value: serde_json::Value::from(json!("Webhook")), operation: "".to_string() },
+            ),
+            // delete but key not exist
+            (
+                "q".to_string(),
+                KeyInfo { value: serde_json::Value::from(json!(20250)), operation: "delete".to_string() },
+            ),
+            // delete but value not equal
+            (
+                "d".to_string(),
+                KeyInfo { value: serde_json::Value::from(json!("1.2.3")), operation: "delete".to_string() },
+            ),
+            // update but value is ""
+            ("f".to_string(), KeyInfo { value: serde_json::Value::from(json!("")), operation: "".to_string() }),
+            // update but value is illegal formats
+            ("g".to_string(), KeyInfo { value: serde_json::Value::from(json!("1.2")), operation: "".to_string() }),
+            // add value is ""
+            ("r".to_string(), KeyInfo { value: serde_json::Value::from(json!("1.2")), operation: "".to_string() }),
+            // add value is illegal formats
+            ("w".to_string(), KeyInfo { value: serde_json::Value::from(json!("1.2")), operation: "".to_string() }),
+            // add but value contains "_"
+            ("d".to_string(), KeyInfo { value: serde_json::Value::from(json!("1._.3")), operation: "".to_string() }),
+        ]);
+        let pam_limits = PamLimits { config_path: tmp_file.path().to_str().unwrap().to_string() };
+        let mut config = Sysconfig {
+            model: PAM_LIMTS.to_string(),
+            config_path: String::from(tmp_file.path().to_str().unwrap()),
+            contents: config_pam_limits,
+        };
+        pam_limits.set_config(&mut config).unwrap();
+        let result = fs::read_to_string(tmp_file.path().to_str().unwrap()).unwrap();
+        let expected_res = format!(
+            "{}\n{}\n{}\n{}\n{}\n{}\n{}\n",
+            comment, "a 4 5 6", "b 1 2 6", "d 1 2 3", "f 7 8 9", "g 7 8 9", "c 7 8 9"
+        );
+        assert_eq!(result, expected_res);
+        assert!(is_file_exist(&config.config_path));
+        delete_file_or_dir(&config.config_path).unwrap();
     }
 }

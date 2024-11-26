@@ -1188,7 +1188,7 @@ dependencies = [
  "secrecy",
  "serde",
  "serde_json",
- "serde_yaml",
+ "serde_yaml 0.8.26",
  "thiserror 1.0.64",
  "tokio",
  "tokio-native-tls",
