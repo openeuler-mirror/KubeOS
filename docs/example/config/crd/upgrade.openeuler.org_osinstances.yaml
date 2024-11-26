@@ -81,7 +81,7 @@ spec:
                               operation:
                                 type: string
                               value:
-                                type: string
+                                x-kubernetes-preserve-unknown-fields: true
                             type: object
                           type: array
                         model:
@@ -109,7 +109,7 @@ spec:
                               operation:
                                 type: string
                               value:
-                                type: string
+                                x-kubernetes-preserve-unknown-fields: true
                             type: object
                           type: array
                         model:
@@ -141,7 +141,7 @@ spec:
                               operation:
                                 type: string
                               value:
-                                type: string
+                                x-kubernetes-preserve-unknown-fields: true
                             type: object
                           type: array
                         model:
@@ -169,7 +169,7 @@ spec:
                               operation:
                                 type: string
                               value:
-                                type: string
+                                x-kubernetes-preserve-unknown-fields: true
                             type: object
                           type: array
                         model:

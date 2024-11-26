@@ -14,6 +14,7 @@ package controllers
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"reflect"
 	"testing"
@@ -25,9 +26,11 @@ import (
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
 	v1 "k8s.io/api/core/v1"
+	apiextensions "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/kubectl/pkg/drain"
+
 	upgradev1 "openeuler.org/KubeOS/api/v1alpha1"
 	"openeuler.org/KubeOS/pkg/agentclient"
 	"openeuler.org/KubeOS/pkg/common"
@@ -269,7 +272,11 @@ var _ = Describe("OsController", func() {
 				return err == nil
 			}, timeout, interval).Should(BeTrue())
 			reconciler.hostName = node1Name
-
+			var value1, value2 apiextensions.JSON
+			value1.Raw, err = json.Marshal("a")
+			Expect(err).ToNot(HaveOccurred())
+			value2.Raw, err = json.Marshal("a")
+			Expect(err).ToNot(HaveOccurred())
 			By("Creating the corresponding OSInstance")
 			OSIns := &upgradev1.OSInstance{
 				TypeMeta: metav1.TypeMeta{
@@ -291,8 +298,8 @@ var _ = Describe("OsController", func() {
 							{
 								Model: "kernel.sysctl",
 								Contents: []upgradev1.Content{
-									{Key: "key1", Value: "a"},
-									{Key: "key2", Value: "b"},
+									{Key: "key1", Value: value1},
+									{Key: "key2", Value: value2},
 								},
 							},
 						},
@@ -342,8 +349,8 @@ var _ = Describe("OsController", func() {
 							{
 								Model: "kernel.sysctl",
 								Contents: []upgradev1.Content{
-									{Key: "key1", Value: "a"},
-									{Key: "key2", Value: "b"},
+									{Key: "key1", Value: value1},
+									{Key: "key2", Value: value2},
 								},
 							},
 						},
@@ -409,6 +416,11 @@ var _ = Describe("OsController", func() {
 			reconciler.hostName = node1Name
 
 			By("Creating the corresponding OSInstance")
+			var value1, value2 apiextensions.JSON
+			value1.Raw, err = json.Marshal("a")
+			Expect(err).ToNot(HaveOccurred())
+			value2.Raw, err = json.Marshal("a")
+			Expect(err).ToNot(HaveOccurred())
 			OSIns := &upgradev1.OSInstance{
 				TypeMeta: metav1.TypeMeta{
 					Kind:       "OSInstance",
@@ -430,8 +442,8 @@ var _ = Describe("OsController", func() {
 							{
 								Model: "kernel.sysctl",
 								Contents: []upgradev1.Content{
-									{Key: "key1", Value: "a"},
-									{Key: "key2", Value: "b"},
+									{Key: "key1", Value: value1},
+									{Key: "key2", Value: value2},
 								},
 							},
 						},
@@ -486,8 +498,8 @@ var _ = Describe("OsController", func() {
 							{
 								Model: "kernel.sysctl",
 								Contents: []upgradev1.Content{
-									{Key: "key1", Value: "a"},
-									{Key: "key2", Value: "b"},
+									{Key: "key1", Value: value1},
+									{Key: "key2", Value: value2},
 								},
 							},
 						},
@@ -551,6 +563,11 @@ var _ = Describe("OsController", func() {
 			reconciler.hostName = node1Name
 
 			By("Creating a OS custom resource")
+			var value1, value2 apiextensions.JSON
+			value1.Raw, err = json.Marshal("a")
+			Expect(err).ToNot(HaveOccurred())
+			value2.Raw, err = json.Marshal("a")
+			Expect(err).ToNot(HaveOccurred())
 			OS := &upgradev1.OS{
 				TypeMeta: metav1.TypeMeta{
 					APIVersion: "upgrade.openeuler.org/v1alpha1",
@@ -573,8 +590,8 @@ var _ = Describe("OsController", func() {
 							{
 								Model: "kernel.sysctl",
 								Contents: []upgradev1.Content{
-									{Key: "key1", Value: "a"},
-									{Key: "key2", Value: "b"},
+									{Key: "key1", Value: value1},
+									{Key: "key2", Value: value2},
 								},
 							},
 						},
@@ -643,6 +660,11 @@ var _ = Describe("OsController", func() {
 			Expect(existingNode.Status.NodeInfo.OSImage).Should(Equal("KubeOS v1"))
 
 			By("Creating the corresponding OSInstance")
+			var value1, value2 apiextensions.JSON
+			value1.Raw, err = json.Marshal("a")
+			Expect(err).ToNot(HaveOccurred())
+			value2.Raw, err = json.Marshal("b")
+			Expect(err).ToNot(HaveOccurred())
 			OSIns := &upgradev1.OSInstance{
 				TypeMeta: metav1.TypeMeta{
 					Kind:       "OSInstance",
@@ -663,8 +685,8 @@ var _ = Describe("OsController", func() {
 							{
 								Model: "kernel.sysctl",
 								Contents: []upgradev1.Content{
-									{Key: "key1", Value: "a"},
-									{Key: "key2", Value: "b"},
+									{Key: "key1", Value: value1},
+									{Key: "key2", Value: value2},
 								},
 							},
 						},
@@ -718,8 +740,8 @@ var _ = Describe("OsController", func() {
 							{
 								Model: "kernel.sysctl",
 								Contents: []upgradev1.Content{
-									{Key: "key1", Value: "a"},
-									{Key: "key2", Value: "b"},
+									{Key: "key1", Value: value1},
+									{Key: "key2", Value: value2},
 								},
 							},
 						},
@@ -806,6 +828,11 @@ var _ = Describe("OsController", func() {
 			reconciler.hostName = node1Name
 
 			By("Creating the corresponding OSInstance")
+			var value1, value2 apiextensions.JSON
+			value1.Raw, err = json.Marshal("a")
+			Expect(err).ToNot(HaveOccurred())
+			value2.Raw, err = json.Marshal("b")
+			Expect(err).ToNot(HaveOccurred())
 			OSIns := &upgradev1.OSInstance{
 				TypeMeta: metav1.TypeMeta{
 					Kind:       "OSInstance",
@@ -827,8 +854,8 @@ var _ = Describe("OsController", func() {
 							{
 								Model: "kernel.sysctl",
 								Contents: []upgradev1.Content{
-									{Key: "key1", Value: "a"},
-									{Key: "key2", Value: "b"},
+									{Key: "key1", Value: value1},
+									{Key: "key2", Value: value2},
 								},
 							},
 						},
@@ -885,8 +912,8 @@ var _ = Describe("OsController", func() {
 							{
 								Model: "kernel.sysctl",
 								Contents: []upgradev1.Content{
-									{Key: "key1", Value: "a"},
-									{Key: "key2", Value: "b"},
+									{Key: "key1", Value: value1},
+									{Key: "key2", Value: value2},
 								},
 							},
 						},
@@ -951,6 +978,16 @@ var _ = Describe("OsController", func() {
 			ctx := context.Background()
 
 			node1Name = "test-node-" + uuid.New().String()
+			var value1, value2, value3, value4 apiextensions.JSON
+			value1Raw, err := json.Marshal("c")
+			value1.Raw = value1Raw
+			Expect(err).ToNot(HaveOccurred())
+			value2.Raw, err = json.Marshal("d")
+			Expect(err).ToNot(HaveOccurred())
+			value3.Raw, err = json.Marshal("a")
+			Expect(err).ToNot(HaveOccurred())
+			value4.Raw, err = json.Marshal("b")
+			Expect(err).ToNot(HaveOccurred())
 			By("Creating the corresponding OSInstance")
 			OSIns := &upgradev1.OSInstance{
 				TypeMeta: metav1.TypeMeta{
@@ -972,8 +1009,8 @@ var _ = Describe("OsController", func() {
 							{
 								Model: "kernel.sysctl",
 								Contents: []upgradev1.Content{
-									{Key: "key1", Value: "c"},
-									{Key: "key2", Value: "d"},
+									{Key: "key1", Value: value1},
+									{Key: "key2", Value: value2},
 								},
 							},
 						},
@@ -984,8 +1021,8 @@ var _ = Describe("OsController", func() {
 							{
 								Model: "kernel.sysctl",
 								Contents: []upgradev1.Content{
-									{Key: "key1", Value: "a"},
-									{Key: "key2", Value: "b"},
+									{Key: "key1", Value: value3},
+									{Key: "key2", Value: value4},
 								},
 							},
 						},
@@ -1009,8 +1046,8 @@ var _ = Describe("OsController", func() {
 					{
 						Model: "kernel.sysctl",
 						Contents: []upgradev1.Content{
-							{Key: "key1", Value: "a"},
-							{Key: "key2", Value: "b"},
+							{Key: "key1", Value: value3},
+							{Key: "key2", Value: value4},
 						},
 					},
 				},
@@ -1040,7 +1077,7 @@ var _ = Describe("OsController", func() {
 					},
 				},
 			}
-			err := k8sClient.Create(ctx, node1)
+			err = k8sClient.Create(ctx, node1)
 			Expect(err).ToNot(HaveOccurred())
 			existingNode := &v1.Node{}
 			Eventually(func() bool {
@@ -1080,8 +1117,8 @@ var _ = Describe("OsController", func() {
 							{
 								Model: "kernel.sysctl",
 								Contents: []upgradev1.Content{
-									{Key: "key1", Value: "c"},
-									{Key: "key2", Value: "d"},
+									{Key: "key1", Value: value1},
+									{Key: "key2", Value: value2},
 								},
 							},
 						},
@@ -1092,8 +1129,8 @@ var _ = Describe("OsController", func() {
 							{
 								Model: "kernel.sysctl",
 								Contents: []upgradev1.Content{
-									{Key: "key1", Value: "a"},
-									{Key: "key2", Value: "b"},
+									{Key: "key1", Value: value3},
+									{Key: "key2", Value: value4},
 								},
 							},
 						},
@@ -1218,6 +1255,17 @@ var _ = Describe("OsController", func() {
 				return err == nil
 			}, timeout, interval).Should(BeTrue())
 			Expect(createdOSIns.ObjectMeta.Name).Should(Equal(node1Name))
+
+			var value1, value2, value3, value4 apiextensions.JSON
+			value1Raw, err := json.Marshal("c")
+			value1.Raw = value1Raw
+			Expect(err).ToNot(HaveOccurred())
+			value2.Raw, err = json.Marshal("d")
+			Expect(err).ToNot(HaveOccurred())
+			value3.Raw, err = json.Marshal("a")
+			Expect(err).ToNot(HaveOccurred())
+			value4.Raw, err = json.Marshal("b")
+			Expect(err).ToNot(HaveOccurred())
 			By("Creating a OS custom resource")
 			OS := &upgradev1.OS{
 				TypeMeta: metav1.TypeMeta{
@@ -1241,8 +1289,8 @@ var _ = Describe("OsController", func() {
 							{
 								Model: "kernel.sysctl",
 								Contents: []upgradev1.Content{
-									{Key: "key1", Value: "c"},
-									{Key: "key2", Value: "d"},
+									{Key: "key1", Value: value1},
+									{Key: "key2", Value: value2},
 								},
 							},
 						},
@@ -1253,8 +1301,8 @@ var _ = Describe("OsController", func() {
 							{
 								Model: "kernel.sysctl",
 								Contents: []upgradev1.Content{
-									{Key: "key1", Value: "a"},
-									{Key: "key2", Value: "b"},
+									{Key: "key1", Value: value3},
+									{Key: "key2", Value: value4},
 								},
 							},
 						},

@@ -46,7 +46,7 @@ pub struct Sysconfig {
 }
 
 pub struct KeyInfo {
-    pub value: String,
+    pub value: serde_json::Value,
     pub operation: String,
 }
 

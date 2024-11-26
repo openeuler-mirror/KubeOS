@@ -77,7 +77,7 @@ pub struct Config {
 #[derive(Clone, Deserialize, Serialize, Debug, Eq, PartialEq, JsonSchema)]
 pub struct Content {
     pub key: Option<String>,
-    pub value: Option<String>,
+    pub value: Option<serde_json::Value>,
     pub operation: Option<String>,
 }
 

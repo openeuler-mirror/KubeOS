@@ -39,9 +39,9 @@ pub struct CertsInfo {
     pub client_key: String,
 }
 
-#[derive(Deserialize, Serialize, Debug)]
+#[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct KeyInfo {
-    pub value: String,
+    pub value: serde_json::Value,
     pub operation: String,
 }
 

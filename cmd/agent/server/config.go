@@ -48,10 +48,11 @@ func (k KernelSysctl) SetConfig(config *agent.SysConfig) error {
 	logrus.Info("start set kernel.sysctl")
 	for key, keyInfo := range config.Contents {
 		procPath := getProcPath(key)
+		keyInfoValue := keyInfo.Value.String()
 		if keyInfo.Operation == "delete" {
 			logrus.Warnf("Failed to delete kernel.sysctl config with key %s", key)
-		} else if keyInfo.Operation == "" && keyInfo.Value != "" {
-			if err := os.WriteFile(procPath, []byte(keyInfo.Value), defaultKernelConPermission); err != nil {
+		} else if keyInfo.Operation == "" && keyInfoValue != "" {
+			if err := os.WriteFile(procPath, []byte(keyInfoValue), defaultKernelConPermission); err != nil {
 				logrus.Errorf("Failed to write kernel.sysctl with key %s: %v", key, err)
 				return err
 			}
@@ -347,16 +348,17 @@ func getGrubCfgPath() string {
 // handleDeleteKey deletes key if oldValue==newValue and returns "" string. Otherwier, it returns key=oldValue
 func handleDeleteKey(config []string, configInfo *agent.KeyInfo) string {
 	key := config[0]
-	if len(config) == onlyKey && configInfo.Value == "" {
+	configInfoValue := configInfo.Value.String()
+	if len(config) == onlyKey && configInfoValue == "" {
 		logrus.Infoln("delete configuration", key)
 		return ""
-	} else if len(config) == onlyKey && configInfo.Value != "" {
+	} else if len(config) == onlyKey && configInfoValue != "" {
 		logrus.Warnf("Failed to delete key %s with inconsistent values "+
 			"nil and %s", key, configInfo.Value)
 		return key
 	}
 	oldValue := config[1]
-	if oldValue != configInfo.Value {
+	if oldValue != configInfoValue {
 		logrus.Warnf("Failed to delete key %s with inconsistent values "+
 			"%s and %s", key, oldValue, configInfo.Value)
 		return strings.Join(config, "=")
@@ -378,16 +380,17 @@ func handleUpdateKey(config []string, configInfo *agent.KeyInfo, isFound bool) s
 		logrus.Warnf("Unknown operation %s, updating key %s with value %s by default",
 			configInfo.Operation, key, configInfo.Value)
 	}
-	if len(config) == onlyKey && configInfo.Value == "" {
+	configInfoValue := configInfo.Value.String()
+	if len(config) == onlyKey && configInfoValue == "" {
 		return key
 	}
-	newValue := strings.TrimSpace(configInfo.Value)
-	if len(config) == onlyKey && configInfo.Value != "" {
+	newValue := strings.TrimSpace(configInfoValue)
+	if len(config) == onlyKey && configInfoValue != "" {
 		logrus.Infof("update configuration %s=%s", key, newValue)
 		return key + "=" + newValue
 	}
 	oldValue := config[1]
-	if configInfo.Value == "" {
+	if configInfoValue == "" {
 		logrus.Warnf("Failed to update key %s with null value", key)
 		return key + "=" + oldValue
 	}
@@ -410,11 +413,12 @@ func handleAddKey(m map[string]*agent.KeyInfo, isOnlyKeyValid bool) []string {
 			logrus.Warnf("Unknown operation %s, adding key %s with value %s by default",
 				keyInfo.Operation, key, keyInfo.Value)
 		}
-		k, v := strings.TrimSpace(key), strings.TrimSpace(keyInfo.Value)
-		if keyInfo.Value == "" && isOnlyKeyValid {
+		keyInfoValue := keyInfo.Value.String()
+		k, v := strings.TrimSpace(key), strings.TrimSpace(keyInfoValue)
+		if keyInfoValue == "" && isOnlyKeyValid {
 			logrus.Infoln("add configuration", k)
 			configs = append(configs, k)
-		} else if keyInfo.Value == "" {
+		} else if keyInfoValue == "" {
 			logrus.Warnf("Failed to add key %s with null value", k)
 		} else {
 			logrus.Infof("add configuration %s=%s", k, v)

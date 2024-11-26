@@ -28,6 +28,7 @@ use kube::{
     core::{ListMeta, ObjectList},
     Client as KubeClient, Resource, ResourceExt,
 };
+use serde_json::json;
 use mockall::mock;
 
 use self::mock_error::Error;
@@ -575,7 +576,7 @@ impl OSInstance {
                 configpath: Some(String::from("/persist/persist.conf")),
                 contents: Some(vec![Content {
                     key: Some(String::from("kernel.test")),
-                    value: Some(String::from("test")),
+                    value: Some(serde_json::Value::from(json!("test"))),
                     operation: Some(String::from("delete")),
                 }]),
             }]),
@@ -594,7 +595,7 @@ impl OSInstance {
                 configpath: Some(String::from("/persist/persist.conf")),
                 contents: Some(vec![Content {
                     key: Some(String::from("kernel.test")),
-                    value: Some(String::from("test")),
+                    value: Some(serde_json::Value::from(json!("test"))),
                     operation: Some(String::from("delete")),
                 }]),
             }]),
@@ -634,7 +635,7 @@ impl OS {
                 configpath: Some(String::from("/persist/persist.conf")),
                 contents: Some(vec![Content {
                     key: Some(String::from("kernel.test")),
-                    value: Some(String::from("test")),
+                    value: Some(serde_json::Value::from(json!("test"))),
                     operation: Some(String::from("delete")),
                 }]),
             }]),
@@ -653,7 +654,7 @@ impl OS {
                 configpath: Some(String::from("/persist/persist.conf")),
                 contents: Some(vec![Content {
                     key: Some(String::from("kernel.test")),
-                    value: Some(String::from("test")),
+                    value: Some(serde_json::Value::from(json!("test"))),
                     operation: Some(String::from("delete")),
                 }]),
             }]),
