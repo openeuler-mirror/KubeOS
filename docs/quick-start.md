@@ -163,7 +163,7 @@
   * 使用kubernetes的声明式API进行配置,部署CRD（CustomResourceDefinition），operator，proxy以及rbac机制的YAML需要用户自行编写
   * YAML举例说明模板参见本目录下example文件夹下的文件夹，你也可以将config文件夹拷贝到docs上一级目录，并进行简单的修改使用
   * 这些YAML配置文件，由K8s集群管理员加载，如果恶意在yaml文件里面写了病毒，K8s集群管理员如果放行，传到我们的处理模块我们也是没有办法校验的，此处有风险
-  * operator和proxy部署在kubernets集群中，operator应部署为deployment，proxy应部署为damonset
+  * operator和proxy部署在kubernetes集群中，operator应部署为deployment，proxy应部署为damonset
   * 尽量部署好k8s的安全措施，如rbac机制，pod的service account和security policy配置等。**注意**：operator所在容器仅需要普通用户权限运行，proxy所在容器需要root权限运行以访问worker节点上的os-agent.sock，但是可以drop全部的capabilities，如：
 
     ```yaml
@@ -345,7 +345,7 @@
                 version: edit.os.version
                 configs:
                     - model: kernel.sysctl
-                    contents:
+                      contents:
                         - key: kernel param key1
                           value: kernel param value1
                         - key: kernel param key2
@@ -361,7 +361,7 @@
                 version: 1.0.0
                 configs:
                     - model: kernel.sysctl
-                    contents:
+                      contents:
                         - key: kernel param key4
                           value: kernel param value4          
         ```
@@ -536,7 +536,7 @@
         apiVersion: upgrade.openeuler.org/v1alpha1
         kind: OS
         metadata:
-        name: os-sample
+          name: os-sample
         spec:
             imagetype: ""
             opstype: rollback
@@ -728,7 +728,7 @@ hostshell
 
 #### kernel Settings
 
-* kenerl.sysctl：临时设置内核参数，重启后无效，key/value 表示内核参数的 key/value， key与value均不能为空且key不能包含“=”，该参数不支持删除操作（operation=delete）示例如下:
+* kernel.sysctl：临时设置内核参数，重启后无效，key/value 表示内核参数的 key/value， key与value均不能为空且key不能包含“=”，该参数不支持删除操作（operation=delete）示例如下:
 
     ```yaml
     configs:
