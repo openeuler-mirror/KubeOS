@@ -767,3 +767,68 @@ hostshell
             operation: delete
           - key: crash_kexec_post_notifiers
     ```
+### kubelet配置
+* kuberntes.kubelet: 配置节点kubelet的配置文件中的参数，参数说明和约束如下：
+  * 仅支持```KubeletConfiguration```中的配置参数。
+  * 节点kubelet配置文件需要为yaml格式的文件。
+  * 如不指定configpath，默认配置文件路径为```/var/lib/kubelet/config.yaml```，并且需要注意的是配置文件的路径需要与kubelet启动时的```-- config```参数指定的路径一致才能生效。
+  * 如配置存在嵌套，则通过```'.'```连接嵌套的key值，例如如果修改如下yaml示例中```cacheAuthorizedTTL```参数为1s。
+  ```
+  authorization:
+    mode: Webhook
+    webhook:
+      cacheAuthorizedTTL: 0s
+  ```
+  参数配置示例如下：
+  ```
+  configs:
+  - model: kuberntes.kubelet
+    configpath: /etc/test.yaml
+    contents:
+      - key: authorization.webhook.cacheAuthorizedTTL
+        value: 1s
+  ```
+  * kubernetes.kubelet进行删除时，不对value与配置文件中的值进行比较
+### containerd配置
+* container.containerd: 配置节点上containerd的配置文件中的参数，参数说明和约束如下：
+  * containerd需要配置文件为toml格式，所以key为toml中该参数的表头.键名，例如希望修改如下toml示例中```no_shim```为true。
+  ```
+  [plugins."io.containerd.runtime.v1.linux"]
+  no_shim=false
+  runtime="runc"
+  runtime_root="
+  ```
+  参数配置示例如下：
+  ```
+  configs:
+  - model: container.containerd
+    configpath: /etc/test.toml
+    contents:
+      - key: plugins."io.containerd.runtime.v1.linux".no_shim
+        value: true
+  ```
+  * toml使用```"."```分割键，os-agent识别时与toml保持一致，所以当键名中包含```"."```时，该键名需要使用```""```，例如上例中的```"io.containerd.runtime.v1.linux"```为一个键
+  * 如不指定configpath，默认配置文件路径为```/etc/containerd/config.toml```
+  * container.conatainerd配置的key和value均不能为空
+  * container.containerd进行删除时，不对value与配置文件中的值进行比较
+### Pam Limits配置
+* pam.limits：配置节点上/etc/security/limits.conf文件
+  * key为domain值，value的格式需要为type.item.value（limits.conf文件要求每行格式为：\<domain\> \<type\> \<item\> \<value\>），例如：
+  ```
+  configs:
+  - model: pam.limits
+    contents:
+      - key: ftp
+        value: soft.core.0  
+  ```
+  * 更新时，如不需要对type/item/value更新时，可以使用```"_"```，忽略对此参数的更新，但value必须为点隔的三段式，例如：
+  ```
+  configs:
+  - model: pam.limits
+    contents:
+      - key: ftp
+        value: hard._.1  
+  ```
+  * pam.limits新增时，value中不允许包含```"_"```
+  * pam.limits删除时，会对value进行校验，当value与配置文件中的值不同时，删除失败
+  * pam.limits配置的key和value均不能为空
