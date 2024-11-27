@@ -112,41 +112,14 @@
   * 请确保os-agent属主和属组为root，建议os-agent文件权限为500
 
 * 容器OS虚拟机镜像制作
-    进入scripts目录，执行脚本
+    在KubeOS项目根目录下，执行
 
     ```shell
-    cd scripts
-    bash kbimg.sh create vm-image -p xxx.repo -v v1 -b ../bin/os-agent -e '''$1$xyz$RdLyKTL32WEvK3lg8CXID0'''
+    cargo run --package kbimg -- create -f KubeOS-Rust/kbimg/kbimg.toml vm-img 
     ```
 
-    参数说明如下:
-
-    ```bash
-    Usage : kbimg create vm-image -p iso-path -v os-version -b os-agent-dir -e os-password
-          or
-            kbimg create vm-image -d repository/name:tag
-
-    options:
-        -p                       repo path
-        -v                       KubeOS version
-        -b                       path of os-agent binary
-        -e                       os encrypted password
-        -d                       docker image like repository/name:tag
-        -l                       boot to legacy BIOS mode, if not specify, then UEFI mode
-    -h,--help                show help information
-    ```
-
-  * 其中 xxx.repo 为制作镜像所需要的 yum 源，yum 源建议配置为 openEuler 具体版本的 everything 仓库和 EPOL 仓库。
-  * 容器 OS 镜像制作完成后，会在 scripts 目录下生成：
-    * raw格式的系统镜像system.img，system.img大小默认为20G，支持的根文件系统分区大小<2020MiB，持久化分区<16GB。
-    * qcow2 格式的系统镜像 system.qcow2。
-    * 可用于升级的根文件系统分区镜像 update.img 。
-  * 制作出来的容器 OS 虚拟机镜像目前只能用于 CPU 架构为 x86 和 AArch64 的虚拟机场景。若x86 架构的虚拟机需要使用 legacy 启动模式，需制作镜像时指定-l参数
-  * 默认root密码为openEuler12#$
-  * 您可通过`openssl passwd -6 -salt $(head -c18 /dev/urandom | openssl base64)`命令生成root密码并通过`-e`参数配置密码
-  * 容器OS运行底噪<150M (不包含k8s组件及相关依赖kubernetes-kubeadm，kubernetes-kubelet， containernetworking-plugins，socat，conntrack-tools，ebtables，ethtool)
+    详细配置文件和命令行参数说明请见[KubeOS镜像制作指导](../docs/user_guide/KubeOS镜像制作指导-binary.md):
   * 本项目不提供容器OS镜像，仅提供裁剪工具，裁剪出来的容器OS内部的安全性由OS发行商保证。
-  * 详细参数说明请见[《容器OS镜像制作指导》](../docs/user_guide/%E5%AE%B9%E5%99%A8OS%E9%95%9C%E5%83%8F%E5%88%B6%E4%BD%9C%E6%8C%87%E5%AF%BC.md)
 
 * 声明： os-agent使用本地unix socket进行通信，因此不会新增端口。下载镜像的时候会新增一个客户端的随机端口，1024~65535使用完后关闭。proxy和operator与api-server通信时作为客户端也会有一个随机端口，基于kubernetes的operator框架，必须使用端口。他们部署在容器里。
 
