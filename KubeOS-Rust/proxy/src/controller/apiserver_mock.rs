@@ -28,8 +28,8 @@ use kube::{
     core::{ListMeta, ObjectList},
     Client as KubeClient, Resource, ResourceExt,
 };
-use serde_json::json;
 use mockall::mock;
+use serde_json::json;
 
 use self::mock_error::Error;
 use super::{

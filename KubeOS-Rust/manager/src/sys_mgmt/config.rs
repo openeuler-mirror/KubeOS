@@ -59,7 +59,7 @@ lazy_static! {
         );
         config_map.insert(
             values::PAM_LIMTS.to_string(),
-            Box::new(PamLimits{config_path: values::DEFAULT_PAM_LIMITS_PATH.to_string()}) 
+            Box::new(PamLimits { config_path: values::DEFAULT_PAM_LIMITS_PATH.to_string() })
                 as Box<dyn Configuration + Sync>,
         );
         config_map
