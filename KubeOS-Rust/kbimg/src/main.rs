@@ -130,6 +130,7 @@ fn main() {
             },
             Err(e) => {
                 error!("Failed to create image: {:?}", e);
+                exit(1);
             },
         }
     }
