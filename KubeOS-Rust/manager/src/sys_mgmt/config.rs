@@ -59,7 +59,7 @@ lazy_static! {
         );
         config_map.insert(
             values::PAM_LIMTS.to_string(),
-            Box::new(PamLimits{config_path: values::DEFAULT_PAM_LIMITS_PATH.to_string()}) 
+            Box::new(PamLimits { config_path: values::DEFAULT_PAM_LIMITS_PATH.to_string() })
                 as Box<dyn Configuration + Sync>,
         );
         config_map
@@ -826,13 +826,10 @@ mod tests {
         let mut executor = MockCommandExec::new();
 
         // the output shows that current root menuentry is A
-        let command_output1 = r#"vda                   23622320128
-vda1 /boot/efi vfat      61865984 BOOT
-vda2 /         ext4    3145728000 ROOT-A
-vda3           ext4    2621440000 ROOT-B
-vda4 /persist  ext4   17791188992 PERSIST
-"#;
-        executor.expect_run_command_with_output().times(1).returning(|_, _| Ok(command_output1.to_string()));
+        let findmnt_output1 = "/dev/vda2";
+        let lsblk_output1 = "ext4    3145728000\n";
+        executor.expect_run_command_with_output().times(1).returning(|_, _| Ok(findmnt_output1.to_string()));
+        executor.expect_run_command_with_output().times(1).returning(|_, _| Ok(lsblk_output1.to_string()));
 
         let result = grub_cmdline.get_config_partition(executor).unwrap();
         // it should return false because the current root menuentry is A and we want to configure current partition
@@ -840,14 +837,8 @@ vda4 /persist  ext4   17791188992 PERSIST
 
         let mut executor = MockCommandExec::new();
 
-        // the output shows that current root menuentry is A
-        let command_output1 = r#"vda                   23622320128
-vda1 /boot/efi vfat      61865984 BOOT
-vda2 /         ext4    3145728000 ROOT-A
-vda3           ext4    2621440000 ROOT-B
-vda4 /persist  ext4   17791188992 PERSIST
-"#;
-        executor.expect_run_command_with_output().times(1).returning(|_, _| Ok(command_output1.to_string()));
+        executor.expect_run_command_with_output().times(1).returning(|_, _| Ok(findmnt_output1.to_string()));
+        executor.expect_run_command_with_output().times(1).returning(|_, _| Ok(lsblk_output1.to_string()));
         grub_cmdline.is_cur_partition = false;
         let result = grub_cmdline.get_config_partition(executor).unwrap();
         // it should return true because the current root menuentry is A and we want to configure next partition
