@@ -59,7 +59,7 @@ lazy_static! {
         );
         config_map.insert(
             values::PAM_LIMTS.to_string(),
-            Box::new(PamLimits{config_path: values::DEFAULT_PAM_LIMITS_PATH.to_string()}) 
+            Box::new(PamLimits { config_path: values::DEFAULT_PAM_LIMITS_PATH.to_string() })
                 as Box<dyn Configuration + Sync>,
         );
         config_map
@@ -102,13 +102,13 @@ impl Configuration for KernelSysctl {
             if key_info.operation == "delete" {
                 warn!("Failed to delete kernel.sysctl config with key \"{}\"", key);
             } else if !key_info_value.is_empty() && key_info.operation.is_empty() {
-                fs::write(&proc_path, format!("{}\n", &key_info.value).as_bytes())
+                fs::write(&proc_path, format!("{}\n", &key_info_value).as_bytes())
                     .with_context(|| format!("Failed to write kernel.sysctl with key: \"{}\"", key))?;
-                info!("Configured kernel.sysctl {}={}", key, key_info.value);
+                info!("Configured kernel.sysctl {}={}", key, key_info_value);
             } else {
                 warn!(
                     "Failed to parse kernel.sysctl, key: \"{}\", value: \"{}\", operation: \"{}\"",
-                    key, key_info.value, key_info.operation
+                    key, key_info_value, key_info.operation
                 );
             }
         }
@@ -529,7 +529,18 @@ impl Configuration for KubernetesKubelet {
                     if value_iter.is_null() {
                         *value_iter = serde_yaml::Value::Mapping(serde_yaml::Mapping::new());
                     }
-                    let value_mapping = value_iter.as_mapping_mut().unwrap();
+                    let value_mapping = match value_iter.as_mapping_mut() {
+                        Some(m) => m,
+                        None => {
+                            warn!(
+                                "Failed to convert yaml value to mapping, maybe read the file in the wrong format,
+                                 or write wrong value when handle the configuration of key {}",
+                                key
+                            );
+                            break;
+                        },
+                    };
+                    info!("Add configuration \"{}: {}\"", key, key_info.value.clone());
                     value_mapping.insert(Value::String(k.to_string()).into(), config_value);
                     break;
                 }
@@ -651,7 +662,7 @@ impl Configuration for ContainerContainerd {
                         config_value = toml::Value::Table(value_tmp);
                         key_index = key_index - 1;
                     }
-                    debug!("Add key is {}, value is {:?}", key_list[i..].join("."), config_value);
+                    info!("Add configuration \"{}: {}\"", key, key_info.value.clone());
                     value_iter.insert(k.to_string(), config_value);
                     break;
                 }
@@ -782,6 +793,7 @@ fn handle_add_key_pam_limits(new_configs: &HashMap<String, KeyInfo>) -> Vec<Stri
                 continue 'configs;
             }
         }
+        info!("Add configuration \"{} {}\"", key, new_value_list.join(" "));
         configs_write.push(format!("{} {}", key, new_value_list.join(" ")));
     }
     configs_write
