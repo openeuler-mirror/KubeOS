@@ -246,6 +246,8 @@ version = "v1"
 
 * 支持CPU 架构为 x86 和 aarch64 的物理机场景，不支持legacy引导模式
 * PXE物理机镜像制作不支持dm-verity功能
+* 使用默认的 rpmlist 进行镜像制作时，所需磁盘空间至少为 5GB。如果使用自定义的 rpmlist，可能需要超过 5GB 的磁盘空间。
+* 在 PXE 安装阶段，需要从 HTTP 服务器下载根分区 tar 包。请确保机器拥有足够的内存空间以存储根分区 tar 包及临时中间文件。
 * 首先需要修改```kbimg.toml```中```pxe_config```的配置，对相关参数进行配置，详细参数可见[参数说明](#pxe_config)，ip目前仅支持ipv4，配置示例如下
 
   ```toml
