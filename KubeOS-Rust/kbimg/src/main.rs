@@ -40,6 +40,11 @@ trait CreateImage {
 
 fn process(info: Box<dyn CreateImage>, mut config: Config, debug: bool) -> Result<()> {
     let dir = PathBuf::from(SCRIPTS_DIR);
+    let lock = dir.join("test.lock");
+    if lock.exists() {
+        error!("It looks like another kbimg process is running. Please wait it to finish.");
+        exit(1);
+    }
     if dir.exists() {
         debug!("Removing existing scripts directory");
         fs::remove_dir_all(&dir)?;
