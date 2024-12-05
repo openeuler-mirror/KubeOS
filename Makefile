@@ -48,20 +48,12 @@ GO_BUILD_CGO = CGO_ENABLED=1 \
 
 RUSTFLAGS := RUSTFLAGS="-C relocation_model=pic -D warnings -W unsafe_code -W rust_2021_incompatible_closure_captures -C link-arg=-s"
 
-all: proxy operator agent hostshell rust-kubeos
+all: operator hostshell rust-kubeos
 
 # Build binary
-proxy:
-	${GO_BUILD_CGO} ${LD_FLAGS} -o bin/proxy cmd/proxy/main.go
-	strip bin/proxy
-
 operator:
 	${GO_BUILD_CGO} ${LD_FLAGS} -o bin/operator cmd/operator/main.go
 	strip bin/operator
-
-agent:
-	${GO_BUILD_CGO} ${LD_FLAGS} -o bin/os-agent cmd/agent/main.go
-	strip bin/os-agent
 
 hostshell:
 	${GO_BUILD_CGO} ${LD_FLAGS} -o bin/hostshell cmd/admin-container/main.go
@@ -70,13 +62,13 @@ hostshell:
 rust-kubeos:
 	${RUSTFLAGS} cargo build --profile release --target-dir ./bin/rust
 
-rust-proxy:
+proxy:
 	${RUSTFLAGS} cargo build --profile release --target-dir ./bin/rust --package proxy
 
-rust-agent:
+agent:
 	${RUSTFLAGS} cargo build --profile release --target-dir ./bin/rust --package os-agent
 
-rust-kbimg:
+kbimg:
 	${RUSTFLAGS} cargo build --profile release --target-dir ./bin/rust --package kbimg
 
 # clean binary
@@ -151,7 +143,7 @@ kustomize:
 	$(call go-get-tool,$(KUSTOMIZE),sigs.k8s.io/kustomize/kustomize/v3@v3.8.7)
 
 ARCH := $(shell uname -m)
-TEST_CMD := go test `go list ./cmd/... | grep -E 'server|controllers'` -race -count=1 -timeout=300s -cover -gcflags=all=-l -p 1
+TEST_CMD := go test `go list ./cmd/... | grep -E 'controllers'` -race -count=1 -timeout=300s -cover -gcflags=all=-l -p 1
 
 ifeq ($(ARCH), aarch64)
 	TEST_CMD := ETCD_UNSUPPORTED_ARCH=arm64 $(TEST_CMD)
