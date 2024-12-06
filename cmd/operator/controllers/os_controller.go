@@ -226,6 +226,7 @@ func deepCopySpecConfigs(os *upgradev1.OS, osinstance *upgradev1.OSInstance, con
 		if err != nil {
 			return err
 		}
+		osinstance.Spec.UpgradeConfigs = upgradev1.SysConfigs{}
 		if err = json.Unmarshal(data, &osinstance.Spec.UpgradeConfigs); err != nil {
 			return err
 		}
@@ -234,6 +235,7 @@ func deepCopySpecConfigs(os *upgradev1.OS, osinstance *upgradev1.OSInstance, con
 		if err != nil {
 			return err
 		}
+		osinstance.Spec.SysConfigs = upgradev1.SysConfigs{}
 		if err = json.Unmarshal(data, &osinstance.Spec.SysConfigs); err != nil {
 			return err
 		}
