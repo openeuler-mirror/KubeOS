@@ -711,6 +711,7 @@ fn convert_json_to_toml(config: serde_json::Value) -> Result<toml::Value> {
 
 impl Configuration for PamLimits {
     fn set_config(&self, config: &mut Sysconfig) -> Result<()> {
+        info!("Start setting pam.limits");
         if !is_file_exist(&self.config_path) {
             bail!("Failed to find file {}", values::DEFAULT_PAM_LIMITS_PATH);
         }
