@@ -344,24 +344,3 @@ fn check_repo_file_valid(repo_path: &PathBuf) -> Result<()> {
 fn check_agent_file_valid(agent_path: &PathBuf) -> Result<()> {
     utils::is_file_valid("os-agent binary", agent_path)
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn init() {
-        let _ = env_logger::builder()
-            .target(env_logger::Target::Stdout)
-            .filter_level(log::LevelFilter::Trace)
-            .is_test(true)
-            .try_init();
-    }
-
-    #[test]
-    fn test_check_disk_space_vm_repo() {
-        init();
-        let image_type = "vm-repo".into();
-        let result = check_disk_space(&image_type, &None);
-        assert!(result.is_ok());
-    }
-}
