@@ -237,13 +237,13 @@ fn handle_delete_key(config_kv: &[&str], new_config_info: &KeyInfo) -> String {
 
 fn handle_update_key(config_kv: &[&str], new_config_info: &KeyInfo) -> String {
     let key = config_kv[0];
+    let (new_config_info_value, is_recognized) = convert_json_value_to_string(&new_config_info.value);
     if !new_config_info.operation.is_empty() {
         warn!(
             "Unknown operation \"{}\", updating key \"{}\" with value \"{}\" by default",
-            new_config_info.operation, key, new_config_info.value
+            new_config_info.operation, key, new_config_info_value
         );
     }
-    let (new_config_info_value, is_recognized) = convert_json_value_to_string(&new_config_info.value);
     if config_kv.len() == values::ONLY_KEY && new_config_info_value.is_empty() {
         return key.to_string();
     } else if !is_recognized {
@@ -300,13 +300,13 @@ fn handle_add_key(expect_configs: &HashMap<String, KeyInfo>, is_only_key_valid: 
             warn!("Failed to add \"null\" key or key containing \"=\", key: \"{}\"", key);
             continue;
         }
+        let (config_info_value, is_recognized) = convert_json_value_to_string(&config_info.value);
         if !config_info.operation.is_empty() {
             warn!(
                 "Unknown operation \"{}\", adding key \"{}\" with value \"{}\" by default",
-                config_info.operation, key, config_info.value
+                config_info.operation, key, config_info_value
             );
         }
-        let (config_info_value, is_recognized) = convert_json_value_to_string(&config_info.value);
         if !is_recognized {
             warn!("Failed to handle keyinfo.value, the type of it is not in range of number, string, boolean, null");
             continue;
@@ -473,19 +473,20 @@ impl Configuration for KubernetesKubelet {
                             value_mapping.remove(k);
                             break;
                         }
+                        let json_value = serde_json::to_string(&key_info.value).unwrap();
+                        let config_value: Value = serde_yaml::from_str(&json_value)?;
+                        let config_value_message = serde_yaml::to_string(&config_value).unwrap();
                         if !key_info.operation.is_empty() {
                             warn!(
                                 "Unknown operation \"{}\", updating key \"{}\" with value \"{}\" by default",
                                 key_info.operation,
                                 key,
-                                serde_json::to_string(&key_info.value).unwrap()
+                                config_value_message.trim()
                             );
                         }
                         value_iter = value_iter.get_mut(k).unwrap();
-                        let json_value = serde_json::to_string(&key_info.value).unwrap();
-                        let config_value: Value = serde_yaml::from_str(&json_value)?;
-                        // if value type is array need insert
 
+                        // if value type is array need insert iteration
                         if value_iter.is_sequence() {
                             let value_array = match value_iter.as_sequence_mut() {
                                 Some(v) => v,
@@ -502,11 +503,11 @@ impl Configuration for KubernetesKubelet {
                                 },
                             };
                             value_array.extend_from_slice(config_value_array);
-                            info!("Update configuration {}: {}", key, key_info.value.to_string());
+                            info!("Update configuration {}: {}", key, &config_value_message.trim());
                             break;
                         }
-                        *value_iter = config_value.into();
-                        info!("Update configuration {}: {}", key, key_info.value.to_string());
+                        *value_iter = config_value.clone().into();
+                        info!("Update configuration {}: {}", key, &config_value_message.trim());
                         break;
                     }
                     // Has check on the condition of if, unwrap is safe
@@ -519,6 +520,16 @@ impl Configuration for KubernetesKubelet {
                     // create if not contains key
                     let json_value = serde_json::to_string(&key_info.value).unwrap();
                     let mut config_value: Value = serde_yaml::from_str(&json_value)?;
+                    let config_value_message = serde_yaml::to_string(&config_value).unwrap();
+                    if !key_info.operation.is_empty() {
+                        warn!(
+                            "Unknown operation \"{}\", adding key \"{}\" with value \"{}\" by default",
+                            key_info.operation,
+                            key,
+                            config_value_message.trim()
+                        );
+                    }
+
                     let mut key_index = key_list.len() - 1;
                     while key_index > i {
                         let mut value_map = serde_yaml::Mapping::new();
@@ -540,8 +551,8 @@ impl Configuration for KubernetesKubelet {
                             break;
                         },
                     };
-                    info!("Add configuration \"{}: {}\"", key, key_info.value.clone());
                     value_mapping.insert(Value::String(k.to_string()).into(), config_value);
+                    info!("Add configuration \"{}: {}\"", key, config_value_message.trim());
                     break;
                 }
             }
@@ -597,19 +608,21 @@ impl Configuration for ContainerContainerd {
                             value_iter.remove(k);
                             break;
                         }
+                        let config_value = match convert_json_to_toml(key_info.value.clone()) {
+                            Ok(toml_config) => toml_config,
+                            Err(_) => break,
+                        };
+                        let config_value_message = config_value.to_string();
                         if !key_info.operation.is_empty() {
                             warn!(
                                 "Unknown operation \"{}\", updating key \"{}\" with value \"{}\" by default",
                                 key_info.operation,
                                 key,
-                                serde_json::to_string(&key_info.value).unwrap()
+                                config_value_message.trim()
                             );
                         }
                         let value_last = value_iter.get_mut(k).unwrap();
-                        let config_value = match convert_json_to_toml(key_info.value.clone()) {
-                            Ok(toml_config) => toml_config,
-                            Err(_) => break,
-                        };
+
                         // if value type is array need insert
                         if value_last.is_array() {
                             let value_array = match value_last.as_array_mut() {
@@ -627,11 +640,11 @@ impl Configuration for ContainerContainerd {
                                 },
                             };
                             value_array.extend_from_slice(config_value_array);
-                            info!("Update configuration {}: {}", key, key_info.value.to_string());
+                            info!("Update configuration {}: {}", key, config_value_message.trim());
                             break;
                         }
                         *value_last = config_value.into();
-                        info!("Update configuration {}: {}", key, key_info.value.to_string());
+                        info!("Update configuration {}: {}", key, config_value_message.trim());
                         break;
                     }
                     // Has check value.get() is Some() on the condition of if, value.get(k).unwrap() is safe
@@ -653,6 +666,16 @@ impl Configuration for ContainerContainerd {
                         Ok(toml_config) => toml_config,
                         Err(_) => break,
                     };
+                    let config_value_message = config_value.to_string();
+                    if !key_info.operation.is_empty() {
+                        warn!(
+                            "Unknown operation \"{}\", updating key \"{}\" with value \"{}\" by default",
+                            key_info.operation,
+                            key,
+                            config_value_message.trim()
+                        );
+                    }
+
                     let mut key_index = key_list.len() - 1;
                     while key_index > i {
                         let key_trim = key_list[key_index].replace("\"", "");
@@ -662,8 +685,8 @@ impl Configuration for ContainerContainerd {
                         config_value = toml::Value::Table(value_tmp);
                         key_index = key_index - 1;
                     }
-                    info!("Add configuration \"{}: {}\"", key, key_info.value.clone());
                     value_iter.insert(k.to_string(), config_value);
+                    info!("Add configuration \"{}: {}\"", key, config_value_message.trim());
                     break;
                 }
             }
@@ -765,13 +788,13 @@ fn handle_add_key_pam_limits(new_configs: &HashMap<String, KeyInfo>) -> Vec<Stri
             warn!("Failed to add \"null\" key or key containing \" \", key: \"{}\"", key);
             continue;
         }
+        let (config_info_value, is_recognized) = convert_json_value_to_string(&config_info.value);
         if !config_info.operation.is_empty() {
             warn!(
                 "Unknown operation \"{}\", adding key \"{}\" with value \"{}\" by default",
-                config_info.operation, key, config_info.value
+                config_info.operation, key, config_info_value
             );
         }
-        let (config_info_value, is_recognized) = convert_json_value_to_string(&config_info.value);
         if !is_recognized {
             warn!("Failed to handle keyinfo.value, the type of it is not in range of number, string, boolean, null");
             continue;
