@@ -508,6 +508,7 @@ function GetDisk() {
             echo "${disk} exists, start partition"  | tee -a ${log}
         else
             echo "disk not exist, please choose correct disk"  | tee -a ${log}
+            return 1
         fi
     else
         echo "no disk found" | tee -a ${log}
@@ -844,7 +845,7 @@ CMD ["/bin/sh"]"#;
 
 pub const ADMIN_DOCKERFILE_CONTENT: &str = r#"FROM openeuler/openeuler:24.03-lts
 RUN dnf upgrade -y && dnf -y install openssh-clients util-linux sysmaster
-COPY ./set-ssh-pub-key.sh ./hostshell /usr/local/bin
+COPY ./set-ssh-pub-key.sh ./hostshell /usr/local/bin/
 COPY ./set-ssh-pub-key.service /usr/lib/sysmaster/system
 EXPOSE 22
 RUN ln -s /usr/lib/sysmaster/system/set-ssh-pub-key.service /etc/sysmaster/system/multi-user.target.wants/set-ssh-pub-key.service
