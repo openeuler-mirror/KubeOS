@@ -508,6 +508,7 @@ function GetDisk() {
             echo "${disk} exists, start partition"  | tee -a ${log}
         else
             echo "disk not exist, please choose correct disk"  | tee -a ${log}
+            return 1
         fi
     else
         echo "no disk found" | tee -a ${log}
