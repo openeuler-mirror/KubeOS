@@ -78,7 +78,11 @@ impl ChrootScript {
 "#,
             absolute_path.as_path().to_str().unwrap(),
             script_name.to_str().unwrap(),
-            if self.rm.unwrap_or(false) { format!("rm -f /{}", script_name.to_str().unwrap()) } else { "".to_string() }
+            if self.rm.unwrap_or(false) {
+                format!("rm -f \"${{RPM_ROOT}}\"/{}", script_name.to_str().unwrap())
+            } else {
+                "".to_string()
+            }
         )?;
         Ok(())
     }
