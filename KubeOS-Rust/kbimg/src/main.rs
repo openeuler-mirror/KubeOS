@@ -15,7 +15,7 @@ use std::{fs, path::PathBuf, process::exit};
 use anyhow::Result;
 use clap::Parser;
 use env_logger::{Builder, Env, Target};
-use log::{debug, error};
+use log::{debug, error, info};
 
 mod admin_container;
 mod commands;
@@ -55,6 +55,7 @@ fn process(info: Box<dyn CreateImage>, mut config: Config, debug: bool) -> Resul
     let path = info.generate_scripts(&config)?;
     if !debug {
         execute_scripts(path)?;
+        info!("Image created successfully");
     } else {
         debug!("Executed following command to generate KubeOS image: bash {:?}", path);
     }
@@ -73,7 +74,13 @@ fn main() {
     };
     debug!("Config file path: {:?}", config);
     let content = fs::read_to_string(config).expect("Failed to read config file");
-    let data: Config = toml::from_str(&content).expect("Failed to parse toml file");
+    let data: Config = match toml::from_str(&content) {
+        Ok(d) => d,
+        Err(e) => {
+            error!("Failed to parse config file: {}", e);
+            exit(1);
+        },
+    };
     debug!("Config: {:?}", data);
 
     let info;
@@ -129,14 +136,9 @@ fn main() {
     }
 
     if let Some(i) = info {
-        match process(i, data, cli.debug) {
-            Ok(_) => {
-                println!("Image created successfully");
-            },
-            Err(e) => {
-                error!("Failed to create image: {:?}", e);
-                exit(1);
-            },
+        if let Err(e) = process(i, data, cli.debug) {
+            error!("Failed to create image: {:?}", e);
+            exit(1);
         }
     }
     exit(0);
