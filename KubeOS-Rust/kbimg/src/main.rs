@@ -74,7 +74,13 @@ fn main() {
     };
     debug!("Config file path: {:?}", config);
     let content = fs::read_to_string(config).expect("Failed to read config file");
-    let data: Config = toml::from_str(&content).expect("Failed to parse toml file");
+    let data: Config = match toml::from_str(&content) {
+        Ok(d) => d,
+        Err(e) => {
+            error!("Failed to parse config file: {}", e);
+            exit(1);
+        },
+    };
     debug!("Config: {:?}", data);
 
     let info;

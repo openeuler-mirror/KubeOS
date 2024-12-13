@@ -54,14 +54,17 @@ pub enum CreateType {
 #[derive(Debug, Deserialize, Clone)]
 pub struct RepoInfo {
     /// Required: KubeOS version
+    #[serde(deserialize_with = "reject_empty_string")]
     pub version: String,
     /// Required: Repo path for installing packages
     pub repo_path: PathBuf,
     /// Required: Path to the os-agent binary
     pub agent_path: PathBuf,
     /// Required: Encrypted password for root user
+    #[serde(deserialize_with = "reject_empty_string")]
     pub root_passwd: String,
     /// Required for creating upgrade docker image
+    #[serde(default, deserialize_with = "reject_empty_option_string")]
     pub upgrade_img: Option<String>,
     /// Required: RPM packages
     pub rpmlist: Vec<String>,
@@ -84,6 +87,7 @@ pub struct DockerImgInfo {
 #[derive(Debug, Deserialize, Clone)]
 pub struct AdminContainerInfo {
     /// Required: Name of the container image
+    #[serde(deserialize_with = "reject_empty_string")]
     pub img_name: String,
     /// Required: Path to the hostshell binary
     pub hostshell: PathBuf,
@@ -107,21 +111,28 @@ pub struct Config {
 
 #[derive(Deserialize, Debug, Clone)]
 pub struct User {
+    #[serde(deserialize_with = "reject_empty_string")]
     pub name: String,
+    #[serde(deserialize_with = "reject_empty_string")]
     pub passwd: String,
+    #[serde(default, deserialize_with = "reject_empty_option_string")]
     pub primary_group: Option<String>,
     pub groups: Option<Vec<String>>,
 }
 
 #[derive(Deserialize, Debug, Clone)]
 pub struct CopyFile {
+    #[serde(deserialize_with = "reject_empty_string")]
     pub src: String,
+    #[serde(deserialize_with = "reject_empty_string")]
     pub dst: String,
+    #[serde(default, deserialize_with = "reject_empty_option_string")]
     pub create_dir: Option<String>,
 }
 
 #[derive(Deserialize, Debug, Clone)]
 pub struct Grub {
+    #[serde(deserialize_with = "reject_empty_string")]
     pub passwd: String,
 }
 
@@ -149,19 +160,28 @@ pub struct PersistMkdir {
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct PxeConfig {
+    #[serde(deserialize_with = "reject_empty_string")]
     pub rootfs_name: String,
+    #[serde(deserialize_with = "reject_empty_string")]
     pub disk: String,
+    #[serde(deserialize_with = "reject_empty_string")]
     pub server_ip: String,
-    pub local_ip: Option<String>,
+    #[serde(deserialize_with = "reject_empty_string")]
     pub route_ip: String,
+    #[serde(default, deserialize_with = "reject_empty_option_string")]
+    pub local_ip: Option<String>,
+    #[serde(default, deserialize_with = "reject_empty_option_string")]
     pub netmask: Option<String>,
+    #[serde(default, deserialize_with = "reject_empty_option_string")]
     pub net_name: Option<String>,
     pub dhcp: Option<bool>,
 }
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct DmVerity {
+    #[serde(deserialize_with = "reject_empty_string")]
     pub efi_key: String,
+    #[serde(deserialize_with = "reject_empty_string")]
     pub grub_key: String,
     pub keys_dir: Option<PathBuf>,
 }
@@ -195,4 +215,28 @@ impl From<&str> for ImageType {
             _ => ImageType::VMRepo,
         }
     }
+}
+
+fn reject_empty_option_string<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let opt = Option::<String>::deserialize(deserializer)?;
+    if let Some(ref value) = opt {
+        if value.trim().is_empty() {
+            return Err(serde::de::Error::custom("String in Option should not be an empty string if provided"));
+        }
+    }
+    Ok(opt)
+}
+
+fn reject_empty_string<'de, D>(deserializer: D) -> Result<String, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value: String = Deserialize::deserialize(deserializer)?;
+    if value.trim().is_empty() {
+        return Err(serde::de::Error::custom("String field should not be empty"));
+    }
+    Ok(value)
 }

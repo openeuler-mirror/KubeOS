@@ -287,8 +287,8 @@ impl RepoInfo {
 // Check pxe config
 fn check_pxe_conf_valid(config: &PxeConfig) -> anyhow::Result<()> {
     if config.dhcp.unwrap_or(false) {
-        if config.local_ip.is_some() || config.net_name.is_some() {
-            bail!("dhcp and local_ip/net_name cannot be set at the same time");
+        if config.local_ip.is_some() || config.net_name.is_some() || config.netmask.is_some() {
+            bail!("dhcp and local_ip/net_name/netmask cannot be set at the same time");
         }
     } else {
         let local_ip = config.local_ip.as_ref().ok_or_else(|| anyhow!("local_ip not found!"))?;
