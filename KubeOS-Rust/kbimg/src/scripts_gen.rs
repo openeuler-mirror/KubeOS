@@ -261,6 +261,9 @@ pub(crate) fn gen_create_img(file: &mut dyn Write, legacy_bios: bool, config: &C
     let mut mkdir_persist: String = String::new();
     if let Some(persist_mkdir) = &config.persist_mkdir {
         for name in &persist_mkdir.name {
+            if name.is_empty() {
+                continue;
+            }
             mkdir_persist.push_str(&format!("    mkdir -p \"${{TMP_MOUNT_PATH}}\"/{}\n", name));
         }
     }
