@@ -117,6 +117,7 @@ pub struct User {
     pub passwd: String,
     #[serde(default, deserialize_with = "reject_empty_option_string")]
     pub primary_group: Option<String>,
+    #[serde(default, deserialize_with = "reject_empty_opt_vec_string")]
     pub groups: Option<Vec<String>>,
 }
 
@@ -138,6 +139,7 @@ pub struct Grub {
 
 #[derive(Deserialize, Debug, Clone)]
 pub struct SystemdService {
+    #[serde(default, deserialize_with = "reject_empty_vec_string")]
     pub name: Vec<String>,
 }
 
@@ -155,6 +157,7 @@ pub struct DiskPartition {
 
 #[derive(Deserialize, Debug, Clone)]
 pub struct PersistMkdir {
+    #[serde(default, deserialize_with = "reject_empty_vec_string")]
     pub name: Vec<String>,
 }
 
@@ -237,6 +240,40 @@ where
     let value: String = Deserialize::deserialize(deserializer)?;
     if value.trim().is_empty() {
         return Err(serde::de::Error::custom("String field should not be empty"));
+    }
+    Ok(value)
+}
+
+fn reject_empty_opt_vec_string<'de, D>(deserializer: D) -> Result<Option<Vec<String>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value: Option<Vec<String>> = Deserialize::deserialize(deserializer)?;
+    if let Some(ref value) = value {
+        if value.is_empty() {
+            return Err(serde::de::Error::custom("Vec<String> field should not be empty"));
+        }
+        for v in value {
+            if v.trim().is_empty() {
+                return Err(serde::de::Error::custom("String in Vec<String> should not be an empty string"));
+            }
+        }
+    }
+    Ok(value)
+}
+
+fn reject_empty_vec_string<'de, D>(deserializer: D) -> Result<Vec<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value: Vec<String> = Deserialize::deserialize(deserializer)?;
+    if value.is_empty() {
+        return Err(serde::de::Error::custom("Vec<String> field should not be empty"));
+    }
+    for v in &value {
+        if v.trim().is_empty() {
+            return Err(serde::de::Error::custom("String in Vec<String> should not be an empty string"));
+        }
     }
     Ok(value)
 }
