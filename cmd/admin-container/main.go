@@ -23,17 +23,17 @@ import (
 )
 
 const (
-	bashPath              = "/usr/bin/bash"
-	usrBin                = "/usr/bin"
-	usrSbin               = "/usr/sbin"
-	localBin              = "/usr/local/bin"
-	localSbin             = "/usr/local/sbin"
-	usrLib                = "/usr/lib"
-	usrLib64              = "/usr/lib64"
-	lib                   = "/lib"
-	lib64                 = "/lib64"
-	envPathPrefix         = "PATH=$PATH:"
-	envLdLibrarPathPrefix = "LD_LIBRARY_PATH=$LD_LIBRARY_PATH:"
+	bashPath               = "/usr/bin/bash"
+	usrBin                 = "/usr/bin"
+	usrSbin                = "/usr/sbin"
+	localBin               = "/usr/local/bin"
+	localSbin              = "/usr/local/sbin"
+	usrLib                 = "/usr/lib"
+	usrLib64               = "/usr/lib64"
+	lib                    = "/lib"
+	lib64                  = "/lib64"
+	envPathPrefix          = "PATH=$PATH:"
+	envLdLibraryPathPrefix = "LD_LIBRARY_PATH=$LD_LIBRARY_PATH:"
 )
 
 func main() {
@@ -46,7 +46,7 @@ func main() {
 	PPID := os.Getppid()
 	rootFsPath := "/proc/" + strconv.Itoa(PPID) + "/root"
 	path := concatenateEnvPath(rootFsPath, envPathPrefix, []string{usrBin, usrSbin, localBin, localSbin})
-	libPath := concatenateEnvPath(rootFsPath, envLdLibrarPathPrefix, []string{usrLib, usrLib64, lib, lib64})
+	libPath := concatenateEnvPath(rootFsPath, envLdLibraryPathPrefix, []string{usrLib, usrLib64, lib, lib64})
 	if err := syscall.Exec("/usr/bin/nsenter", []string{"nsenter", "-t", "1", "-a",
 		"env", "-i", path, libPath, rootFsPath + bashPath}, os.Environ()); err != nil {
 		logrus.Error("nsenter excute error", err)

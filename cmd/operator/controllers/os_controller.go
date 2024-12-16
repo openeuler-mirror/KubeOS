@@ -76,17 +76,17 @@ func Reconcile(ctx context.Context, r common.ReadStatusWriter, req ctrl.Request)
 		return values.Requeue, nil
 	}
 	ops := os.Spec.OpsType
-	var opsInsatnce operation
+	var opsInstance operation
 	switch ops {
 	case "upgrade", "rollback":
-		opsInsatnce = upgradeOps{
+		opsInstance = upgradeOps{
 			label: opsLabel{
 				label: values.LabelUpgrading,
 				op:    selection.DoesNotExist,
 			},
 		}
 	case "config":
-		opsInsatnce = configOps{
+		opsInstance = configOps{
 			label: opsLabel{
 				label: values.LabelConfiguring,
 				op:    selection.DoesNotExist,
@@ -108,19 +108,19 @@ func Reconcile(ctx context.Context, r common.ReadStatusWriter, req ctrl.Request)
 	log.V(1).Info("get all nodes num is " + strconv.Itoa(len(allNodes)))
 	switch os.Spec.ExecutionMode {
 	case ExecutionModeParallel:
-		result, err := excuteParallelOperation(ctx, r, os, opsInsatnce, len(allNodes))
+		result, err := executeParallelOperation(ctx, r, os, opsInstance, len(allNodes))
 		if err != nil {
 			return values.RequeueNow, nil
 		}
 		return result, nil
 	case ExecutionModeSerial:
-		result, err := excuteSerialOperation(ctx, r, os, opsInsatnce, len(allNodes))
+		result, err := executeSerialOperation(ctx, r, os, opsInstance, len(allNodes))
 		if err != nil {
 			return values.RequeueNow, err
 		}
 		return result, nil
 	default:
-		log.Error(nil, "excutionMode "+os.Spec.ExecutionMode+" cannot be recognized")
+		log.Error(nil, "executionMode "+os.Spec.ExecutionMode+" cannot be recognized")
 		return values.Requeue, nil
 	}
 }
@@ -284,10 +284,10 @@ func setTimeInterval(timeInterval int) ctrl.Result {
 	return ctrl.Result{Requeue: true, RequeueAfter: time.Duration(timeInterval) * time.Second}
 }
 
-func excuteParallelOperation(ctx context.Context, r common.ReadStatusWriter, os upgradev1.OS,
-	opsInsatnce operation, nodeNum int) (ctrl.Result, error) {
+func executeParallelOperation(ctx context.Context, r common.ReadStatusWriter, os upgradev1.OS,
+	opsInstance operation, nodeNum int) (ctrl.Result, error) {
 	log.V(1).Info("start parallel operation")
-	opsLabel := opsInsatnce.getOpsLabel()
+	opsLabel := opsInstance.getOpsLabel()
 	opsLabel.op = selection.Exists
 	opsNodesReq, err := newopsNodesRequirement(os.Spec.NodeSelector,
 		selection.Equals, opsLabel).createNodeRequirement(ctx, r)
@@ -305,16 +305,16 @@ func excuteParallelOperation(ctx context.Context, r common.ReadStatusWriter, os 
 	if err != nil {
 		return values.RequeueNow, nil
 	}
-	if _, err := assignOperation(ctx, r, os, limit, opsInsatnce, noOpsNodesReq); err != nil {
+	if _, err := assignOperation(ctx, r, os, limit, opsInstance, noOpsNodesReq); err != nil {
 		return values.RequeueNow, nil
 	}
 	return setTimeInterval(os.Spec.TimeInterval), nil
 }
 
-func excuteSerialOperation(ctx context.Context, r common.ReadStatusWriter, os upgradev1.OS,
-	opsInsatnce operation, nodeNum int) (ctrl.Result, error) {
+func executeSerialOperation(ctx context.Context, r common.ReadStatusWriter, os upgradev1.OS,
+	opsInstance operation, nodeNum int) (ctrl.Result, error) {
 	log.V(1).Info("start serial operation")
-	opsLabel := opsInsatnce.getOpsLabel()
+	opsLabel := opsInstance.getOpsLabel()
 	opsLabel.op = selection.Exists
 	opsNodesReq, err := newopsNodesRequirement(os.Spec.NodeSelector,
 		selection.Equals, opsLabel).createNodeRequirement(ctx, r)
@@ -347,7 +347,7 @@ func excuteSerialOperation(ctx context.Context, r common.ReadStatusWriter, os up
 	}
 	// add serial label to node
 	serialOpsInstance := serialOps{
-		label: opsInsatnce.getOpsLabel(),
+		label: opsInstance.getOpsLabel(),
 	}
 	log.V(1).Info("start add serial label to nodes")
 	if _, err := assignOperation(ctx, r, os, serialNodeLimit, serialOpsInstance, noSerialNodesRequirement); err != nil {
@@ -355,8 +355,8 @@ func excuteSerialOperation(ctx context.Context, r common.ReadStatusWriter, os up
 	}
 
 	log.V(1).Info("start check nodes needed to be upgrade/configure or not")
-	serialLimit := 1 // 1 is the number of operation nodes when excution mode in serial
-	count, err := assignOperation(ctx, r, os, serialLimit, opsInsatnce, serialNodesRequirement)
+	serialLimit := 1 // 1 is the number of operation nodes when execution mode in serial
+	count, err := assignOperation(ctx, r, os, serialLimit, opsInstance, serialNodesRequirement)
 	if err != nil {
 		return values.RequeueNow, nil
 	}

@@ -263,7 +263,7 @@ func (s serialOps) updateNodes(ctx context.Context, r common.ReadStatusWriter, o
 			}
 		default:
 			log.Error(nil, "ops "+s.getOpsLabel().label+" cannot be recognized")
-			return count, []error{fmt.Errorf("ops " + s.getOpsLabel().label + " cannot be recognized")}
+			return count, []error{fmt.Errorf("%s", "ops "+s.getOpsLabel().label+" cannot be recognized")}
 		}
 	}
 	if len(errList) == 0 {
