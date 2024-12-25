@@ -54,12 +54,12 @@ Options:
   | 参数 | 描述 |
   | --- | --- |
   | agent_path | os-agent 二进制的路径 |
-  | legacy_bios | 镜像为 legacy 引导或 UEFI 引导 |
+  | legacy_bios | 目前仅支持设置为`false`，即UEFI引导 |
   | repo_path | repo 文件的路径，repo 文件中配置制作镜像所需要的 yum 源 |
   | root_passwd | root 用户密码，与/etc/shadow文件内密码格式一致，可使用`openssl passwd -6 -salt $(head -c18 /dev/urandom \| openssl base64)`命令生成 |
   | version | KubeOS 镜像的版本，将写入/etc/os-release文件内作为OS标识 |
   | rpmlist | 期望安装进镜像内的rpm包列表 |
-  | upgrade_img | [OPTIONAL]指定生成的升级容器镜像的镜像名(制作升级容器镜像必需) |
+  | upgrade_img | [可选项]指定生成的升级容器镜像的镜像名(制作升级容器镜像必需) |
 
 ### admin_container
 
@@ -80,43 +80,49 @@ Options:
   | rootfs_name | 放置于 HTTP 服务器的文件系统 tar 包名称 |
   | disk | 安装 KubeOS 系统的目标磁盘名 |
   | route_ip | 配置目标机器网卡的路由 IP |
-  | dhcp | [OPTIONAL] 默认为 false，启用 DHCP 模式配置网络 |
-  | local_ip | [OPTIONAL] 配置目标机器网卡的 IP，dhcp 为 false 时必需 |
-  | net_name | [OPTIONAL] 配置目标机器网卡名，dhcp 为 false 时必需 |
-  | netmask | [OPTIONAL] 配置目标机器网卡的子网掩码，dhcp 为 false 时必需 |
+  | dhcp | [可选项] 是否启用 DHCP 模式配置网络，默认为 false |
+  | local_ip | [可选项] 配置目标机器网卡的 IP，dhcp 为 false 时必需 |
+  | net_name | [可选项] 配置目标机器网卡名，dhcp 为 false 时必需 |
+  | netmask | [可选项] 配置目标机器网卡的子网掩码，dhcp 为 false 时必需 |
+
+**注意**：`pxe_config`下的配置参数无法进行校验，需要用户自行确认其正确性。
 
 ### users
 
-[OPTIONAL] 添加用户
+[可选项] 添加用户
 
   | 参数 | 描述 |
   | --- | --- |
   | name | 用户名 |
   | passwd | 密码 |
-  | primary_groups | [OPTIONAL] 用户主组 |
-  | groups | [OPTIONAL] 用户附加组 |
+  | primary_groups | [可选项] 用户主组(默认为用户同名组) |
+  | groups | [可选项] 用户附加组 |
+
+**注意**：添加用户会默认创建用户同名组，配置用户附加组时，若组不存在会报错失败。若有特殊配置需求，用户可通过[chroot_script](#chroot_script)脚本自行实现。
 
 ### copy_files
 
-[OPTIONAL] 拷贝文件到rootfs内指定目录
+[可选项] 拷贝文件到rootfs内指定目录
 
   | 参数 | 描述 |
   | --- | --- |
   | dst | 目标路径 |
   | src | 源文件路径 |
-  | create_dir | [OPTIONAL]拷贝前创建文件夹 |
+  | create_dir | [可选项]拷贝前创建文件夹 |
+
+**注意**：拷贝文件无法保留权限，如果需要特殊权限，可借助[chroot_script](#chroot_script)脚本自行实现。
 
 ### grub
 
-[OPTIONAL] grub配置，配置dm-verity时必需
+[可选项] grub配置，配置dm-verity时必需
 
   | 参数 | 描述 |
   | --- | --- |
-  | passwd | grub 密码 |
+  | passwd | grub 明文密码 |
 
 ### systemd_service
 
-[OPTIONAL] 新增 systemd 服务
+[可选项] 配置 systemd 服务开机自启
 
   | 参数 | 描述 |
   | --- | --- |
@@ -124,25 +130,25 @@ Options:
 
 ### chroot_script
 
-[OPTIONAL] 自定义 chroot 脚本
+[可选项] 自定义 chroot 脚本
 
   | 参数 | 描述 |
   | --- | --- |
   | path | 脚本路径 |
-  | rm | [OPTIONAL]执行完毕后是否删除该脚本 |
+  | rm | [可选项]执行完毕后是否删除该脚本，配置`true`删除，`false`或空保留 |
 
 ### disk_partition
 
-[OPTIONAL] 自定义分区大小和镜像大小
+[可选项] 自定义分区大小和镜像大小
 
   | 参数 | 描述 |
   | --- | --- |
-  | root | root分区大小, 单位为MiB |
-  | img_size | [OPTIONAL]镜像大小，单位为GB |
+  | root | root分区大小, 单位为MiB，默认2560MiB |
+  | img_size | [可选项]镜像大小，单位为GB，默认20GB |
 
 ### persist_mkdir
 
-[OPTIONAL] persist 分区新建目录
+[可选项] persist 分区新建目录
 
   | 参数 | 描述 |
   | --- | --- |
@@ -150,22 +156,87 @@ Options:
 
 ### dm_verity
 
-[OPTIONAL] 制作启用dm-verity功能的虚拟机或升级镜像
+[可选项] 制作启用dm-verity功能的虚拟机或升级镜像
 
   | 参数 | 描述 |
   | --- | --- |
   | efi_key | efi明文口令 |
   | grub_key | grub明文口令 |
-  | keys_dir |[OPTIONAL]可指定密钥文件夹，复用先前制作镜像创建的密钥  |
+  | keys_dir |[可选项]可指定密钥文件夹，复用先前制作镜像创建的密钥  |
 
-## 使用示例
+## 使用说明
+
+### 注意事项
+
+* kbimg 执行需要 root 权限。
+* 当前仅支持 x86和 AArch64 架构使用。
+* 不支持并发执行。如果使用脚本`&`连续执行可能会出现异常情况。制作过程中碰到异常掉电或中断后无法清理环境时，可参考[异常退出清理方法](#异常退出清理方法)清理后重新制作。
+* 制作镜像时提供的 repo 文件中，yum 源建议同时配置 openEuler 具体版本的 everything 仓库和 EPOL 仓库。
+* dm-verity使用说明：
+	*	仅支持虚拟机场景，暂不支持物理机环境。
+	*	不支持通过 HTTP/HTTPS 服务器下载升级镜像进行系统升级。仅支持从容器镜像仓库下载升级镜像进行升级。
+  *	启动虚拟机时，必须配置使用 virtio 类型设备。
+  * 启用dm-verity功能的升级容器镜像不可用于升级未开启dm-verity的容器OS。同理，未启动dm-verity功能的升级容器镜像不可用于升级开启dm-verity功能的容器OS。在集群内，部分节点开启dm-verity功能，部分未开启，需要用户控制下发对应的升级镜像。
+  *	制作升级容器镜像和虚拟机镜像时，推荐使用相同的密钥(配置`keys_dir`为先前制作镜像时创建的密钥文件路径。配置`efi_key`或`grub_key`一致不能保证密钥文件是一模一样的)。若密钥不一致，在切换备用分区时可能导致证书校验失败，从而无法启动系统。出现证书校验失败问题时，需要重新导入备用分区证书进行修复。
+
+### KubeOS OCI 镜像制作
+
+#### 注意事项
+
+* 制作出的 OCI 镜像仅用于后续的虚拟机/物理机镜像升级使用，不支持启动容器。
+* 使用默认 rpmlist 进行容器OS镜像制作时所需磁盘空间至少为6G，若使用自定义 rpmlist 可能会超过6G。
+
+#### 使用示例
+
+* 配置文件示例
+
+```toml
+[from_repo]
+agent_path = "./bin/rust/release/os-agent"
+legacy_bios = false
+repo_path = "/etc/yum.repos.d/openEuler.repo"
+root_passwd = "$1$xyz$RdLyKTL32WEvK3lg8CXID0" # default passwd: openEuler12#$
+rpmlist = [
+    "NetworkManager",
+    "cloud-init",
+    "conntrack-tools",
+    "containerd",
+    "containernetworking-plugins",
+    "cri-tools",
+    "dhcp",
+    "ebtables",
+    "ethtool",
+    "iptables",
+    "kernel",
+    "kubernetes-kubeadm",
+    "kubernetes-kubelet",
+    "openssh-server",
+    "passwd",
+    "rsyslog",
+    "socat",
+    "tar",
+    "vi",
+]
+upgrade_img = "kubeos-upgrade:v1"
+version = "v1"
+```
+
+* 结果说明
+  * 制作完成后，通过`docker images`查看制作出来的KubeOS容器镜像
+  * update-boot.img/update-root.img/update-hash.img: 仅在dm-verity模式下生成，可忽略。
 
 ### KubeOS 虚拟机镜像制作
 
+#### 注意事项
+
+* 制作出来的容器 OS 虚拟机镜像目前只能用于 CPU 架构为 x86 和 AArch64 的虚拟机。
+* 默认root密码为openEuler12#$
+* 使用默认rpmlist进行容器OS镜像制作时所需磁盘空间至少为25G，若使用自定义rpmlist可能会超过25G。
 * 支持CPU 架构为 x86 和 aarch64 的虚拟机场景。若x86架构的虚拟机需要使用 legacy 启动模式，请在`[from_repo]`下配置`legacy_bios`为`true`
 * `repo_path`为制作镜像所需要的 yum 源文件路径，yum 源建议配置为 openEuler 具体版本的 everything 仓库和 EPOL 仓库。
-* 默认root密码为openEuler12#$
 * 容器OS运行底噪<150M (不包含k8s组件及相关依赖`kubernetes-kubeadm，kubernetes-kubelet， containernetworking-plugins，socat，conntrack-tools，ebtables，ethtool`)
+
+#### 使用示例
 
 * 配置文件示例
 
@@ -201,53 +272,25 @@ version = "v1"
 
 * 结果说明
 容器 OS 镜像制作完成后，会在 ./scripts-auto 目录下生成
-  * system.qcow2: qcow2 格式的系统镜像，大小默认为 20GiB，支持的根文件系统分区大小 < 2560 MiB，持久化分区 < 15GB 。
-  * system.img: img 格式的系统镜像，大小默认为 20GiB，支持的根文件系统分区大小 < 2560 MiB，持久化分区 < 15GB 。
-  * kubeos.tar: 用于升级的根文件系统tar包
+  * system.qcow2: 用于启动虚拟机的qcow2 格式的系统镜像，大小默认为 20GiB，支持的根文件系统分区大小 < 2560 MiB，持久化分区 < 15GB 。
+  * system.img: 用于启动虚拟机的img 格式的系统镜像，大小默认为 20GiB，支持的根文件系统分区大小 < 2560 MiB，持久化分区 < 15GB 。
+  * kubeos.tar: 用于升级的根文件系统tar包。
+  * update-boot.img/update-root.img/update-hash.img: 仅在dm-verity模式下生成，可忽略。
 
-### KubeOS 升级容器镜像制作
+### KubeOS 物理机安装所需镜像及文件制作
 
-* 制作KubeOS容器镜像
+#### 注意事项
 
-```toml
-[from_repo]
-agent_path = "./bin/rust/release/os-agent"
-legacy_bios = false
-repo_path = "/etc/yum.repos.d/openEuler.repo"
-root_passwd = "$1$xyz$RdLyKTL32WEvK3lg8CXID0" # default passwd: openEuler12#$
-rpmlist = [
-    "NetworkManager",
-    "cloud-init",
-    "conntrack-tools",
-    "containerd",
-    "containernetworking-plugins",
-    "cri-tools",
-    "dhcp",
-    "ebtables",
-    "ethtool",
-    "iptables",
-    "kernel",
-    "kubernetes-kubeadm",
-    "kubernetes-kubelet",
-    "openssh-server",
-    "passwd",
-    "rsyslog",
-    "socat",
-    "tar",
-    "vi",
-]
-upgrade_img = "kubeos-upgrade:v1"
-version = "v1"
-```
-
-* 制作完成后，通过`docker images`查看制作出来的KubeOS容器镜像
-
-### KubeOS PXE物理机安装所需镜像及文件制作
-
-* 支持CPU 架构为 x86 和 aarch64 的物理机场景，不支持legacy引导模式
-* PXE物理机镜像制作不支持dm-verity功能
+* 制作出来的容器 OS 物理安装所需的镜像目前只能用于 CPU 架构为 x86 和 AArch64 的物理机安装。
+* 容器OS 目前不支持 x86 架构的物理机使用 legacy 启动模式启动。
+* 首先需要修改```kbimg.toml```中```pxe_config```的配置，对相关参数进行配置，详细参数可见[参数说明](#pxe_config)，ip目前仅支持ipv4，配置示例如下
+* 不支持多个磁盘都安装KubeOS，可能会造成启动失败或挂载紊乱。
 * 使用默认的 rpmlist 进行镜像制作时，所需磁盘空间至少为 5GB。如果使用自定义的 rpmlist，可能需要超过 5GB 的磁盘空间。
-* 在 PXE 安装阶段，需要从 HTTP 服务器下载根分区 tar 包。请确保机器拥有足够的内存空间以存储根分区 tar 包及临时中间文件。
+* PXE物理机镜像制作不支持dm-verity功能
+* 在 PXE 安装阶段，需要从 HTTP 服务器的根目录下载根分区 tar 包（tar包名称为toml配置文件中配置的名称）。请确保机器拥有足够的内存空间以存储根分区 tar 包及临时中间文件。
+
+#### 使用示例
+
 * 首先需要修改```kbimg.toml```中```pxe_config```的配置，对相关参数进行配置，详细参数可见[参数说明](#pxe_config)，ip目前仅支持ipv4，配置示例如下
 
   ```toml
@@ -370,6 +413,45 @@ hostshell = "./bin/hostshell"
   ```
 
 ## 附录
+
+### 异常退出清理方法
+
+1. 若在使用`kbimg`制作镜像过程中，异常退出，无法清理环境，可使用如下方法进行清理：
+
+```bash
+function unmount_dir() {
+  local dir=$1
+  if [ -L "${dir}" ] || [ -f "${dir}" ]; then
+    echo "${dir} is not a directory, please check it."
+    return 1
+  fi
+  if [ ! -d "${dir}" ]; then
+    return 0
+  fi
+  local real_dir=$(readlink -e "${dir}")
+  local mnts=$(awk '{print $2}' < /proc/mounts | grep "^${real_dir}" | sort -r)
+  for m in ${mnts}; do
+    echo "Unmount ${m}"
+    umount -f "${m}" || true
+  done
+  return 0
+}
+ls -l ./scripts-auto/test.lock && rm -rf ./scripts-auto/test.lock
+unmount_dir ./scripts-auto/rootfs/proc
+unmount_dir ./scripts-auto/rootfs/sys
+unmount_dir ./scripts-auto/rootfs/dev/pts
+unmount_dir ./scripts-auto/rootfs/dev
+unmount_dir ./scripts-auto/mnt/boot/grub2
+unmount_dir ./scripts-auto/mnt
+rm -rf ./scripts-auto/rootfs ./scripts-auto/mnt
+```
+
+2. 如果执行以上命令仍然无法删除目录，可尝试先调用如下命令，再重新执行第一步的命令。
+
+```bash
+fuser -kvm ./scripts-auto/rootfs
+fuser -kvm ./scripts-auto/mnt
+```
 
 ### 详细toml配置文件示例
 
