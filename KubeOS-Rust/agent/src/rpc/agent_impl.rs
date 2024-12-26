@@ -10,7 +10,7 @@
  * See the Mulan PSL v2 for more details.
  */
 
-use std::{sync::Mutex, thread, time::Duration};
+use std::{io::Write, sync::Mutex, thread, time::Duration};
 
 use anyhow::{bail, Result};
 use log::{debug, info};
@@ -154,7 +154,7 @@ impl AgentImpl {
 
     fn reboot(&self) -> Result<()> {
         info!("Wait to reboot");
-        std::io::stdout().flush();
+        std::io::stdout().flush()?;
         thread::sleep(Duration::from_secs(1));
         sync();
         if self.disable_reboot {
