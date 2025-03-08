@@ -70,6 +70,7 @@ pub const COPYRIGHT: &str = r#"# Copyright (c) Huawei Technologies Co., Ltd. 202
 
 pub const GLOBAL_VARS: &str = r#"set -eux
 
+umask 022
 NAME=KubeOS
 ID=kubeos
 SCRIPTS_DIR=$(cd "$(dirname "$0")" && pwd)
