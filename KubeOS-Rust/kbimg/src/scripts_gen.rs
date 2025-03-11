@@ -486,6 +486,7 @@ pub(crate) fn gen_admin_vars(file: &mut dyn Write, docker_img: &str, hostshell: 
         file,
         r#"set -eux
 
+umask 022
 SCRIPTS_DIR=$(dirname "$0")
 LOCK="${{SCRIPTS_DIR}}"/test.lock
 ADMIN_CONTAINER_DIR="${{SCRIPTS_DIR}}"/admin-container
