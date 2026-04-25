@@ -12,8 +12,10 @@
 Description=PERSIST Dir (/persist)
 DefaultDependencies=no
 Conflicts=umount.target
-Before=switch-root.target
+After=local-fs.target
 After=sysroot.mount
+Before=initrd-switch-root.service
+Before=initrd-cleanup.service
 
 [Service]
 Type=oneshot
