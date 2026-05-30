@@ -320,7 +320,7 @@ pub const CREATE_IMAGE: &str = r#"function create_img() {{
     mkdir -p "${{BOOT_PATH}}"
     chmod 755 "${{BOOT_PATH}}"
     {INIT_BOOT}
-    tar -x -C "${{TMP_MOUNT_PATH}}" -f "${{SCRIPTS_DIR}}"/os.tar
+    tar --selinux -x -C "${{TMP_MOUNT_PATH}}" -f "${{SCRIPTS_DIR}}"/os.tar
     {SET_PARTUUID}
     sync
     cp "${{SCRIPTS_DIR}}"/bootloader.sh "${{TMP_MOUNT_PATH}}"
@@ -350,7 +350,7 @@ pub const CREATE_OS_TAR_FROM_REPO: &str = r#"function create_os_tar_from_repo() 
     install_packages
     install_misc
     unmount_dir "${RPM_ROOT}"
-    tar -C "${RPM_ROOT}" -cf "${SCRIPTS_DIR}"/os.tar .
+    tar --selinux -C "${RPM_ROOT}" -cf "${SCRIPTS_DIR}"/os.tar .
     cp "${SCRIPTS_DIR}"/os.tar "${SCRIPTS_DIR}"/kubeos.tar 
 }
 "#;
