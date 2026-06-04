@@ -415,6 +415,7 @@ configure_audit "/etc/audit/rules.d/audit.rules" "-a always,exit -F arch=b64 -S 
 configure_audit "/etc/audit/rules.d/audit.rules" "-w /var/log/lastlog -p wa -k logins"
 configure_audit "/etc/audit/rules.d/audit.rules" "-w /var/log/tallylog -p wa -k logins"
 configure_audit "/etc/audit/rules.d/audit.rules" "-w /etc/sudoers -p wa -k privileged-actions"
+configure_audit "/etc/audit/rules.d/audit.rules" "-w /etc/sudoers.d -p wa -k privileged-actions"
 configure_audit "/etc/audit/rules.d/audit.rules" "-a always,exit -F path=/usr/sbin/setfiles -F perm=x -F auid>=1000 -F auid!=unset -k privileged-unix-update"
 configure_audit "/etc/audit/rules.d/audit.rules" "-a always,exit -F path=/usr/sbin/semanage -F perm=x -F auid>=1000 -F auid!=unset -k privileged-unix-update"
 configure_audit "/etc/audit/rules.d/audit.rules" "-a always,exit -F path=/usr/sbin/setsebool -F perm=x -F auid>=1000 -F auid!=unset -k privileged-unix-update"
@@ -444,15 +445,28 @@ chown root:root /usr/sbin/aureport
 chown root:root /usr/sbin/autrace
 chown root:root /usr/sbin/augenrules
 
+#The file permissions under /var/log/ should be root:root:640
+find /var/log -perm /137 ! -name '*[bw]tmp' ! -name '*lastlog' -type f -exec chmod 640 '{}' \;
+
 #禁止 ctrl-alt-del.target服务
 systemctl disable ctrl-alt-del.target
 systemctl mask ctrl-alt-del.target
 systemctl daemon-reload
 
 #打开系统FIPS模式
+sha512hmac /boot/vmlinuz > /boot/.vmlinuz.hmac
 fips-mode-setup --enable
 
 #默认开启enforcing模式，在/etc/selinux/config中配置"SELINUX=enforcing"不起作用
 setfiles -c /etc/selinux/targeted/policy/policy.33 /etc/selinux/targeted/contexts/files/file_contexts  /
+find / -type f -name grub.cfg 2>/dev/null | while read file; do
+  if grep -q 'enforcing=0' "$file"; then
+    continue
+  elif grep -q 'selinux=0' "$file"; then
+    sed -i 's/selinux=0/enforcing=0/g' "$file"
+  else
+    sed -i '/vmlinuz/ { s/$/ enforcing=0/ }' "$file"
+  fi
+done
 
 echo "所有任务执行完毕！"
