@@ -335,7 +335,7 @@ pub const CREATE_IMAGE: &str = r#"function create_img() {{
 
     {INIT_PERSIST}
 {MKDIR_PERSIST}
-    mkdir "${{TMP_MOUNT_PATH}}"/{{var,etc,etcwork,opt,optwork}}
+    mkdir "${{TMP_MOUNT_PATH}}"/{{var,etc,etcwork,opt,optwork,varwork}}
     mkdir -p "${{TMP_MOUNT_PATH}}"/etc/KubeOS/certs
     umount "${{TMP_MOUNT_PATH}}"
 
@@ -1510,10 +1510,10 @@ Wants=persist.mount
 After=persist.mount
 
 [Mount]
-What=/persist/var
+What=overlay
 Where=/var
-Type=node
-Options=bind
+Type=overlay
+Options=lowerdir=/var,upperdir=/persist/var,workdir=/persist/varwork
 
 [Install]
 WantedBy=local-fs.target"#;
