@@ -672,7 +672,7 @@ route_ip={}"#,
 
 // 00bootup/mount.sh
 pub(crate) fn gen_mount(file: &mut dyn Write, config: &Config) -> Result<()> {
-    let mut mkdir_args = String::from("mkdir /sysroot/persist/{var,etc,etcwork,opt,optwork");
+    let mut mkdir_args = String::from("mkdir /sysroot/persist/{var,etc,etcwork,opt,optwork,varwork");
     if let Some(persist_mkdir) = &config.persist_mkdir {
         for name in &persist_mkdir.name {
             mkdir_args.push_str(&format!(",{}", name));
