@@ -16,6 +16,7 @@ configure_line() {
 
     # 提取参数名（第一列），用于匹配
     local param_name=$(echo "$line" | awk '{print $1}')
+    param_name="${param_name%%=*}"
 
     # 确保目录存在
     mkdir -p "$(dirname "$file")"
