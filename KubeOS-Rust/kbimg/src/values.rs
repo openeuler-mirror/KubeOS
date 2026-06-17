@@ -287,6 +287,31 @@ sed -i '/^root:/d' /etc/shadow_bak
 echo "root:""${{ROOT_PASSWD}}""${{str:1}}" >/etc/shadow
 cat /etc/shadow_bak >>/etc/shadow
 rm -rf /etc/shadow_bak
+
+# Auto-generate tmpfiles.d entries for /var content.
+# /var is a bind mount from /persist/var which starts empty, shadowing the
+# original /var from the read-only root. systemd-tmpfiles-setup runs after
+# var.mount and recreates the required directory tree and seed files.
+# During A/B upgrades, new images include updated tmpfiles config covering
+# directories and files added by new RPMs.
+mkdir -p /usr/share/factory/var
+( find /var -type d -mindepth 1 2>/dev/null | sort ;
+  find /var -type f 2>/dev/null ) | while read path; do
+ 	if [ -d "$path" ]; then
+ 	    perm=$(stat -c "%a" "$path" 2>/dev/null || echo "0755")
+ 	    owner=$(stat -c "%U" "$path" 2>/dev/null || echo "root")
+ 	    group=$(stat -c "%G" "$path" 2>/dev/null || echo "root")
+ 	    echo "d $path $perm $owner $group -"
+ 	elif [ -f "$path" ]; then
+ 	    factory="/usr/share/factory/var${{path#/var}}"
+ 	    mkdir -p "$(dirname "$factory")"
+ 	    cp -a "$path" "$factory"
+ 	    perm=$(stat -c "%a" "$path" 2>/dev/null || echo "0644")
+ 	    owner=$(stat -c "%U" "$path" 2>/dev/null || echo "root")
+ 	    group=$(stat -c "%G" "$path" 2>/dev/null || echo "root")
+ 	    echo "C $path $perm $owner $group - $factory"
+ 	fi
+done > /usr/lib/tmpfiles.d/kubeos-var.conf
 {PXE_DRACUT}
 {DM_VERITY_DRACUT}"#;
 
@@ -335,7 +360,7 @@ pub const CREATE_IMAGE: &str = r#"function create_img() {{
 
     {INIT_PERSIST}
 {MKDIR_PERSIST}
-    mkdir "${{TMP_MOUNT_PATH}}"/{{var,etc,etcwork,opt,optwork,varwork}}
+    mkdir "${{TMP_MOUNT_PATH}}"/{{var,etc,etcwork,opt,optwork}}
     mkdir -p "${{TMP_MOUNT_PATH}}"/etc/KubeOS/certs
     umount "${{TMP_MOUNT_PATH}}"
 
@@ -1510,10 +1535,10 @@ Wants=persist.mount
 After=persist.mount
 
 [Mount]
-What=overlay
+What=/persist/var
 Where=/var
-Type=overlay
-Options=lowerdir=/var,upperdir=/persist/var,workdir=/persist/varwork
+Type=node
+Options=bind
 
 [Install]
 WantedBy=local-fs.target"#;
