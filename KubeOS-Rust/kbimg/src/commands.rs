@@ -49,6 +49,10 @@ pub enum CreateType {
     Upgrade,
     #[clap(name = "admin-container")]
     AdminContainer,
+    #[clap(name = "oci-img")]
+    Oci,
+    #[clap(name = "iso-img")]
+    Iso,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -93,11 +97,44 @@ pub struct AdminContainerInfo {
     pub hostshell: PathBuf,
 }
 
+#[derive(Debug, Deserialize, Clone)]
+pub struct OciImgInfo {
+    /// Required: Name of the OCI container image to build (e.g. "kubeos-oci:v1")
+    #[serde(deserialize_with = "reject_empty_string")]
+    pub image_name: String,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct IsoImgInfo {
+    /// Required: Source OCI container image (e.g. "kubeos-oci:v1") used as base for ISO image
+    #[serde(deserialize_with = "reject_empty_string")]
+    pub oci_image: String,
+    /// Required: Name of the ISO container image to build (e.g. "kubeos-iso:v1")
+    #[serde(deserialize_with = "reject_empty_string")]
+    pub iso_image: String,
+    /// Required: Path to the elemental-cli binary
+    pub elemental_cli_path: PathBuf,
+    /// Optional: Output directory for the ISO, default is current scripts dir
+    #[serde(default, deserialize_with = "reject_empty_option_string")]
+    pub output_dir: Option<String>,
+    /// Optional: GRUB menu entry name, default "KubeOS"
+    #[serde(default, deserialize_with = "reject_empty_option_string")]
+    pub grub_entry_name: Option<String>,
+    /// Optional: ISO volume label, default "COS_LIVE"
+    #[serde(default, deserialize_with = "reject_empty_option_string")]
+    pub label: Option<String>,
+    /// Optional: ISO file name prefix (without .iso), default "KubeOS"
+    #[serde(default, deserialize_with = "reject_empty_option_string")]
+    pub name: Option<String>,
+}
+
 #[derive(Debug, Deserialize, Default, Clone)]
 pub struct Config {
     pub from_repo: Option<RepoInfo>,
     pub from_dockerimg: Option<DockerImgInfo>,
     pub admin_container: Option<AdminContainerInfo>,
+    pub oci_img: Option<OciImgInfo>,
+    pub iso_img: Option<IsoImgInfo>,
     pub pxe_config: Option<PxeConfig>,
     pub users: Option<Vec<User>>,
     pub copy_files: Option<Vec<CopyFile>>,
@@ -204,6 +241,10 @@ pub enum ImageType {
     AdminContainer,
     #[serde(rename = "upgrade")]
     UpgradeImage,
+    #[serde(rename = "oci")]
+    OciImage,
+    #[serde(rename = "iso")]
+    IsoImage,
 }
 
 impl From<&str> for ImageType {
@@ -215,6 +256,8 @@ impl From<&str> for ImageType {
             "pxe-docker" => ImageType::PxeDocker,
             "admin-container" => ImageType::AdminContainer,
             "upgrade" => ImageType::UpgradeImage,
+            "oci" => ImageType::OciImage,
+            "iso" => ImageType::IsoImage,
             _ => ImageType::VMRepo,
         }
     }

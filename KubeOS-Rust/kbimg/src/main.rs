@@ -21,6 +21,8 @@ mod admin_container;
 mod commands;
 mod custom;
 mod docker_img;
+mod iso_img;
+mod oci_img;
 mod repo;
 mod scripts_gen;
 mod utils;
@@ -74,7 +76,7 @@ fn main() {
     };
     debug!("Config file path: {:?}", config);
     let content = fs::read_to_string(config).expect("Failed to read config file");
-    let data: Config = match toml::from_str(&content) {
+    let mut data: Config = match toml::from_str(&content) {
         Ok(d) => d,
         Err(e) => {
             error!("Failed to parse config file: {}", e);
@@ -130,6 +132,29 @@ fn main() {
                 info = Some(Box::new(i) as Box<dyn CreateImage>)
             } else {
                 error!("Missing admin_container in config file for creating admin container image");
+                exit(1);
+            }
+        },
+        commands::CreateType::Oci => {
+            if let Some(ref mut i) = data.from_repo {
+                i.arch = Some(arch);
+                i.image_type = Some(commands::ImageType::OciImage);
+            } else {
+                error!("Missing from_repo in config file for creating oci image");
+                exit(1);
+            }
+            if let Some(i) = data.oci_img.clone() {
+                info = Some(Box::new(i) as Box<dyn CreateImage>)
+            } else {
+                error!("Missing oci_img in config file for creating oci image");
+                exit(1);
+            }
+        },
+        commands::CreateType::Iso => {
+            if let Some(i) = data.iso_img.clone() {
+                info = Some(Box::new(i) as Box<dyn CreateImage>)
+            } else {
+                error!("Missing iso_img in config file for creating iso image");
                 exit(1);
             }
         },

@@ -39,6 +39,18 @@ version = "v1"
 # img_name = "kubeos-admin-container:v1"
 # hostshell = "./bin/hostshell"
 
+# [oci_img]
+# image_name = "kubeos-oci:v1"
+
+# [iso_img]
+# oci_image = "kubeos-oci:v1"
+# iso_image = "kubeos-iso:v1"
+# elemental_cli_path = "./bin/elemental-cli"
+# output_dir = "./output"
+# grub_entry_name = "KubeOS"
+# label = "COS_LIVE"
+# name = "KubeOS"
+
 # [pxe_config]
 # dhcp = false
 # disk = "/dev/vda"

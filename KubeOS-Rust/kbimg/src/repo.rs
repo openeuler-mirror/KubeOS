@@ -109,7 +109,7 @@ impl RepoInfo {
         Ok(())
     }
 
-    fn write_set_in_chroot(&self, config: &Config) -> Result<()> {
+    pub(crate) fn write_set_in_chroot(&self, config: &Config) -> Result<()> {
         let set_in_chroot_path = format!("{}/{}", SCRIPTS_DIR, SET_IN_CHROOT_SH);
         let mut set_in_chroot = File::create(&set_in_chroot_path)?;
         gen_set_in_chroot(
@@ -141,7 +141,7 @@ impl RepoInfo {
         Ok(())
     }
 
-    fn write_rpmlist(&self, config: &Config) -> Result<()> {
+    pub(crate) fn write_rpmlist(&self, config: &Config) -> Result<()> {
         let rpmlist_path = format!("{}/{}", SCRIPTS_DIR, RPMLIST);
         let mut rpmlist = File::create(&rpmlist_path)?;
         gen_rpm_list(
@@ -155,7 +155,7 @@ impl RepoInfo {
         Ok(())
     }
 
-    fn write_misc_files(&self) -> Result<()> {
+    pub(crate) fn write_misc_files(&self) -> Result<()> {
         fs::create_dir_all(MISC_FILES_DIR)?;
         utils::set_permissions(MISC_FILES_DIR, DIR_PERMISSION)?;
 
@@ -203,7 +203,7 @@ impl RepoInfo {
         Ok(())
     }
 
-    fn write_grub_cfg(&self, dmv: bool) -> Result<()> {
+    pub(crate) fn write_grub_cfg(&self, dmv: bool) -> Result<()> {
         let grub_cfg_path = format!("{}/{}", SCRIPTS_DIR, GRUB_CFG);
         let mut grub_cfg = File::create(&grub_cfg_path)?;
         if dmv {

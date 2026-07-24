@@ -37,6 +37,13 @@ pub(crate) const MISC_OS_RELEASE: &str = "os-release";
 pub(crate) const MISC_PERSIST_MOUNT: &str = "persist.mount";
 pub(crate) const MISC_VAR_MOUNT: &str = "var.mount";
 
+pub(crate) const OCI_DIR: &str = "./scripts-auto/oci";
+pub(crate) const OCI_DOCKERFILE: &str = "Dockerfile";
+pub(crate) const ISO_DIR: &str = "./scripts-auto/iso";
+pub(crate) const ISO_MANIFEST: &str = "manifest.yaml";
+pub(crate) const ISO_GRUB_CFG: &str = "grub.cfg";
+pub(crate) const ISO_OVERLAY_DIR: &str = "./scripts-auto/iso/overlay";
+
 pub(crate) const DMV_DIR: &str = "./scripts-auto/dm-verity";
 pub(crate) const DMV_CHROOT: &str = "chroot_new_grub.sh";
 pub(crate) const DMV_MAIN: &str = "dm_verity.sh";
@@ -876,6 +883,112 @@ COPY ./set-ssh-pub-key.service /usr/lib/sysmaster/system
 EXPOSE 22
 RUN ln -s /usr/lib/sysmaster/system/set-ssh-pub-key.service /etc/sysmaster/system/multi-user.target.wants/set-ssh-pub-key.service
 CMD ["/usr/lib/sysmaster/init"]"#;
+
+pub const OCI_ROOTFS_DOCKERFILE: &str = r#"FROM scratch
+ADD rootfs.tar /
+CMD ["/bin/bash"]"#;
+
+pub const ISO_DOCKERFILE: &str = r#"FROM {OCI_IMAGE} AS base
+
+# Copy elemental-cli into the image
+COPY elemental-cli /usr/bin/elemental
+RUN chmod +x /usr/bin/elemental
+
+# Create /boot/initrd symlink (elemental expects /boot/initrd)
+RUN if [ ! -L /boot/initrd ]; then ln -sf initramfs.img /boot/initrd; fi
+
+# Generate initrd with required elemental services
+RUN ARCH=$(uname -m) && \
+    FEATURES="" && \
+    if [ "${ARCH}" != "x86_64" ]; then \
+      FEATURES="autologin boot-assessment cloud-config-defaults cloud-config-essentials dracut-config elemental-rootfs elemental-setup elemental-sysroot grub-config"; \
+      if [ "${ARCH}" = "aarch64" ]; then \
+        FEATURES="${FEATURES} arm-firmware grub-default-bootargs"; \
+      fi; \
+    fi; \
+    elemental --debug init --force ${FEATURES}
+
+# Update os-release file with elemental metadata
+RUN echo IMAGE_REPO="{OCI_IMAGE}"             >> /etc/os-release && \
+    echo IMAGE_TAG="{VERSION}"                >> /etc/os-release && \
+    echo IMAGE="{OCI_IMAGE}"                  >> /etc/os-release && \
+    echo TIMESTAMP="$(date +'%Y%m%d%H%M%S')"  >> /etc/os-release && \
+    echo GRUB_ENTRY_NAME="{GRUB_ENTRY_NAME}"  >> /etc/os-release
+
+CMD ["/bin/bash"]"#;
+
+pub const CREATE_OCI_IMAGE: &str = r#"function create_oci_image() {
+    install_packages
+    install_misc
+    unmount_dir "${RPM_ROOT}"
+    tar --selinux -C "${RPM_ROOT}" -cf "${SCRIPTS_DIR}"/rootfs.tar .
+    docker build -t "${DOCKER_IMG}" -f "${SCRIPTS_DIR}"/oci/Dockerfile "${SCRIPTS_DIR}"
+    delete_file "${SCRIPTS_DIR}"/rootfs.tar
+}
+
+test_lock
+trap clean_space EXIT
+trap clean_img ERR
+
+create_oci_image"#;
+
+pub const ELEMENTAL_ISO_MANIFEST: &str = r#"iso:
+  bootloader-in-rootfs: true
+  grub-entry-name: "{GRUB_ENTRY_NAME}"
+  rootfs:
+  - docker:{ISO_IMAGE}
+  image:
+  - docker:{ISO_IMAGE}
+  label: "{LABEL}"
+
+name: "{ISO_NAME}"
+date: true"#;
+
+pub const ISO_GRUB_CFG_CONTENT: &str = r#"search --file --set=root /boot/kernel.xz
+set default=0
+set timeout=10
+set timeout_style=menu
+set linux=linux
+set initrd=initrd
+if [ "${grub_cpu}" = "x86_64" -o "${grub_cpu}" = "i386" ];then
+    if [ "${grub_platform}" = "efi" ]; then
+        set linux=linuxefi
+        set initrd=initrdefi
+    fi
+fi
+
+set font=($root)/boot/x86_64/loader/grub2/fonts/unicode.pf2
+if [ -f ${font} ];then
+    loadfont ${font}
+fi
+
+menuentry "KubeOS Live" --class os --unrestricted {
+    echo Loading kernel...
+    $linux ($root)/boot/kernel.xz cdroot root=live:CDLABEL=COS_LIVE rd.live.dir=/ rd.live.squashimg=rootfs.squashfs console=tty1 console=ttyS0 rd.cos.disable
+    echo Loading initrd...
+    $initrd ($root)/boot/rootfs.xz
+}
+"#;
+
+pub const CREATE_ISO_IMAGE: &str = r#"function create_iso_image() {
+    # Build ISO-specific image (base image + elemental init)
+    cp "${ELEMENTAL_CLI_PATH}" "${ISO_DIR}"/elemental-cli
+    docker build -t "${ISO_IMAGE}" -f "${ISO_DIR}"/Dockerfile "${ISO_DIR}"
+    rm -f "${ISO_DIR}"/elemental-cli
+
+    # Build ISO using elemental-cli
+    "${ELEMENTAL_CLI_PATH}" --debug build-iso \
+        --config-dir "${ISO_DIR}" \
+        --overlay-iso "${ISO_DIR}"/overlay \
+        -o "${OUTPUT_DIR}" \
+        "docker:${ISO_IMAGE}"
+}
+
+test_lock
+trap 'rm -f "${LOCK}"' EXIT
+trap 'rm -f "${LOCK}"' ERR
+
+create_iso_image"#;
 
 pub const SET_SSH_PUB_KEY_SERVICE: &str = r#"[Unit]
 Description=set ssh authorized keys according to the secret which is set by user

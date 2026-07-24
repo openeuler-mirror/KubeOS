@@ -10,7 +10,7 @@
  * See the Mulan PSL v2 for more details.
  */
 
-use std::{collections::HashMap, io::Write, path::PathBuf};
+use std::{collections::HashMap, fs::create_dir_all, io::Write, path::PathBuf};
 
 use anyhow::{anyhow, bail, Result};
 use strfmt::strfmt;
@@ -720,6 +720,142 @@ pub(crate) fn gen_os_release(file: &mut dyn Write) -> Result<()> {
 ID=KubeOS
 "#
     )?;
+    Ok(())
+}
+/* endregion */
+
+/* region: oci-img */
+pub(crate) fn gen_oci_vars(
+    file: &mut dyn Write,
+    info: &RepoInfo,
+    oci_info: &OciImgInfo,
+    grub: &Option<Grub>,
+) -> Result<()> {
+    writeln!(
+        file,
+        r#"REPO_PATH="{}"
+VERSION="{}"
+AGENT_PATH="{}"
+# shellcheck disable=SC2016
+ROOT_PASSWD='{}'
+DOCKER_IMG="{}"
+"#,
+        info.repo_path.to_str().unwrap(),
+        &info.version,
+        info.agent_path.to_str().unwrap(),
+        &info.root_passwd,
+        &oci_info.image_name,
+    )?;
+    if let Some(grub) = grub {
+        writeln!(file, "GRUBpw='{}'\n", grub.passwd)?;
+    }
+    Ok(())
+}
+
+pub(crate) fn gen_create_oci_image(file: &mut dyn Write, info: &RepoInfo, config: &Config) -> Result<()> {
+    let arch = info.arch.clone().ok_or_else(|| anyhow!("arch is None"))?;
+    let image_type = info.image_type.as_ref().ok_or_else(|| anyhow!("image_type is None"))?;
+    gen_prepare_yum(file)?;
+    gen_install_packages(file)?;
+    gen_install_misc(file, info.legacy_bios, &arch, image_type, config)?;
+    writeln!(file, "{CREATE_OCI_IMAGE}")?;
+    Ok(())
+}
+
+pub(crate) fn write_oci_dockerfile() -> Result<()> {
+    create_dir_all(OCI_DIR)?;
+    utils::set_permissions(OCI_DIR, DIR_PERMISSION)?;
+    let dockerfile_path = format!("{}/{}", OCI_DIR, OCI_DOCKERFILE);
+    let mut dockerfile = std::fs::File::create(&dockerfile_path)?;
+    base_gen(&mut dockerfile, OCI_ROOTFS_DOCKERFILE, false)?;
+    utils::set_permissions(&dockerfile_path, CONFIG_PERMISSION)?;
+    Ok(())
+}
+/* endregion */
+
+/* region: iso-img */
+pub(crate) fn gen_iso_vars(file: &mut dyn Write, info: &IsoImgInfo, repo_info: Option<&RepoInfo>) -> Result<()> {
+    let output_dir = info.output_dir.as_deref().unwrap_or(SCRIPTS_DIR);
+    let version = repo_info.map(|r| r.version.as_str()).unwrap_or("");
+    writeln!(
+        file,
+        r#"set -eux
+
+umask 022
+SCRIPTS_DIR=$(cd "$(dirname "$0")" && pwd)
+LOCK="${{SCRIPTS_DIR}}"/test.lock
+ELEMENTAL_CLI_PATH="{}"
+OCI_IMAGE="{}"
+ISO_IMAGE="{}"
+VERSION="{}"
+OUTPUT_DIR="{}"
+ISO_DIR="${{SCRIPTS_DIR}}"/iso
+GRUB_ENTRY_NAME="{}"
+LABEL="{}"
+ISO_NAME="{}"
+"#,
+        info.elemental_cli_path.to_str().unwrap(),
+        &info.oci_image,
+        &info.iso_image,
+        version,
+        output_dir,
+        info.grub_entry_name.as_deref().unwrap_or("KubeOS"),
+        info.label.as_deref().unwrap_or("COS_LIVE"),
+        info.name.as_deref().unwrap_or("KubeOS"),
+    )?;
+    Ok(())
+}
+
+pub(crate) fn write_iso_manifest(info: &IsoImgInfo) -> Result<()> {
+    create_dir_all(ISO_DIR)?;
+    utils::set_permissions(ISO_DIR, DIR_PERMISSION)?;
+    let manifest_path = format!("{}/{}", ISO_DIR, ISO_MANIFEST);
+    let mut manifest = std::fs::File::create(&manifest_path)?;
+    gen_copyright(&mut manifest)?;
+    let mut vars = HashMap::new();
+    vars.insert("GRUB_ENTRY_NAME".to_string(), info.grub_entry_name.as_deref().unwrap_or("KubeOS").to_string());
+    vars.insert("ISO_IMAGE".to_string(), info.iso_image.clone());
+    vars.insert("LABEL".to_string(), info.label.as_deref().unwrap_or("COS_LIVE").to_string());
+    vars.insert("ISO_NAME".to_string(), info.name.as_deref().unwrap_or("KubeOS").to_string());
+    let dynamic_manifest = strfmt(ELEMENTAL_ISO_MANIFEST, &vars)?;
+    writeln!(manifest, "{dynamic_manifest}")?;
+    utils::set_permissions(&manifest_path, CONFIG_PERMISSION)?;
+    Ok(())
+}
+
+pub(crate) fn write_iso_dockerfile(info: &IsoImgInfo, repo_info: Option<&RepoInfo>) -> Result<()> {
+    let dockerfile_path = format!("{}/{}", ISO_DIR, OCI_DOCKERFILE);
+    let mut dockerfile = std::fs::File::create(&dockerfile_path)?;
+    gen_copyright(&mut dockerfile)?;
+    let version = repo_info.map(|r| r.version.as_str()).unwrap_or("");
+    let entry_name = info.grub_entry_name.as_deref().unwrap_or("KubeOS");
+    // Use string replace instead of strfmt to avoid conflicts with shell variables (${ARCH}, ${FEATURES}, etc.)
+    let dynamic_dockerfile = ISO_DOCKERFILE
+        .replace("{OCI_IMAGE}", &info.oci_image)
+        .replace("{VERSION}", version)
+        .replace("{GRUB_ENTRY_NAME}", entry_name);
+    writeln!(dockerfile, "{dynamic_dockerfile}")?;
+    utils::set_permissions(&dockerfile_path, CONFIG_PERMISSION)?;
+    Ok(())
+}
+
+pub(crate) fn write_iso_grub_cfg(info: &IsoImgInfo) -> Result<()> {
+    let overlay_grub_dir = format!("{}/boot/grub2", ISO_OVERLAY_DIR);
+    create_dir_all(&overlay_grub_dir)?;
+    utils::set_permissions(&overlay_grub_dir, DIR_PERMISSION)?;
+    let grub_cfg_path = format!("{}/{}", overlay_grub_dir, ISO_GRUB_CFG);
+    let mut grub_cfg = std::fs::File::create(&grub_cfg_path)?;
+    gen_copyright(&mut grub_cfg)?;
+    let mut grub_content = ISO_GRUB_CFG_CONTENT.to_string();
+    let entry_name = info.grub_entry_name.as_deref().unwrap_or("KubeOS");
+    grub_content = grub_content.replace(r#"menuentry "KubeOS Live""#, &format!(r#"menuentry "{entry_name} Live""#));
+    writeln!(grub_cfg, "{grub_content}")?;
+    utils::set_permissions(&grub_cfg_path, CONFIG_PERMISSION)?;
+    Ok(())
+}
+
+pub(crate) fn gen_create_iso_image(file: &mut dyn Write) -> Result<()> {
+    writeln!(file, "{CREATE_ISO_IMAGE}")?;
     Ok(())
 }
 /* endregion */
