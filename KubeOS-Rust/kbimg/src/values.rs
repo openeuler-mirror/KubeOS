@@ -894,8 +894,51 @@ pub const ISO_DOCKERFILE: &str = r#"FROM {OCI_IMAGE} AS base
 COPY elemental-cli /usr/bin/elemental
 RUN chmod +x /usr/bin/elemental
 
+# Disable KubeOS disk-only mount units (persist/etc/var/opt-cni).
+# These depend on a PERSIST partition that does not exist in ISO live mode.
+RUN rm -f /lib/systemd/system/local-fs.target.wants/etc.mount \
+         /lib/systemd/system/local-fs.target.wants/opt-cni.mount \
+         /lib/systemd/system/local-fs.target.wants/persist.mount \
+         /lib/systemd/system/local-fs.target.wants/var.mount \
+         /lib/systemd/system/local-fs.target.wants/boot-efi.mount \
+         /lib/systemd/system/local-fs.target.wants/boot-grub2.mount
+
 # Create /boot/initrd symlink (elemental expects /boot/initrd)
 RUN if [ ! -L /boot/initrd ]; then ln -sf initramfs.img /boot/initrd; fi
+
+# element needs vmlinuz has version, so we need to move vmlinuz to /boot
+# uname -r returns host kernel (not container kernel), read version from /lib/modules instead
+RUN KVER=$(ls /lib/modules/ | head -1) && mv /boot/vmlinuz /boot/vmlinuz-${KVER}
+
+# Add a dracut module to work around openEuler dracut 059 bug:
+# do_live_overlay() is skipped entirely when $overlay is empty (no
+# rd.live.overlay= in cmdline), so for flat squashfs (no LiveOS/rootfs.img)
+# /sysroot never gets mounted. We mount overlay on /sysroot directly in
+# pre-mount hook, after dmsquash-live-root has mounted squashfs to /run/rootfsbase.
+RUN mkdir -p /usr/lib/dracut/modules.d/99kubeos-overlayfs-fix && \
+    echo '#!/bin/bash'                                                  > /usr/lib/dracut/modules.d/99kubeos-overlayfs-fix/module-setup.sh && \
+    echo 'check() { return 0; }'                                       >> /usr/lib/dracut/modules.d/99kubeos-overlayfs-fix/module-setup.sh && \
+    echo 'depends() { echo dmsquash-live; return 0; }'                 >> /usr/lib/dracut/modules.d/99kubeos-overlayfs-fix/module-setup.sh && \
+    echo 'install() { inst_hook pre-mount 99 "$moddir/overlayfs-fix.sh"; }' >> /usr/lib/dracut/modules.d/99kubeos-overlayfs-fix/module-setup.sh && \
+    echo '#!/bin/sh'                                                    > /usr/lib/dracut/modules.d/99kubeos-overlayfs-fix/overlayfs-fix.sh && \
+    echo '# kubeos-overlayfs-fix: mount overlay on /sysroot directly'  >> /usr/lib/dracut/modules.d/99kubeos-overlayfs-fix/overlayfs-fix.sh && \
+    echo '# dmsquash-live-root skips do_live_overlay() when $overlay is empty' >> /usr/lib/dracut/modules.d/99kubeos-overlayfs-fix/overlayfs-fix.sh && \
+    echo '# (no rd.live.overlay= in cmdline), so /sysroot never gets mounted.' >> /usr/lib/dracut/modules.d/99kubeos-overlayfs-fix/overlayfs-fix.sh && \
+    echo '# We do it here: tmpfs for upper/work, overlay onto /sysroot.' >> /usr/lib/dracut/modules.d/99kubeos-overlayfs-fix/overlayfs-fix.sh && \
+    echo '# Order matters: mount tmpfs BEFORE mkdir, otherwise mkdir dirs' >> /usr/lib/dracut/modules.d/99kubeos-overlayfs-fix/overlayfs-fix.sh && \
+    echo '# get hidden under the newly mounted tmpfs.' >> /usr/lib/dracut/modules.d/99kubeos-overlayfs-fix/overlayfs-fix.sh && \
+    echo 'mkdir -p /run/initramfs/overlayfs'                          >> /usr/lib/dracut/modules.d/99kubeos-overlayfs-fix/overlayfs-fix.sh && \
+    echo "grep -q ' /run/initramfs/overlayfs ' /proc/mounts || \\"     >> /usr/lib/dracut/modules.d/99kubeos-overlayfs-fix/overlayfs-fix.sh && \
+    echo '    mount -t tmpfs tmpfs /run/initramfs/overlayfs'           >> /usr/lib/dracut/modules.d/99kubeos-overlayfs-fix/overlayfs-fix.sh && \
+    echo 'mkdir -p /run/initramfs/overlayfs/overlayfs /run/initramfs/overlayfs/ovlwork' >> /usr/lib/dracut/modules.d/99kubeos-overlayfs-fix/overlayfs-fix.sh && \
+    echo '# Create symlinks for dmsquash-generator sysroot.mount which uses /run/overlayfs' >> /usr/lib/dracut/modules.d/99kubeos-overlayfs-fix/overlayfs-fix.sh && \
+    echo '[ -e /run/overlayfs ] || ln -s /run/initramfs/overlayfs/overlayfs /run/overlayfs' >> /usr/lib/dracut/modules.d/99kubeos-overlayfs-fix/overlayfs-fix.sh && \
+    echo '[ -e /run/ovlwork ] || ln -s /run/initramfs/overlayfs/ovlwork /run/ovlwork' >> /usr/lib/dracut/modules.d/99kubeos-overlayfs-fix/overlayfs-fix.sh && \
+    echo 'mkdir -p /sysroot'                                           >> /usr/lib/dracut/modules.d/99kubeos-overlayfs-fix/overlayfs-fix.sh && \
+    echo "grep -q ' /sysroot ' /proc/mounts || \\"                     >> /usr/lib/dracut/modules.d/99kubeos-overlayfs-fix/overlayfs-fix.sh && \
+    echo '    mount -t overlay overlay -o lowerdir=/run/rootfsbase,upperdir=/run/initramfs/overlayfs/overlayfs,workdir=/run/initramfs/overlayfs/ovlwork /sysroot' >> /usr/lib/dracut/modules.d/99kubeos-overlayfs-fix/overlayfs-fix.sh && \
+    chmod +x /usr/lib/dracut/modules.d/99kubeos-overlayfs-fix/*.sh && \
+    echo 'add_dracutmodules+=" kubeos-overlayfs-fix "' > /etc/dracut.conf.d/99-kubeos-overlayfs-fix.conf
 
 # Generate initrd with required elemental services
 RUN ARCH=$(uname -m) && \
@@ -935,6 +978,7 @@ create_oci_image"#;
 pub const ELEMENTAL_ISO_MANIFEST: &str = r#"iso:
   bootloader-in-rootfs: true
   grub-entry-name: "{GRUB_ENTRY_NAME}"
+  extra-cmdline: "security=selinux enforcing=0 console=tty1 console=ttyS0 console=ttyAMA0,115200"
   rootfs:
   - docker:{ISO_IMAGE}
   image:
@@ -976,8 +1020,9 @@ pub const CREATE_ISO_IMAGE: &str = r#"function create_iso_image() {
     docker build -t "${ISO_IMAGE}" -f "${ISO_DIR}"/Dockerfile "${ISO_DIR}"
     rm -f "${ISO_DIR}"/elemental-cli
 
-    # Build ISO using elemental-cli
+    # Build ISO using elemental-cli (--local: use image from local docker cache)
     "${ELEMENTAL_CLI_PATH}" --debug build-iso \
+        --local \
         --config-dir "${ISO_DIR}" \
         --overlay-iso "${ISO_DIR}"/overlay \
         -o "${OUTPUT_DIR}" \
