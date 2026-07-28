@@ -21,6 +21,7 @@ mod admin_container;
 mod commands;
 mod custom;
 mod docker_img;
+mod install;
 mod iso_img;
 mod oci_img;
 mod repo;
@@ -32,6 +33,7 @@ use utils::{check_config_toml, execute_scripts, get_arch};
 use values::{DIR_PERMISSION, SCRIPTS_DIR};
 
 use crate::commands::{Cli, Config};
+use crate::install::InstallImage;
 
 trait CreateImage {
     /// validate cmd args, check disk size and other prepare work
@@ -64,6 +66,30 @@ fn process(info: Box<dyn CreateImage>, mut config: Config, debug: bool) -> Resul
     Ok(())
 }
 
+fn process_install(info: Box<dyn InstallImage>, config: &Config, debug: bool) -> Result<()> {
+    let dir = PathBuf::from(SCRIPTS_DIR);
+    let lock = dir.join("test.lock");
+    if lock.exists() {
+        error!("It looks like another kbimg process is running. Please wait it to finish.");
+        exit(1);
+    }
+    if dir.exists() {
+        debug!("Removing existing scripts directory");
+        fs::remove_dir_all(&dir)?;
+    }
+    fs::create_dir_all(&dir)?;
+    utils::set_permissions(&dir, DIR_PERMISSION)?;
+    info.prepare(config)?;
+    let path = info.generate_scripts(config)?;
+    if !debug {
+        execute_scripts(path)?;
+        info!("KubeOS installed successfully");
+    } else {
+        debug!("Executed following command to install KubeOS: bash {:?}", path);
+    }
+    Ok(())
+}
+
 fn main() {
     let cli = Cli::parse();
     let default_log_level: &str = if cli.debug { "debug" } else { "info" };
@@ -71,100 +97,132 @@ fn main() {
 
     let arch = get_arch().expect("Failed to get architecture");
     debug!("Architecture: {:?}", arch);
-    let (create_type, config) = match cli.commands {
-        commands::Commands::Create { image_type, file } => (image_type, file),
-    };
-    debug!("Config file path: {:?}", config);
-    let content = fs::read_to_string(config).expect("Failed to read config file");
-    let mut data: Config = match toml::from_str(&content) {
-        Ok(d) => d,
-        Err(e) => {
-            error!("Failed to parse config file: {}", e);
-            exit(1);
-        },
-    };
-    debug!("Config: {:?}", data);
 
-    let info;
-    match create_type {
-        commands::CreateType::VM => {
-            check_config_toml(&data).unwrap();
-            if let Some(mut i) = data.from_repo.clone() {
-                i.arch = Some(arch);
-                i.image_type = Some(commands::ImageType::VMRepo);
-                info = Some(Box::new(i) as Box<dyn CreateImage>)
-            } else if let Some(mut i) = data.from_dockerimg.clone() {
-                i.arch = Some(arch);
-                i.image_type = Some(commands::ImageType::VMDocker);
-                info = Some(Box::new(i) as Box<dyn CreateImage>)
-            } else {
-                error!("Missing required fields in config file for creating vm image");
-                exit(1);
+    match cli.commands {
+        commands::Commands::Create { image_type, file } => {
+            debug!("Config file path: {:?}", file);
+            let content = fs::read_to_string(file).expect("Failed to read config file");
+            let mut data: Config = match toml::from_str(&content) {
+                Ok(d) => d,
+                Err(e) => {
+                    error!("Failed to parse config file: {}", e);
+                    exit(1);
+                },
+            };
+            debug!("Config: {:?}", data);
+
+            let info;
+            match image_type {
+                commands::CreateType::VM => {
+                    check_config_toml(&data).unwrap();
+                    if let Some(mut i) = data.from_repo.clone() {
+                        i.arch = Some(arch);
+                        i.image_type = Some(commands::ImageType::VMRepo);
+                        info = Some(Box::new(i) as Box<dyn CreateImage>)
+                    } else if let Some(mut i) = data.from_dockerimg.clone() {
+                        i.arch = Some(arch);
+                        i.image_type = Some(commands::ImageType::VMDocker);
+                        info = Some(Box::new(i) as Box<dyn CreateImage>)
+                    } else {
+                        error!("Missing required fields in config file for creating vm image");
+                        exit(1);
+                    }
+                },
+                commands::CreateType::PXE => {
+                    check_config_toml(&data).unwrap();
+                    if let Some(mut i) = data.from_repo.clone() {
+                        i.arch = Some(arch);
+                        i.image_type = Some(commands::ImageType::PxeRepo);
+                        info = Some(Box::new(i) as Box<dyn CreateImage>)
+                    } else if let Some(mut i) = data.from_dockerimg.clone() {
+                        i.arch = Some(arch);
+                        i.image_type = Some(commands::ImageType::PxeDocker);
+                        info = Some(Box::new(i) as Box<dyn CreateImage>)
+                    } else {
+                        error!("Missing required fields in config file for creating pxe image");
+                        exit(1);
+                    }
+                },
+                commands::CreateType::Upgrade => {
+                    if let Some(mut i) = data.from_repo.clone() {
+                        i.arch = Some(arch);
+                        i.image_type = Some(commands::ImageType::UpgradeImage);
+                        info = Some(Box::new(i) as Box<dyn CreateImage>)
+                    } else {
+                        error!("Missing from_repo in config file for creating upgrade image");
+                        exit(1);
+                    }
+                },
+                commands::CreateType::AdminContainer => {
+                    if let Some(i) = data.admin_container.clone() {
+                        info = Some(Box::new(i) as Box<dyn CreateImage>)
+                    } else {
+                        error!("Missing admin_container in config file for creating admin container image");
+                        exit(1);
+                    }
+                },
+                commands::CreateType::Oci => {
+                    if let Some(ref mut i) = data.from_repo {
+                        i.arch = Some(arch);
+                        i.image_type = Some(commands::ImageType::OciImage);
+                    } else {
+                        error!("Missing from_repo in config file for creating oci image");
+                        exit(1);
+                    }
+                    if let Some(i) = data.oci_img.clone() {
+                        info = Some(Box::new(i) as Box<dyn CreateImage>)
+                    } else {
+                        error!("Missing oci_img in config file for creating oci image");
+                        exit(1);
+                    }
+                },
+                commands::CreateType::Iso => {
+                    if let Some(i) = data.iso_img.clone() {
+                        info = Some(Box::new(i) as Box<dyn CreateImage>)
+                    } else {
+                        error!("Missing iso_img in config file for creating iso image");
+                        exit(1);
+                    }
+                },
+            }
+
+            if let Some(i) = info {
+                if let Err(e) = process(i, data, cli.debug) {
+                    error!("Failed to create image: {:?}", e);
+                    exit(1);
+                }
             }
         },
-        commands::CreateType::PXE => {
-            check_config_toml(&data).unwrap();
-            if let Some(mut i) = data.from_repo.clone() {
-                i.arch = Some(arch);
-                i.image_type = Some(commands::ImageType::PxeRepo);
-                info = Some(Box::new(i) as Box<dyn CreateImage>)
-            } else if let Some(mut i) = data.from_dockerimg.clone() {
-                i.arch = Some(arch);
-                i.image_type = Some(commands::ImageType::PxeDocker);
-                info = Some(Box::new(i) as Box<dyn CreateImage>)
-            } else {
-                error!("Missing required fields in config file for creating pxe image");
-                exit(1);
-            }
-        },
-        commands::CreateType::Upgrade => {
-            if let Some(mut i) = data.from_repo.clone() {
-                i.arch = Some(arch);
-                i.image_type = Some(commands::ImageType::UpgradeImage);
-                info = Some(Box::new(i) as Box<dyn CreateImage>)
-            } else {
-                error!("Missing from_repo in config file for creating upgrade image");
-                exit(1);
-            }
-        },
-        commands::CreateType::AdminContainer => {
-            if let Some(i) = data.admin_container.clone() {
-                info = Some(Box::new(i) as Box<dyn CreateImage>)
-            } else {
-                error!("Missing admin_container in config file for creating admin container image");
-                exit(1);
-            }
-        },
-        commands::CreateType::Oci => {
+        commands::Commands::Install { install_type, file } => {
+            debug!("Config file path: {:?}", file);
+            let content = fs::read_to_string(file).expect("Failed to read config file");
+            let mut data: Config = match toml::from_str(&content) {
+                Ok(d) => d,
+                Err(e) => {
+                    error!("Failed to parse config file: {}", e);
+                    exit(1);
+                },
+            };
+            debug!("Config: {:?}", data);
+
             if let Some(ref mut i) = data.from_repo {
                 i.arch = Some(arch);
-                i.image_type = Some(commands::ImageType::OciImage);
-            } else {
-                error!("Missing from_repo in config file for creating oci image");
-                exit(1);
             }
-            if let Some(i) = data.oci_img.clone() {
-                info = Some(Box::new(i) as Box<dyn CreateImage>)
-            } else {
-                error!("Missing oci_img in config file for creating oci image");
-                exit(1);
-            }
-        },
-        commands::CreateType::Iso => {
-            if let Some(i) = data.iso_img.clone() {
-                info = Some(Box::new(i) as Box<dyn CreateImage>)
-            } else {
-                error!("Missing iso_img in config file for creating iso image");
-                exit(1);
-            }
-        },
-    }
 
-    if let Some(i) = info {
-        if let Err(e) = process(i, data, cli.debug) {
-            error!("Failed to create image: {:?}", e);
-            exit(1);
-        }
+            match install_type {
+                commands::InstallType::Disk => {
+                    if let Some(i) = data.install.clone() {
+                        if let Err(e) = process_install(Box::new(i), &data, cli.debug) {
+                            error!("Failed to install KubeOS: {:?}", e);
+                            exit(1);
+                        }
+                    } else {
+                        error!("Missing [install] section in config file for disk install");
+                        exit(1);
+                    }
+                },
+            }
+        },
     }
     exit(0);
 }

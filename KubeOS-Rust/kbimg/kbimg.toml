@@ -23,6 +23,9 @@ rpmlist = [
     "socat",
     "tar",
     "vi",
+    "dracut-network",
+    "dracut-live",
+    "openssh-clients"
     # Below packages are required for pxe-image. Uncomment them if you want to generate pxe-image.
     # "coreutils",
     # "dosfstools",
@@ -102,3 +105,11 @@ version = "v1"
 # efi_key = "foo"
 # grub_key = "bar"
 # keys_dir = "./keys"
+
+# [install]
+# target_disk = "/dev/sda"
+# oci_image = "docker://myregistry/kubeos-oci:v1"
+# cloud_init_config = "https://example.com/user-data"
+# ignition_config = "https://example.com/config.ign"
+# skip_tls = false
+# reboot = false

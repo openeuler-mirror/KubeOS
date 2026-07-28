@@ -1989,3 +1989,256 @@ elif [ -z "${config_directory}" -a -f  $prefix/custom.cfg ]; then
   source $prefix/custom.cfg;
 fi
 ### END /etc/grub.d/41_custom ###"#;
+
+pub const INSTALL_GLOBAL_VARS: &str = r#"set -eux
+set -o pipefail
+
+umask 022
+NAME=KubeOS
+ID=kubeos
+SCRIPTS_DIR=$(cd "$(dirname "$0")" && pwd)
+LOCK="${SCRIPTS_DIR}"/test.lock
+ROOT_MOUNT="${SCRIPTS_DIR}"/mnt
+ARCH=$(arch)"#;
+
+pub const INSTALL_SCRIPT: &str = r#"function check_target_disk() {{
+    if [ ! -b "{TARGET_DISK}" ]; then
+        echo "Target disk {TARGET_DISK} does not exist or is not a block device"
+        return 1
+    fi
+    local disk_size
+    disk_size=$(parted -s "{TARGET_DISK}" unit GiB print 2>/dev/null | grep "Disk {TARGET_DISK}" | awk '{{print $3}}' | sed 's/GiB//')
+    if [ -z "$disk_size" ]; then
+        echo "Failed to get disk size for {TARGET_DISK}"
+        return 1
+    fi
+    local min_size=8
+    if [ "${{disk_size%.*}}" -lt $min_size ]; then
+        echo "Target disk {TARGET_DISK} is too small (${{disk_size}} GiB), need at least ${{min_size}} GiB"
+        return 1
+    fi
+    return 0
+}}
+
+function partition_and_format() {{
+    local part_prefix
+    if echo "{TARGET_DISK}" | grep -qE 'nvme|mmcblk'; then
+        part_prefix="{TARGET_DISK}p"
+    else
+        part_prefix="{TARGET_DISK}"
+    fi
+    echo "Partitioning and formatting target disk {TARGET_DISK}..."
+    parted -s "{TARGET_DISK}" mklabel gpt
+    parted -s "{TARGET_DISK}" mkpart primary fat32 1MiB {BOOT_END}MiB
+    parted -s "{TARGET_DISK}" mkpart primary ext4 {BOOT_END}MiB {ROOTA_END}MiB
+    parted -s "{TARGET_DISK}" mkpart primary ext4 {ROOTA_END}MiB {ROOTB_END}MiB
+    parted -s "{TARGET_DISK}" mkpart primary ext4 {ROOTB_END}MiB 100%
+    parted -s "{TARGET_DISK}" set 1 boot on
+
+    mkfs.vfat -n "BOOT" "${{part_prefix}}1" 2>/dev/null || mkfs.vfat "${{part_prefix}}1"
+    mkfs.ext4 -L "ROOT-A" "${{part_prefix}}2"
+    mkfs.ext4 -L "ROOT-B" "${{part_prefix}}3"
+    mkfs.ext4 -L "PERSIST" "${{part_prefix}}4"
+
+    ROOTA_PARTUUID=$(blkid "${{part_prefix}}2" | awk -F 'PARTUUID="' '{{print $2}}' | awk -F '"' '{{print $1}}')
+    ROOTB_PARTUUID=$(blkid "${{part_prefix}}3" | awk -F 'PARTUUID="' '{{print $2}}' | awk -F '"' '{{print $1}}')
+
+    return 0
+}}
+
+function pull_and_extract_oci() {{
+    local target="$1"
+    local oci_dir="${{SCRIPTS_DIR}}/oci-install"
+    rm -rf "$oci_dir"
+    mkdir -p "$oci_dir"
+
+    echo "Pulling OCI image {OCI_IMAGE}..."
+    skopeo copy "{OCI_IMAGE}" "oci:${{oci_dir}}:latest"
+
+    local manifest_hash
+    manifest_hash=$(grep -o '"digest":"sha256:[a-f0-9]*"' "${{oci_dir}}/index.json" | head -1 | grep -o 'sha256:[a-f0-9]*' | tr ':' '/')
+
+    local manifest_file="${{oci_dir}}/blobs/${{manifest_hash}}"
+    echo "Extracting rootfs from OCI image..."
+
+    for layer_digest in $(grep -o '"layers":\[.*\]' "$manifest_file" | grep -o '"digest":"sha256:[a-f0-9]*"' | grep -o 'sha256:[a-f0-9]*' | tr ':' '/'); do
+        local layer_file="${{oci_dir}}/blobs/${{layer_digest}}"
+        if file "$layer_file" | grep -qi "gzip"; then
+            zcat "$layer_file" | tar --selinux -x -C "$target"
+        else
+            cat "$layer_file" | tar --selinux -x -C "$target"
+        fi
+    done
+
+    rm -rf "$oci_dir"
+    return 0
+}}
+
+function install_bootloader() {{
+    local root_mount="$1"
+    local efi_dir="$root_mount/boot/efi/EFI/openEuler"
+    mkdir -p "$efi_dir"
+
+    if [ "$ARCH" = "x86_64" ]; then
+        cp -r "$root_mount"/usr/lib/grub/x86_64-efi "$efi_dir"
+        grub2-mkimage -d "$root_mount"/usr/lib/grub/x86_64-efi -O x86_64-efi --output="$efi_dir/grubx64.efi" '--prefix=(,gpt1)/EFI/openEuler' fat part_gpt part_msdos linux
+        mkdir -p "$root_mount"/boot/efi/EFI/BOOT/
+        cp -f "$efi_dir/grubx64.efi" "$root_mount"/boot/efi/EFI/BOOT/BOOTX64.EFI
+    elif [ "$ARCH" = "aarch64" ]; then
+        cp -r "$root_mount"/usr/lib/grub/arm64-efi "$efi_dir"
+        grub2-mkimage -d "$root_mount"/usr/lib/grub/arm64-efi -O arm64-efi --output="$efi_dir/grubaa64.efi" '--prefix=(,gpt1)/EFI/openEuler' fat part_gpt part_msdos linux
+        mkdir -p "$root_mount"/boot/efi/EFI/BOOT/
+        cp -f "$efi_dir/grubaa64.efi" "$root_mount"/boot/efi/EFI/BOOT/BOOTAA64.EFI
+    else
+        echo "Unsupported architecture: $ARCH"
+        return 1
+    fi
+    return 0
+}}
+
+function set_partuuid_install() {{
+    local root_mount="$1"
+    local grub_path="$root_mount/boot/efi/EFI/openEuler/grub.cfg"
+
+    if [ -f "$grub_path" ]; then
+        sed -i "s|vmlinuz root=/dev/vda2|vmlinuz root=PARTUUID=$ROOTA_PARTUUID|g" "$grub_path"
+        sed -i "s|vmlinuz root=/dev/vda3|vmlinuz root=PARTUUID=$ROOTB_PARTUUID|g" "$grub_path"
+    fi
+    return 0
+}}
+
+function setup_cloud_init() {{
+    local target="$1"
+
+    if [ -n "{CLOUD_INIT_SRC}" ]; then
+        _install_config_file "$target" "{CLOUD_INIT_SRC}" "cloud-init" "/var/lib/cloud/seed/nocloud-net" "user-data"
+    fi
+
+    if [ -n "{IGNITION_SRC}" ]; then
+        _install_config_file "$target" "{IGNITION_SRC}" "ignition" "/usr/lib/dracut/modules.d/30ignition" "config.ign"
+    fi
+
+    if [ -d "$target/var/lib/cloud/seed/nocloud-net" ]; then
+        echo "instance-id: KubeOS" > "$target/var/lib/cloud/seed/nocloud-net/meta-data"
+    fi
+
+    return 0
+}}
+
+function _install_config_file() {{
+    local target="$1"
+    local src="$2"
+    local conf_type="$3"
+    local dest_dir="$4"
+    local dest_file="$5"
+
+    if [ -z "$src" ]; then
+        return 0
+    fi
+
+    local is_url=false
+    if echo "$src" | grep -qE '^https?://'; then
+        is_url=true
+    fi
+
+    if [ "$is_url" = true ] || [ -f "$src" ]; then
+        mkdir -p "$target$dest_dir"
+        local conf_file="$target$dest_dir/$dest_file"
+
+        if [ "$is_url" = true ]; then
+            local curl_opts="-sSL --fail"
+            if [ "{SKIP_TLS}" = "true" ]; then
+                curl_opts="$curl_opts --insecure"
+            fi
+            curl $curl_opts -o "$conf_file" "$src"
+        else
+            cp "$src" "$conf_file"
+        fi
+    fi
+
+    return 0
+}}
+
+function format_rootb() {{
+    mkfs.ext4 -L "ROOT-B" "${{PART_PREFIX}}3"
+    return 0
+}}
+
+function setup_persist() {{
+    local persist_mount="$1"
+
+    mkdir "$persist_mount"/{{var,etc,etcwork,opt,optwork}}
+    mkdir -p "$persist_mount"/etc/KubeOS/certs
+{PERSIST_MKDIR_CMDS}
+
+    return 0
+}}
+
+function install_kubeos() {{
+    echo "Installing KubeOS to {TARGET_DISK}..."
+
+    if echo "{TARGET_DISK}" | grep -qE 'nvme|mmcblk'; then
+        PART_PREFIX="{TARGET_DISK}p"
+    else
+        PART_PREFIX="{TARGET_DISK}"
+    fi
+
+    check_target_disk
+    partition_and_format
+
+    mkdir -p "$ROOT_MOUNT"
+    mount "${{PART_PREFIX}}2" "$ROOT_MOUNT"
+
+    mkdir -p "$ROOT_MOUNT"/boot/efi
+    mount "${{PART_PREFIX}}1" "$ROOT_MOUNT"/boot/efi
+
+    pull_and_extract_oci "$ROOT_MOUNT"
+
+    install_bootloader "$ROOT_MOUNT"
+    set_partuuid_install "$ROOT_MOUNT"
+    setup_cloud_init "$ROOT_MOUNT"
+
+    sync
+    umount "$ROOT_MOUNT"/boot/efi
+    umount "$ROOT_MOUNT"
+
+    format_rootb
+
+    mount "${{PART_PREFIX}}4" "$ROOT_MOUNT"
+    setup_persist "$ROOT_MOUNT"
+    sync
+    umount "$ROOT_MOUNT"
+
+    echo "KubeOS installed successfully to {TARGET_DISK}"
+    return 0
+}}
+
+function cleanup_install() {{
+    local ret=$?
+    set +e
+    local boot_efi="${{ROOT_MOUNT}}/boot/efi"
+    if mountpoint -q "$boot_efi" 2>/dev/null; then
+        echo "Cleaning up boot mount..."
+        umount "$boot_efi" 2>/dev/null || true
+    fi
+    if mountpoint -q "$ROOT_MOUNT" 2>/dev/null; then
+        echo "Cleaning up root mount..."
+        umount "$ROOT_MOUNT" 2>/dev/null || true
+    fi
+    rm -rf "${{SCRIPTS_DIR}}/oci-install" 2>/dev/null || true
+    rm -f "${{LOCK}}" 2>/dev/null || true
+    if [ $ret -ne 0 ]; then
+        echo "KubeOS installation failed with error code $ret"
+    fi
+    exit $ret
+}}
+
+trap cleanup_install EXIT
+
+install_kubeos
+ret=$?
+if [ $ret -eq 0 ]; then
+    echo "KubeOS installation completed successfully"
+{REBOOT_CMD}
+fi
+exit $ret"#;

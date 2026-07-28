@@ -37,6 +37,14 @@ pub enum Commands {
         #[arg(short, long, value_parser)]
         file: PathBuf,
     },
+    /// Install KubeOS to a target disk
+    Install {
+        #[arg(value_enum)]
+        install_type: InstallType,
+        /// Path to the configuration file
+        #[arg(short, long, value_parser)]
+        file: PathBuf,
+    },
 }
 
 #[derive(ValueEnum, Clone, Debug)]
@@ -53,6 +61,12 @@ pub enum CreateType {
     Oci,
     #[clap(name = "iso-img")]
     Iso,
+}
+
+#[derive(ValueEnum, Clone, Debug)]
+pub enum InstallType {
+    #[clap(name = "disk")]
+    Disk,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -144,6 +158,7 @@ pub struct Config {
     pub disk_partition: Option<DiskPartition>,
     pub persist_mkdir: Option<PersistMkdir>,
     pub dm_verity: Option<DmVerity>,
+    pub install: Option<InstallConfig>,
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -224,6 +239,28 @@ pub struct DmVerity {
     #[serde(deserialize_with = "reject_empty_string")]
     pub grub_key: String,
     pub keys_dir: Option<PathBuf>,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct InstallConfig {
+    /// Required: Target disk device (e.g., /dev/sda, /dev/nvme0n1)
+    #[serde(deserialize_with = "reject_empty_string")]
+    pub target_disk: String,
+    /// Required: OCI image name to pull via skopeo (e.g., "docker://myregistry/kubeos-oci:v1")
+    #[serde(deserialize_with = "reject_empty_string")]
+    pub oci_image: String,
+    /// Optional: Cloud-init config file path or URL
+    #[serde(default, deserialize_with = "reject_empty_option_string")]
+    pub cloud_init_config: Option<String>,
+    /// Optional: Ignition config file path or URL
+    #[serde(default, deserialize_with = "reject_empty_option_string")]
+    pub ignition_config: Option<String>,
+    /// Optional: Skip TLS verification when downloading config from URL
+    #[serde(default)]
+    pub skip_tls: bool,
+    /// Optional: Reboot after installation, default false
+    #[serde(default)]
+    pub reboot: bool,
 }
 
 #[derive(Debug, Deserialize, Clone, Default, PartialEq)]

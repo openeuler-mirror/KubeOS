@@ -860,6 +860,60 @@ pub(crate) fn gen_create_iso_image(file: &mut dyn Write) -> Result<()> {
 }
 /* endregion */
 
+pub(crate) fn gen_install_script(
+    file: &mut dyn Write,
+    install_cfg: &InstallConfig,
+    config: &Config,
+) -> Result<()> {
+    let boot_size = BOOT_SIZE;
+    let root_size = config
+        .disk_partition
+        .as_ref()
+        .map(|dp| dp.root)
+        .unwrap_or(ROOT_SIZE);
+
+    let boot_end = boot_size;
+    let roota_end = boot_size + root_size;
+    let rootb_end = boot_size + root_size + root_size;
+
+    let cloud_init_src = install_cfg.cloud_init_config.as_deref().unwrap_or("");
+    let ignition_src = install_cfg.ignition_config.as_deref().unwrap_or("");
+
+    let mut persist_mkdir_cmds = String::new();
+    if let Some(persist_mkdir) = &config.persist_mkdir {
+        for name in &persist_mkdir.name {
+            if name.is_empty() {
+                continue;
+            }
+            persist_mkdir_cmds.push_str(&format!(
+                "    mkdir -p \"${{ROOT_MOUNT}}\"/{}\n",
+                name
+            ));
+        }
+    }
+
+    let reboot_cmd = if install_cfg.reboot {
+        "    reboot\n"
+    } else {
+        ""
+    };
+
+    let mut vars = HashMap::new();
+    vars.insert("TARGET_DISK".to_string(), install_cfg.target_disk.clone());
+    vars.insert("OCI_IMAGE".to_string(), install_cfg.oci_image.clone());
+    vars.insert("BOOT_END".to_string(), boot_end.to_string());
+    vars.insert("ROOTA_END".to_string(), roota_end.to_string());
+    vars.insert("ROOTB_END".to_string(), rootb_end.to_string());
+    vars.insert("CLOUD_INIT_SRC".to_string(), cloud_init_src.to_string());
+    vars.insert("IGNITION_SRC".to_string(), ignition_src.to_string());
+    vars.insert("SKIP_TLS".to_string(), install_cfg.skip_tls.to_string());
+    vars.insert("PERSIST_MKDIR_CMDS".to_string(), persist_mkdir_cmds);
+    vars.insert("REBOOT_CMD".to_string(), reboot_cmd.to_string());
+
+    let dynamic_script = strfmt(INSTALL_SCRIPT, &vars)?;
+    writeln!(file, "{dynamic_script}")?;
+    Ok(())
+}
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;
