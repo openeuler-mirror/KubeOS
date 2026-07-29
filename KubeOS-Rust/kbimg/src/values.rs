@@ -37,6 +37,13 @@ pub(crate) const MISC_OS_RELEASE: &str = "os-release";
 pub(crate) const MISC_PERSIST_MOUNT: &str = "persist.mount";
 pub(crate) const MISC_VAR_MOUNT: &str = "var.mount";
 
+pub(crate) const OCI_DIR: &str = "./scripts-auto/oci";
+pub(crate) const OCI_DOCKERFILE: &str = "Dockerfile";
+pub(crate) const ISO_DIR: &str = "./scripts-auto/iso";
+pub(crate) const ISO_MANIFEST: &str = "manifest.yaml";
+pub(crate) const ISO_GRUB_CFG: &str = "grub.cfg";
+pub(crate) const ISO_OVERLAY_DIR: &str = "./scripts-auto/iso/overlay";
+
 pub(crate) const DMV_DIR: &str = "./scripts-auto/dm-verity";
 pub(crate) const DMV_CHROOT: &str = "chroot_new_grub.sh";
 pub(crate) const DMV_MAIN: &str = "dm_verity.sh";
@@ -876,6 +883,157 @@ COPY ./set-ssh-pub-key.service /usr/lib/sysmaster/system
 EXPOSE 22
 RUN ln -s /usr/lib/sysmaster/system/set-ssh-pub-key.service /etc/sysmaster/system/multi-user.target.wants/set-ssh-pub-key.service
 CMD ["/usr/lib/sysmaster/init"]"#;
+
+pub const OCI_ROOTFS_DOCKERFILE: &str = r#"FROM scratch
+ADD rootfs.tar /
+CMD ["/bin/bash"]"#;
+
+pub const ISO_DOCKERFILE: &str = r#"FROM {OCI_IMAGE} AS base
+
+# Copy elemental-cli into the image
+COPY elemental-cli /usr/bin/elemental
+RUN chmod +x /usr/bin/elemental
+
+# Disable KubeOS disk-only mount units (persist/etc/var/opt-cni).
+# These depend on a PERSIST partition that does not exist in ISO live mode.
+RUN rm -f /lib/systemd/system/local-fs.target.wants/etc.mount \
+         /lib/systemd/system/local-fs.target.wants/opt-cni.mount \
+         /lib/systemd/system/local-fs.target.wants/persist.mount \
+         /lib/systemd/system/local-fs.target.wants/var.mount \
+         /lib/systemd/system/local-fs.target.wants/boot-efi.mount \
+         /lib/systemd/system/local-fs.target.wants/boot-grub2.mount
+
+# Create /boot/initrd symlink (elemental expects /boot/initrd)
+RUN if [ ! -L /boot/initrd ]; then ln -sf initramfs.img /boot/initrd; fi
+
+# element needs vmlinuz has version, so we need to move vmlinuz to /boot
+# uname -r returns host kernel (not container kernel), read version from /lib/modules instead
+RUN KVER=$(ls /lib/modules/ | head -1) && mv /boot/vmlinuz /boot/vmlinuz-${KVER}
+
+# Add a dracut module to work around openEuler dracut 059 bug:
+# do_live_overlay() is skipped entirely when $overlay is empty (no
+# rd.live.overlay= in cmdline), so for flat squashfs (no LiveOS/rootfs.img)
+# /sysroot never gets mounted. We mount overlay on /sysroot directly in
+# pre-mount hook, after dmsquash-live-root has mounted squashfs to /run/rootfsbase.
+RUN mkdir -p /usr/lib/dracut/modules.d/99kubeos-overlayfs-fix && \
+    echo '#!/bin/bash'                                                  > /usr/lib/dracut/modules.d/99kubeos-overlayfs-fix/module-setup.sh && \
+    echo 'check() { return 0; }'                                       >> /usr/lib/dracut/modules.d/99kubeos-overlayfs-fix/module-setup.sh && \
+    echo 'depends() { echo dmsquash-live; return 0; }'                 >> /usr/lib/dracut/modules.d/99kubeos-overlayfs-fix/module-setup.sh && \
+    echo 'install() { inst_hook pre-mount 99 "$moddir/overlayfs-fix.sh"; }' >> /usr/lib/dracut/modules.d/99kubeos-overlayfs-fix/module-setup.sh && \
+    echo '#!/bin/sh'                                                    > /usr/lib/dracut/modules.d/99kubeos-overlayfs-fix/overlayfs-fix.sh && \
+    echo '# kubeos-overlayfs-fix: mount overlay on /sysroot directly'  >> /usr/lib/dracut/modules.d/99kubeos-overlayfs-fix/overlayfs-fix.sh && \
+    echo '# dmsquash-live-root skips do_live_overlay() when $overlay is empty' >> /usr/lib/dracut/modules.d/99kubeos-overlayfs-fix/overlayfs-fix.sh && \
+    echo '# (no rd.live.overlay= in cmdline), so /sysroot never gets mounted.' >> /usr/lib/dracut/modules.d/99kubeos-overlayfs-fix/overlayfs-fix.sh && \
+    echo '# We do it here: tmpfs for upper/work, overlay onto /sysroot.' >> /usr/lib/dracut/modules.d/99kubeos-overlayfs-fix/overlayfs-fix.sh && \
+    echo '# Order matters: mount tmpfs BEFORE mkdir, otherwise mkdir dirs' >> /usr/lib/dracut/modules.d/99kubeos-overlayfs-fix/overlayfs-fix.sh && \
+    echo '# get hidden under the newly mounted tmpfs.' >> /usr/lib/dracut/modules.d/99kubeos-overlayfs-fix/overlayfs-fix.sh && \
+    echo 'mkdir -p /run/initramfs/overlayfs'                          >> /usr/lib/dracut/modules.d/99kubeos-overlayfs-fix/overlayfs-fix.sh && \
+    echo "grep -q ' /run/initramfs/overlayfs ' /proc/mounts || \\"     >> /usr/lib/dracut/modules.d/99kubeos-overlayfs-fix/overlayfs-fix.sh && \
+    echo '    mount -t tmpfs tmpfs /run/initramfs/overlayfs'           >> /usr/lib/dracut/modules.d/99kubeos-overlayfs-fix/overlayfs-fix.sh && \
+    echo 'mkdir -p /run/initramfs/overlayfs/overlayfs /run/initramfs/overlayfs/ovlwork' >> /usr/lib/dracut/modules.d/99kubeos-overlayfs-fix/overlayfs-fix.sh && \
+    echo '# Create symlinks for dmsquash-generator sysroot.mount which uses /run/overlayfs' >> /usr/lib/dracut/modules.d/99kubeos-overlayfs-fix/overlayfs-fix.sh && \
+    echo '[ -e /run/overlayfs ] || ln -s /run/initramfs/overlayfs/overlayfs /run/overlayfs' >> /usr/lib/dracut/modules.d/99kubeos-overlayfs-fix/overlayfs-fix.sh && \
+    echo '[ -e /run/ovlwork ] || ln -s /run/initramfs/overlayfs/ovlwork /run/ovlwork' >> /usr/lib/dracut/modules.d/99kubeos-overlayfs-fix/overlayfs-fix.sh && \
+    echo 'mkdir -p /sysroot'                                           >> /usr/lib/dracut/modules.d/99kubeos-overlayfs-fix/overlayfs-fix.sh && \
+    echo "grep -q ' /sysroot ' /proc/mounts || \\"                     >> /usr/lib/dracut/modules.d/99kubeos-overlayfs-fix/overlayfs-fix.sh && \
+    echo '    mount -t overlay overlay -o lowerdir=/run/rootfsbase,upperdir=/run/initramfs/overlayfs/overlayfs,workdir=/run/initramfs/overlayfs/ovlwork /sysroot' >> /usr/lib/dracut/modules.d/99kubeos-overlayfs-fix/overlayfs-fix.sh && \
+    chmod +x /usr/lib/dracut/modules.d/99kubeos-overlayfs-fix/*.sh && \
+    echo 'add_dracutmodules+=" kubeos-overlayfs-fix "' > /etc/dracut.conf.d/99-kubeos-overlayfs-fix.conf
+
+# Generate initrd with required elemental services
+RUN ARCH=$(uname -m) && \
+    FEATURES="" && \
+    if [ "${ARCH}" != "x86_64" ]; then \
+      FEATURES="autologin boot-assessment cloud-config-defaults cloud-config-essentials dracut-config elemental-rootfs elemental-setup elemental-sysroot grub-config"; \
+      if [ "${ARCH}" = "aarch64" ]; then \
+        FEATURES="${FEATURES} arm-firmware grub-default-bootargs"; \
+      fi; \
+    fi; \
+    elemental --debug init --force ${FEATURES}
+
+# Update os-release file with elemental metadata
+RUN echo IMAGE_REPO="{OCI_IMAGE}"             >> /etc/os-release && \
+    echo IMAGE_TAG="{VERSION}"                >> /etc/os-release && \
+    echo IMAGE="{OCI_IMAGE}"                  >> /etc/os-release && \
+    echo TIMESTAMP="$(date +'%Y%m%d%H%M%S')"  >> /etc/os-release && \
+    echo GRUB_ENTRY_NAME="{GRUB_ENTRY_NAME}"  >> /etc/os-release
+
+CMD ["/bin/bash"]"#;
+
+pub const CREATE_OCI_IMAGE: &str = r#"function create_oci_image() {
+    install_packages
+    install_misc
+    unmount_dir "${RPM_ROOT}"
+    tar --selinux -C "${RPM_ROOT}" -cf "${SCRIPTS_DIR}"/rootfs.tar .
+    docker build -t "${DOCKER_IMG}" -f "${SCRIPTS_DIR}"/oci/Dockerfile "${SCRIPTS_DIR}"
+    delete_file "${SCRIPTS_DIR}"/rootfs.tar
+}
+
+test_lock
+trap clean_space EXIT
+trap clean_img ERR
+
+create_oci_image"#;
+
+pub const ELEMENTAL_ISO_MANIFEST: &str = r#"iso:
+  bootloader-in-rootfs: true
+  grub-entry-name: "{GRUB_ENTRY_NAME}"
+  extra-cmdline: "security=selinux enforcing=0 console=tty1 console=ttyS0 console=ttyAMA0,115200"
+  rootfs:
+  - docker:{ISO_IMAGE}
+  image:
+  - docker:{ISO_IMAGE}
+  label: "{LABEL}"
+
+name: "{ISO_NAME}"
+date: true"#;
+
+pub const ISO_GRUB_CFG_CONTENT: &str = r#"search --file --set=root /boot/kernel.xz
+set default=0
+set timeout=10
+set timeout_style=menu
+set linux=linux
+set initrd=initrd
+if [ "${grub_cpu}" = "x86_64" -o "${grub_cpu}" = "i386" ];then
+    if [ "${grub_platform}" = "efi" ]; then
+        set linux=linuxefi
+        set initrd=initrdefi
+    fi
+fi
+
+set font=($root)/boot/x86_64/loader/grub2/fonts/unicode.pf2
+if [ -f ${font} ];then
+    loadfont ${font}
+fi
+
+menuentry "KubeOS Live" --class os --unrestricted {
+    echo Loading kernel...
+    $linux ($root)/boot/kernel.xz cdroot root=live:CDLABEL=COS_LIVE rd.live.dir=/ rd.live.squashimg=rootfs.squashfs console=tty1 console=ttyS0 rd.cos.disable
+    echo Loading initrd...
+    $initrd ($root)/boot/rootfs.xz
+}
+"#;
+
+pub const CREATE_ISO_IMAGE: &str = r#"function create_iso_image() {
+    # Build ISO-specific image (base image + elemental init)
+    cp "${ELEMENTAL_CLI_PATH}" "${ISO_DIR}"/elemental-cli
+    docker build -t "${ISO_IMAGE}" -f "${ISO_DIR}"/Dockerfile "${ISO_DIR}"
+    rm -f "${ISO_DIR}"/elemental-cli
+
+    # Build ISO using elemental-cli (--local: use image from local docker cache)
+    "${ELEMENTAL_CLI_PATH}" --debug build-iso \
+        --local \
+        --config-dir "${ISO_DIR}" \
+        --overlay-iso "${ISO_DIR}"/overlay \
+        -o "${OUTPUT_DIR}" \
+        "docker:${ISO_IMAGE}"
+}
+
+test_lock
+trap 'rm -f "${LOCK}"' EXIT
+trap 'rm -f "${LOCK}"' ERR
+
+create_iso_image"#;
 
 pub const SET_SSH_PUB_KEY_SERVICE: &str = r#"[Unit]
 Description=set ssh authorized keys according to the secret which is set by user
@@ -1831,3 +1989,256 @@ elif [ -z "${config_directory}" -a -f  $prefix/custom.cfg ]; then
   source $prefix/custom.cfg;
 fi
 ### END /etc/grub.d/41_custom ###"#;
+
+pub const INSTALL_GLOBAL_VARS: &str = r#"set -eux
+set -o pipefail
+
+umask 022
+NAME=KubeOS
+ID=kubeos
+SCRIPTS_DIR=$(cd "$(dirname "$0")" && pwd)
+LOCK="${SCRIPTS_DIR}"/test.lock
+ROOT_MOUNT="${SCRIPTS_DIR}"/mnt
+ARCH=$(arch)"#;
+
+pub const INSTALL_SCRIPT: &str = r#"function check_target_disk() {{
+    if [ ! -b "{TARGET_DISK}" ]; then
+        echo "Target disk {TARGET_DISK} does not exist or is not a block device"
+        return 1
+    fi
+    local disk_size
+    disk_size=$(parted -s "{TARGET_DISK}" unit GiB print 2>/dev/null | grep "Disk {TARGET_DISK}" | awk '{{print $3}}' | sed 's/GiB//')
+    if [ -z "$disk_size" ]; then
+        echo "Failed to get disk size for {TARGET_DISK}"
+        return 1
+    fi
+    local min_size=8
+    if [ "${{disk_size%.*}}" -lt $min_size ]; then
+        echo "Target disk {TARGET_DISK} is too small (${{disk_size}} GiB), need at least ${{min_size}} GiB"
+        return 1
+    fi
+    return 0
+}}
+
+function partition_and_format() {{
+    local part_prefix
+    if echo "{TARGET_DISK}" | grep -qE 'nvme|mmcblk'; then
+        part_prefix="{TARGET_DISK}p"
+    else
+        part_prefix="{TARGET_DISK}"
+    fi
+    echo "Partitioning and formatting target disk {TARGET_DISK}..."
+    parted -s "{TARGET_DISK}" mklabel gpt
+    parted -s "{TARGET_DISK}" mkpart primary fat32 1MiB {BOOT_END}MiB
+    parted -s "{TARGET_DISK}" mkpart primary ext4 {BOOT_END}MiB {ROOTA_END}MiB
+    parted -s "{TARGET_DISK}" mkpart primary ext4 {ROOTA_END}MiB {ROOTB_END}MiB
+    parted -s "{TARGET_DISK}" mkpart primary ext4 {ROOTB_END}MiB 100%
+    parted -s "{TARGET_DISK}" set 1 boot on
+
+    mkfs.vfat -n "BOOT" "${{part_prefix}}1" 2>/dev/null || mkfs.vfat "${{part_prefix}}1"
+    mkfs.ext4 -L "ROOT-A" "${{part_prefix}}2"
+    mkfs.ext4 -L "ROOT-B" "${{part_prefix}}3"
+    mkfs.ext4 -L "PERSIST" "${{part_prefix}}4"
+
+    ROOTA_PARTUUID=$(blkid "${{part_prefix}}2" | awk -F 'PARTUUID="' '{{print $2}}' | awk -F '"' '{{print $1}}')
+    ROOTB_PARTUUID=$(blkid "${{part_prefix}}3" | awk -F 'PARTUUID="' '{{print $2}}' | awk -F '"' '{{print $1}}')
+
+    return 0
+}}
+
+function pull_and_extract_oci() {{
+    local target="$1"
+    local oci_dir="${{SCRIPTS_DIR}}/oci-install"
+    rm -rf "$oci_dir"
+    mkdir -p "$oci_dir"
+
+    echo "Pulling OCI image {OCI_IMAGE}..."
+    skopeo copy "{OCI_IMAGE}" "oci:${{oci_dir}}:latest"
+
+    local manifest_hash
+    manifest_hash=$(grep -o '"digest":"sha256:[a-f0-9]*"' "${{oci_dir}}/index.json" | head -1 | grep -o 'sha256:[a-f0-9]*' | tr ':' '/')
+
+    local manifest_file="${{oci_dir}}/blobs/${{manifest_hash}}"
+    echo "Extracting rootfs from OCI image..."
+
+    for layer_digest in $(grep -o '"layers":\[.*\]' "$manifest_file" | grep -o '"digest":"sha256:[a-f0-9]*"' | grep -o 'sha256:[a-f0-9]*' | tr ':' '/'); do
+        local layer_file="${{oci_dir}}/blobs/${{layer_digest}}"
+        if file "$layer_file" | grep -qi "gzip"; then
+            zcat "$layer_file" | tar --selinux -x -C "$target"
+        else
+            cat "$layer_file" | tar --selinux -x -C "$target"
+        fi
+    done
+
+    rm -rf "$oci_dir"
+    return 0
+}}
+
+function install_bootloader() {{
+    local root_mount="$1"
+    local efi_dir="$root_mount/boot/efi/EFI/openEuler"
+    mkdir -p "$efi_dir"
+
+    if [ "$ARCH" = "x86_64" ]; then
+        cp -r "$root_mount"/usr/lib/grub/x86_64-efi "$efi_dir"
+        grub2-mkimage -d "$root_mount"/usr/lib/grub/x86_64-efi -O x86_64-efi --output="$efi_dir/grubx64.efi" '--prefix=(,gpt1)/EFI/openEuler' fat part_gpt part_msdos linux
+        mkdir -p "$root_mount"/boot/efi/EFI/BOOT/
+        cp -f "$efi_dir/grubx64.efi" "$root_mount"/boot/efi/EFI/BOOT/BOOTX64.EFI
+    elif [ "$ARCH" = "aarch64" ]; then
+        cp -r "$root_mount"/usr/lib/grub/arm64-efi "$efi_dir"
+        grub2-mkimage -d "$root_mount"/usr/lib/grub/arm64-efi -O arm64-efi --output="$efi_dir/grubaa64.efi" '--prefix=(,gpt1)/EFI/openEuler' fat part_gpt part_msdos linux
+        mkdir -p "$root_mount"/boot/efi/EFI/BOOT/
+        cp -f "$efi_dir/grubaa64.efi" "$root_mount"/boot/efi/EFI/BOOT/BOOTAA64.EFI
+    else
+        echo "Unsupported architecture: $ARCH"
+        return 1
+    fi
+    return 0
+}}
+
+function set_partuuid_install() {{
+    local root_mount="$1"
+    local grub_path="$root_mount/boot/efi/EFI/openEuler/grub.cfg"
+
+    if [ -f "$grub_path" ]; then
+        sed -i "s|vmlinuz root=/dev/vda2|vmlinuz root=PARTUUID=$ROOTA_PARTUUID|g" "$grub_path"
+        sed -i "s|vmlinuz root=/dev/vda3|vmlinuz root=PARTUUID=$ROOTB_PARTUUID|g" "$grub_path"
+    fi
+    return 0
+}}
+
+function setup_cloud_init() {{
+    local target="$1"
+
+    if [ -n "{CLOUD_INIT_SRC}" ]; then
+        _install_config_file "$target" "{CLOUD_INIT_SRC}" "cloud-init" "/var/lib/cloud/seed/nocloud-net" "user-data"
+    fi
+
+    if [ -n "{IGNITION_SRC}" ]; then
+        _install_config_file "$target" "{IGNITION_SRC}" "ignition" "/usr/lib/dracut/modules.d/30ignition" "config.ign"
+    fi
+
+    if [ -d "$target/var/lib/cloud/seed/nocloud-net" ]; then
+        echo "instance-id: KubeOS" > "$target/var/lib/cloud/seed/nocloud-net/meta-data"
+    fi
+
+    return 0
+}}
+
+function _install_config_file() {{
+    local target="$1"
+    local src="$2"
+    local conf_type="$3"
+    local dest_dir="$4"
+    local dest_file="$5"
+
+    if [ -z "$src" ]; then
+        return 0
+    fi
+
+    local is_url=false
+    if echo "$src" | grep -qE '^https?://'; then
+        is_url=true
+    fi
+
+    if [ "$is_url" = true ] || [ -f "$src" ]; then
+        mkdir -p "$target$dest_dir"
+        local conf_file="$target$dest_dir/$dest_file"
+
+        if [ "$is_url" = true ]; then
+            local curl_opts="-sSL --fail"
+            if [ "{SKIP_TLS}" = "true" ]; then
+                curl_opts="$curl_opts --insecure"
+            fi
+            curl $curl_opts -o "$conf_file" "$src"
+        else
+            cp "$src" "$conf_file"
+        fi
+    fi
+
+    return 0
+}}
+
+function format_rootb() {{
+    mkfs.ext4 -L "ROOT-B" "${{PART_PREFIX}}3"
+    return 0
+}}
+
+function setup_persist() {{
+    local persist_mount="$1"
+
+    mkdir "$persist_mount"/{{var,etc,etcwork,opt,optwork}}
+    mkdir -p "$persist_mount"/etc/KubeOS/certs
+{PERSIST_MKDIR_CMDS}
+
+    return 0
+}}
+
+function install_kubeos() {{
+    echo "Installing KubeOS to {TARGET_DISK}..."
+
+    if echo "{TARGET_DISK}" | grep -qE 'nvme|mmcblk'; then
+        PART_PREFIX="{TARGET_DISK}p"
+    else
+        PART_PREFIX="{TARGET_DISK}"
+    fi
+
+    check_target_disk
+    partition_and_format
+
+    mkdir -p "$ROOT_MOUNT"
+    mount "${{PART_PREFIX}}2" "$ROOT_MOUNT"
+
+    mkdir -p "$ROOT_MOUNT"/boot/efi
+    mount "${{PART_PREFIX}}1" "$ROOT_MOUNT"/boot/efi
+
+    pull_and_extract_oci "$ROOT_MOUNT"
+
+    install_bootloader "$ROOT_MOUNT"
+    set_partuuid_install "$ROOT_MOUNT"
+    setup_cloud_init "$ROOT_MOUNT"
+
+    sync
+    umount "$ROOT_MOUNT"/boot/efi
+    umount "$ROOT_MOUNT"
+
+    format_rootb
+
+    mount "${{PART_PREFIX}}4" "$ROOT_MOUNT"
+    setup_persist "$ROOT_MOUNT"
+    sync
+    umount "$ROOT_MOUNT"
+
+    echo "KubeOS installed successfully to {TARGET_DISK}"
+    return 0
+}}
+
+function cleanup_install() {{
+    local ret=$?
+    set +e
+    local boot_efi="${{ROOT_MOUNT}}/boot/efi"
+    if mountpoint -q "$boot_efi" 2>/dev/null; then
+        echo "Cleaning up boot mount..."
+        umount "$boot_efi" 2>/dev/null || true
+    fi
+    if mountpoint -q "$ROOT_MOUNT" 2>/dev/null; then
+        echo "Cleaning up root mount..."
+        umount "$ROOT_MOUNT" 2>/dev/null || true
+    fi
+    rm -rf "${{SCRIPTS_DIR}}/oci-install" 2>/dev/null || true
+    rm -f "${{LOCK}}" 2>/dev/null || true
+    if [ $ret -ne 0 ]; then
+        echo "KubeOS installation failed with error code $ret"
+    fi
+    exit $ret
+}}
+
+trap cleanup_install EXIT
+
+install_kubeos
+ret=$?
+if [ $ret -eq 0 ]; then
+    echo "KubeOS installation completed successfully"
+{REBOOT_CMD}
+fi
+exit $ret"#;
