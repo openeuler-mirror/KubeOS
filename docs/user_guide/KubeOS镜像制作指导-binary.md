@@ -2,7 +2,7 @@
 
 ## 简介
 
-kbimg是使用Rust语言编写的二进制工具，通过解析用户的[toml配置文件](#详细toml配置文件示例)，动态生成脚本，制作KubeOS虚拟机镜像、PXE物理机镜像、升级镜像和admin容器镜像。
+kbimg是使用Rust语言编写的二进制工具，通过解析用户的[toml配置文件](#详细toml配置文件示例)，动态生成脚本，制作KubeOS虚拟机镜像、PXE物理机镜像、升级镜像、OCI容器镜像、ISO安装镜像和admin容器镜像。同时支持通过OCI镜像直接在物理机上安装KubeOS。
 
 ## 命令介绍
 
@@ -12,8 +12,9 @@ kbimg - CLI tool for generating various types of image for KubeOS
 Usage: kbimg [OPTIONS] <COMMAND> 
 
 Commands:
-  create  Create a new KubeOS image
-  help    Print this message or the help of the given subcommand(s)
+  create   Create a new KubeOS image
+  install  Install KubeOS to a target disk
+  help     Print this message or the help of the given subcommand(s)
 
 Options:
   -d, --debug    Enable debug mode, generate the scripts without execution
@@ -27,7 +28,20 @@ kbimg-create - Create a new KubeOS image
 Usage: kbimg create --file <FILE> <IMAGE_TYPE>
 
 Arguments:
-  <IMAGE_TYPE>  [possible values: vm-img, pxe-img, upgrade-img, admin-container]
+  <IMAGE_TYPE>  [possible values: vm-img, pxe-img, upgrade-img, admin-container, oci-img, iso-img]
+
+Options:
+  -f, --file <FILE>  Path to the toml configuration file
+  -h, --help         Print help
+```
+
+kbimg-install - Install KubeOS to a target disk
+
+```text
+Usage: kbimg install --file <FILE> <INSTALL_TYPE>
+
+Arguments:
+  <INSTALL_TYPE>  [possible values: disk]
 
 Options:
   -f, --file <FILE>  Path to the toml configuration file
@@ -37,6 +51,7 @@ Options:
 ## 注意事项
 
 * 请确保已安装`qemu-img bc parted tar yum docker dosfstools`
+* 使用ISO镜像制作功能请确保已安装`elemental mtools xorriso`
 * 制作启用dm-verity功能的镜像，需要安装`pesign nss openssl veritysetup crypto-policies`
 * KubeOS镜像制作需要使用root权限
 * 制作镜像时提供的 repo 文件中，yum 源建议同时配置 openEuler 具体版本的 everything 仓库和 EPOL 仓库
@@ -49,7 +64,7 @@ Options:
 
 ### from_repo
 
-从 repo 创建升级容器镜像、虚拟机镜像或PXE物理机镜像
+从 repo 创建升级镜像、OCI容器镜像、虚拟机镜像或PXE物理机镜像
 
   | 参数 | 描述 |
   | --- | --- |
@@ -69,6 +84,41 @@ Options:
   | --- | --- |
   | hostshell | hostshell二进制路径，可在项目根目录下通过`make hostshell`编译 |
   | img_name | 指定生成的容器镜像名 |
+
+### oci_img
+
+制作OCI容器镜像
+
+  | 参数 | 描述 |
+  | --- | --- |
+  | image_name | 指定生成的 OCI 容器镜像名，例如 "kubeos-oci:v1" |
+
+### iso_img
+
+制作ISO安装镜像，基于已有的 OCI 镜像生成可用于物理机安装的 ISO 文件
+
+  | 参数 | 描述 |
+  | --- | --- |
+  | oci_image | 已有的 OCI 容器镜像名，作为 ISO 制作的基础镜像，例如 "kubeos-oci:v1" |
+  | iso_image | 指定生成的 ISO 容器镜像名，例如 "kubeos-iso:v1" |
+  | elemental_cli_path | elemental 二进制文件路径 |
+  | output_dir | [可选项] ISO 文件输出目录，默认当前 scripts-auto 目录 |
+  | grub_entry_name | [可选项] GRUB 引导菜单项名称，默认 "KubeOS" |
+  | label | [可选项] ISO 卷标，默认 "COS_LIVE" |
+  | name | [可选项] ISO 文件名前缀（不含 .iso），默认 "KubeOS" |
+
+### install
+
+物理机ISO启动后安装KubeOS的配置。`kbimg install -f kbimg.toml disk` 使用 skopeo 从容器镜像仓库拉取 OCI 镜像并安装到目标磁盘。
+
+  | 参数 | 描述 |
+  | --- | --- |
+  | target_disk | 目标磁盘设备，例如 "/dev/sda"、"/dev/nvme0n1" |
+  | oci_image | skopeo 拉取用的 OCI 镜像地址，例如 "docker://192.168.1.1:5000/kubeos-oci:v1" |
+  | cloud_init_config | [可选项] cloud-init 配置文件路径或 URL，将写入 /var/lib/cloud/seed/nocloud-net/user-data |
+  | ignition_config | [可选项] ignition 配置文件路径或 URL，将写入 /usr/lib/dracut/modules.d/30ignition/config.ign |
+  | skip_tls | [可选项] 从 URL 下载配置文件时跳过 TLS 证书校验，默认 false |
+  | reboot | [可选项] 安装完成后是否自动重启，默认 false |
 
 ### pxe_config
 
@@ -183,47 +233,235 @@ Options:
 
 #### 注意事项
 
-* 制作出的 OCI 镜像仅用于后续的虚拟机/物理机镜像升级使用，不支持启动容器。
-* 使用默认 rpmlist 进行容器OS镜像制作时所需磁盘空间至少为6G，若使用自定义 rpmlist 可能会超过6G。
+* 制作出的 OCI 镜像可用于后续的 ISO 镜像制作、物理机安装和KubeOS单节点通过命令行升级
+* 使用示例 rpmlist 进行容器OS镜像制作时所需磁盘空间至少为10G，若使用自定义 rpmlist 可能会超过10G，rpmlist需至少包含示例中给出的rpm包。
+* KubeOS OCI镜像当前不支持dm-verity场景。
+
+#### 使用示例
+
+* 配置文件示例（包含oci_img）
+
+  ```toml
+  [from_repo]
+  agent_path = "./bin/rust/release/os-agent"
+  legacy_bios = false
+  repo_path = "/etc/yum.repos.d/openEuler.repo"
+  root_passwd = "$1$xyz$RdLyKTL32WEvK3lg8CXID0"
+  rpmlist = [
+      "NetworkManager",
+      "cloud-init",
+      "conntrack-tools",
+      "containerd",
+      "containernetworking-plugins",
+      "cri-tools",
+      "dhcp",
+      "ebtables",
+      "ethtool",
+      "iptables",
+      "kernel",
+      "kubernetes-kubeadm",
+      "kubernetes-kubelet",
+      "openssh-server",
+      "passwd",
+      "rsyslog",
+      "socat",
+      "tar",
+      "vi",
+      "dracut-network",
+      "dracut-live",
+      "coreutils",
+      "dosfstools",
+      "dracut",
+      "gawk",
+      "hwinfo",
+      "net-tools",
+      "parted",
+      "skopeo",
+      "curl",
+      "e2fsprogs",
+      "util-linux",
+      "shim",
+      "mokutil"
+
+  ]
+  upgrade_img = "<registry>/kubeos-upgrade:v1"
+  version = "v1"
+
+  [oci_img]
+  image_name = "kubeos-oci:v1"
+  ```
+
+* 执行命令
+
+  ```bash
+  kbimg create -f kbimg.toml oci-img
+  ```
+
+* 结果说明
+  * 制作完成后，通过`docker images`查看制作出来的 OCI 容器镜像
+  * OCI 镜像可推送到容器镜像仓库，供后续 ISO 制作和裸金属安装使用
+
+  ```bash
+  docker push <registry>/kubeos-oci:v1
+  ```
+
+### KubeOS ISO 镜像制作
+
+#### 注意事项
+
+* ISO 镜像基于已有的 OCI 镜像制作，需先完成 [OCI 镜像制作](#kubeos-oci-镜像制作)并推送至镜像仓库或本地 docker 缓存
+* 制作 ISO 镜像需要安装 elemental 工具
+* ISO 镜像用于物理机 UEFI 启动安装，不支持BIOS模式
+* ISO 制作完成后的文件默认输出到 kbimg 执行目录下的 `scripts-auto` 目录，可通过 `output_dir` 指定
 
 #### 使用示例
 
 * 配置文件示例
 
-```toml
-[from_repo]
-agent_path = "./bin/rust/release/os-agent"
-legacy_bios = false
-repo_path = "/etc/yum.repos.d/openEuler.repo"
-root_passwd = "$1$xyz$RdLyKTL32WEvK3lg8CXID0" # default passwd: openEuler12#$
-rpmlist = [
-    "NetworkManager",
-    "cloud-init",
-    "conntrack-tools",
-    "containerd",
-    "containernetworking-plugins",
-    "cri-tools",
-    "dhcp",
-    "ebtables",
-    "ethtool",
-    "iptables",
-    "kernel",
-    "kubernetes-kubeadm",
-    "kubernetes-kubelet",
-    "openssh-server",
-    "passwd",
-    "rsyslog",
-    "socat",
-    "tar",
-    "vi",
-]
-upgrade_img = "kubeos-upgrade:v1"
-version = "v1"
-```
+  ```toml
+  [from_repo]
+  agent_path = "./bin/rust/release/os-agent"
+  legacy_bios = false
+  repo_path = "/etc/yum.repos.d/openEuler.repo"
+  root_passwd = "$1$xyz$RdLyKTL32WEvK3lg8CXID0"
+  rpmlist = [
+      "NetworkManager",
+      "cloud-init",
+      "conntrack-tools",
+      "containerd",
+      "containernetworking-plugins",
+      "cri-tools",
+      "dhcp",
+      "ebtables",
+      "ethtool",
+      "iptables",
+      "kernel",
+      "kubernetes-kubeadm",
+      "kubernetes-kubelet",
+      "openssh-server",
+      "passwd",
+      "rsyslog",
+      "socat",
+      "tar",
+      "vi",
+  ]
+  upgrade_img = "kubeos-upgrade:v1"
+  version = "v1"
+
+  [oci_img]
+  image_name = "<registry>/kubeos-oci:v1"
+
+  [iso_img]
+  oci_image = "<registry>/kubeos-oci:v1"
+  iso_image = "kubeos-iso:v1"
+  elemental_cli_path = "./bin/elemental"
+  output_dir = "./output"
+  # grub_entry_name = "KubeOS"
+  # label = "COS_LIVE"
+  # name = "KubeOS"
+  ```
+
+* 执行命令
+
+  ```bash
+  # 首先制作 OCI 镜像
+  kbimg create oci-img -f kbimg.toml
+  # 然后制作 ISO 镜像
+  kbimg create iso-img -f kbimg.toml
+  ```
 
 * 结果说明
-  * 制作完成后，通过`docker images`查看制作出来的KubeOS容器镜像
-  * update-boot.img/update-root.img/update-hash.img: 仅在dm-verity模式下生成，可忽略。
+  * 制作完成后，在 `output_dir` 目录下生成 `.iso` 文件
+  * 将 ISO 文件写入 U盘 或挂载到 BMC 虚拟光驱，物理机从 UEFI 引导即可进入安装流程
+
+### KubeOS 裸金属安装
+
+#### 注意事项
+
+* 裸金属安装需要先将 OCI 镜像推送到容器镜像仓库，目标机器能够通过网络访问该仓库
+* 仅支持 UEFI 引导（x86_64 和 aarch64），不支持 legacy BIOS
+* 安装过程会格式化目标磁盘的全部数据，请确认磁盘上没有需要保留的数据
+* 不支持多个磁盘同时安装 KubeOS，可能导致启动失败或挂载紊乱
+* 安装过程中 skopeo 拉取 OCI 镜像可能耗时较长，取决于网络状况
+
+#### 准备工作
+
+1. 制作并推送 OCI 镜像到容器镜像仓库
+
+   ```bash
+   kbimg create oci-img -f kbimg.toml
+   docker push <registry>/kubeos-oci:v1
+   ```
+
+2. 准备安装配置文件 kbimg.toml（在目标机器上），参考以下示例：
+
+   ```toml
+   [install]
+   target_disk = "/dev/sda"
+   oci_image = "docker://<registry>/kubeos-oci:v1"
+   # 以下为可选配置
+   # cloud_init_config = "https://example.com/user-data"
+   # ignition_config = "/path/to/config.ign"
+   # skip_tls = true
+   # reboot = true
+   ```
+
+   如果使用了 `cloud_init_config` 或 `ignition_config` 为 URL，可通过 `skip_tls = true` 跳过 TLS 证书校验。
+
+3. 在目标机器上执行安装
+
+   ```bash
+   kbimg install disk -f kbimg.toml
+   ```
+
+   安装成功后，若配置了 `reboot = true`，机器会自动重启进入新安装的 KubeOS 系统。
+
+#### cloud-init 和 ignition 配置
+
+安装时支持注入 cloud-init 或 ignition 配置文件：
+
+* **cloud-init**：配置文件（user-data）写入 `/var/lib/cloud/seed/nocloud-net/`，同时自动生成 `meta-data` 文件。确保 rpmlist 中包含 `cloud-init` 包。
+* **ignition**：配置文件（config.ign）写入 `/usr/lib/dracut/modules.d/30ignition/`。确保 rpmlist 中包含相关 ignition 包。
+
+配置来源支持本地文件路径或 HTTP/HTTPS URL：
+
+```toml
+[install]
+target_disk = "/dev/sda"
+oci_image = "docker://192.168.1.100:5000/kubeos-oci:v1"
+cloud_init_config = "./user-data"
+ignition_config = "https://example.com/config.ign"
+skip_tls = true
+```
+
+#### 自定义分区
+
+通过 `[disk_partition]` 调整根分区大小：
+
+```toml
+[disk_partition]
+root = 5000   # 根分区大小，单位 MiB（默认 2560）
+```
+
+通过 `[persist_mkdir]` 在持久化分区创建自定义目录：
+
+```toml
+[persist_mkdir]
+name = ["bar", "foo"]
+```
+
+#### 磁盘分区布局
+
+安装后目标磁盘的分区布局如下：
+
+| 分区 | 大小 | 文件系统 | 标签 | 说明 |
+| --- | --- | --- | --- | --- |
+| 1 | 60 MiB | vfat | BOOT | EFI 引导分区 |
+| 2 | root MiB | ext4 | ROOT-A | A 分区（当前运行） |
+| 3 | root MiB | ext4 | ROOT-B | B 分区（升级备用） |
+| 4 | 剩余空间 | ext4 | PERSIST | 持久化数据分区 |
+
+root 分区大小可通过 `disk_partition.root` 自定义，默认 2560 MiB。A/B 分区大小相同。
 
 ### KubeOS 虚拟机镜像制作
 
@@ -499,6 +737,18 @@ version = "v1"
 # img_name = "kubeos-admin-container:v1"
 # hostshell = "./bin/hostshell"
 
+# [oci_img]
+# image_name = "kubeos-oci:v1"
+
+# [iso_img]
+# oci_image = "kubeos-oci:v1"
+# iso_image = "kubeos-iso:v1"
+# elemental_cli_path = "./bin/elemental-cli"
+# output_dir = "./output"
+# grub_entry_name = "KubeOS"
+# label = "COS_LIVE"
+# name = "KubeOS"
+
 # [pxe_config]
 # dhcp = false
 # disk = "/dev/vda"
@@ -550,4 +800,12 @@ version = "v1"
 # efi_key = "foo"
 # grub_key = "bar"
 # keys_dir = "./keys"
+
+# [install]
+# target_disk = "/dev/sda"
+# oci_image = "docker://192.168.1.100:5000/kubeos-oci:v1"
+# cloud_init_config = "https://example.com/user-data"
+# ignition_config = "/path/to/config.ign"
+# skip_tls = false
+# reboot = false
 ```
