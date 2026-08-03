@@ -86,7 +86,7 @@ impl<T: CommandExecutor> UpgradeImageManager<T> {
         let tar_str = self.tar_path_str()?;
         let mount_str = self.mount_path_str()?;
         debug!("Extract {} to mounted path {}", tar_str, mount_str);
-        self.executor.run_command("tar", &["-xvf", tar_str, "-C", mount_str])?;
+        self.executor.run_command("tar", &["--selinux", "-xvf", tar_str, "-C", mount_str])?;
         Ok(())
     }
 
@@ -186,7 +186,7 @@ mod tests {
 
         //mock extract_tar_to_image
         mock.expect_run_command()
-            .withf(|name, args| name == "tar" && args[0] == "-xvf")
+            .withf(|name, args| name == "tar" && args[0] == "--selinux" && args[1] == "-xvf")
             .times(1) // Expect it to be called once
             .returning(|_, _| Ok(()));
 

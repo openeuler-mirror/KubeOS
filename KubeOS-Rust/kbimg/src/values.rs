@@ -941,13 +941,19 @@ RUN mkdir -p /usr/lib/dracut/modules.d/99kubeos-overlayfs-fix && \
     echo 'add_dracutmodules+=" kubeos-overlayfs-fix "' > /etc/dracut.conf.d/99-kubeos-overlayfs-fix.conf
 
 # Generate initrd with required elemental services
+# Pre-install GRUB EFI to ensure correct architecture (x86_64 grub2-efi package
+# also ships i386-efi modules which elemental may pick up incorrectly)
 RUN ARCH=$(uname -m) && \
-    FEATURES="" && \
-    if [ "${ARCH}" != "x86_64" ]; then \
-      FEATURES="autologin boot-assessment cloud-config-defaults cloud-config-essentials dracut-config elemental-rootfs elemental-setup elemental-sysroot grub-config"; \
-      if [ "${ARCH}" = "aarch64" ]; then \
-        FEATURES="${FEATURES} arm-firmware grub-default-bootargs"; \
-      fi; \
+    if [ "${ARCH}" = "x86_64" ]; then \
+      mkdir -p /boot/efi/EFI/BOOT && \
+      grub2-mkimage -d /usr/lib/grub/x86_64-efi -O x86_64-efi \
+        --output=/boot/efi/EFI/BOOT/grubx64.efi \
+        --prefix='' \
+        fat iso9660 part_gpt part_msdos linux normal search configfile echo; \
+    fi && \
+    FEATURES="autologin boot-assessment cloud-config-defaults cloud-config-essentials dracut-config elemental-rootfs elemental-setup elemental-sysroot grub-config" && \
+    if [ "${ARCH}" = "aarch64" ]; then \
+      FEATURES="${FEATURES} arm-firmware grub-default-bootargs"; \
     fi; \
     elemental --debug init --force ${FEATURES}
 

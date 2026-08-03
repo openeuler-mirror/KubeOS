@@ -71,6 +71,9 @@ agent:
 kbimg:
 	${RUSTFLAGS} cargo build --profile release --target-dir ./bin/rust --package kbimg
 
+kbosctl:
+	${RUSTFLAGS} cargo build --profile release --target-dir ./bin/rust --package kbosctl
+
 # clean binary
 clean:
 	rm -rf bin

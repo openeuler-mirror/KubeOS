@@ -12,6 +12,7 @@
 
 pub mod callable_method;
 pub mod configure;
+pub mod prepare;
 pub mod prepare_upgrade;
 pub mod request;
 pub mod rollback;

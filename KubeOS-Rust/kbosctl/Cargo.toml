@@ -1,0 +1,12 @@
+[package]
+description = "KubeOS CLI tool for upgrade and rollback"
+edition.workspace = true
+license.workspace = true
+name = "kbosctl"
+version.workspace = true
+
+[dependencies]
+anyhow = { workspace = true }
+clap = { workspace = true, features = ["derive", "help", "std", "usage"] }
+cli = { workspace = true }
+manager = { workspace = true }

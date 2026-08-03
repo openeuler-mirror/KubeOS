@@ -10,14 +10,26 @@
  * See the Mulan PSL v2 for more details.
  */
 
-use std::{io::Write, sync::Mutex, thread, time::Duration};
+use std::{
+    io::Write,
+    sync::{atomic::AtomicBool, atomic::Ordering, Mutex},
+    thread,
+    time::Duration,
+};
 
 use anyhow::{bail, Result};
 use log::{debug, info};
 use manager::{
-    api::{AgentStatus, ConfigureRequest, ImageType, Response, UpgradeRequest},
-    sys_mgmt::{CtrImageHandler, DiskImageHandler, DockerImageHandler, CONFIG_TEMPLATE, DEFAULT_GRUBENV_PATH},
-    utils::{get_partition_info, is_dmv_mode, switch_boot_menuentry, CommandExecutor, RealCommandExecutor},
+    api::{
+        AgentStatus, CmdRequest, ConfigureRequest, ImageType, Response, UpgradeRequest,
+    },
+    sys_mgmt::{
+        backup_etc_overlay, inject_cloud_init, inject_ignition, CtrImageHandler, DiskImageHandler,
+        DockerImageHandler, SkopeoImageHandler, CONFIG_TEMPLATE, DEFAULT_GRUBENV_PATH,
+    },
+    utils::{
+        get_partition_info, is_dmv_mode, switch_boot_menuentry, CommandExecutor, PreparePath, RealCommandExecutor,
+    },
 };
 use nix::{sys::reboot::RebootMode, unistd::sync};
 
@@ -28,7 +40,7 @@ use super::{
 
 pub struct AgentImpl {
     mutex: Mutex<()>,
-    disable_reboot: bool,
+    disable_reboot: AtomicBool,
 }
 
 impl Agent for AgentImpl {
@@ -47,11 +59,15 @@ impl Agent for AgentImpl {
     fn rollback(&self) -> RpcResult<Response> {
         RpcFunction::call(|| self.rollback_impl())
     }
+
+    fn prepare_cmd(&self, req: CmdRequest) -> RpcResult<Response> {
+        RpcFunction::call(|| self.prepare_cmd_impl(req))
+    }
 }
 
 impl Default for AgentImpl {
     fn default() -> Self {
-        Self { mutex: Mutex::new(()), disable_reboot: false }
+        Self { mutex: Mutex::new(()), disable_reboot: AtomicBool::new(false) }
     }
 }
 
@@ -103,6 +119,7 @@ impl AgentImpl {
         switch_boot_menuentry(&command_executor, DEFAULT_GRUBENV_PATH, menuentry)?;
         info!("Switch to boot partition: {}, device: {}", menuentry, device);
         self.reboot()?;
+        self.disable_reboot.store(false, Ordering::Relaxed);
         Ok(Response { status: AgentStatus::Upgraded })
     }
 
@@ -149,6 +166,7 @@ impl AgentImpl {
         )?;
         info!("Switch to boot partition: {}, device: {}", next_partition_info.menuentry, next_partition_info.device);
         self.reboot()?;
+        self.disable_reboot.store(false, Ordering::Relaxed);
         Ok(Response { status: AgentStatus::Rollbacked })
     }
 
@@ -157,11 +175,61 @@ impl AgentImpl {
         std::io::stdout().flush()?;
         thread::sleep(Duration::from_secs(1));
         sync();
-        if self.disable_reboot {
+        if self.disable_reboot.load(Ordering::Relaxed) {
             return Ok(());
         }
         nix::sys::reboot::reboot(RebootMode::RB_AUTOBOOT)?;
         Ok(())
+    }
+
+    fn prepare_cmd_impl(&self, req: CmdRequest) -> Result<Response> {
+        let lock = self.mutex.try_lock();
+        if lock.is_err() {
+            bail!("os-agent is processing another request");
+        }
+        debug!("Received a 'prepare' request (rollback={}): {:?}", req.is_rollback, req);
+        info!("Start prepare, is_rollback: {}", req.is_rollback);
+
+        let dmv_mode = is_dmv_mode(&RealCommandExecutor {});
+        if dmv_mode {
+            bail!("dm-verity mode is not supported for kbosctl");
+        }
+
+        if !req.is_rollback {
+            let handler = SkopeoImageHandler { paths: PreparePath::default(), executor: RealCommandExecutor {} };
+            let img_manager = handler.download_image(&req)?;
+
+            if let Some(ref ci) = req.cloud_init_config {
+                inject_cloud_init(&handler.paths.mount_path, ci, req.skip_tls)?;
+            }
+            if let Some(ref ig) = req.ignition_config {
+                inject_ignition(&handler.paths.mount_path, ig, req.skip_tls)?;
+            }
+
+            let (_, next) = get_partition_info(&RealCommandExecutor {})?;
+            backup_etc_overlay(&next.menuentry)?;
+
+            handler.finish()?;
+            info!("Ready to install image: {:?}", img_manager.paths.image_path.display());
+            img_manager.install()?;
+        }
+
+        // upgrade & rollback: switch boot + optional reboot
+        let command_executor = RealCommandExecutor {};
+        let (_, next_partition_info) = get_partition_info(&command_executor)?;
+        switch_boot_menuentry(
+            &command_executor,
+            DEFAULT_GRUBENV_PATH,
+            &next_partition_info.menuentry,
+        )?;
+        info!("Switch boot to partition: {}", next_partition_info.menuentry);
+
+        self.disable_reboot.store(!req.reboot, Ordering::Relaxed);
+        self.reboot()?;
+        self.disable_reboot.store(false, Ordering::Relaxed);
+
+        let status = if req.is_rollback { AgentStatus::Rollbacked } else { AgentStatus::Upgraded };
+        Ok(Response { status })
     }
 }
 
@@ -175,8 +243,8 @@ mod test {
 
     #[test]
     fn test_reboot() {
-        let mut agent = AgentImpl::default();
-        agent.disable_reboot = true;
+        let agent = AgentImpl::default();
+        agent.disable_reboot.store(true, Ordering::Relaxed);
         let res = agent.reboot();
         assert!(res.is_ok());
     }

@@ -33,6 +33,19 @@ pub struct UpgradeRequest {
 }
 
 #[derive(Deserialize, Serialize, Debug)]
+pub struct CmdRequest {
+    pub version: String,
+    pub image_url: String,
+    pub certs: CertsInfo,
+    pub oci_image: String,
+    pub cloud_init_config: Option<String>,
+    pub ignition_config: Option<String>,
+    pub skip_tls: bool,
+    pub reboot: bool,
+    pub is_rollback: bool,
+}
+
+#[derive(Deserialize, Serialize, Debug)]
 pub struct CertsInfo {
     pub ca_cert: String,
     pub client_cert: String,
