@@ -3,6 +3,7 @@ members = [
     "KubeOS-Rust/agent",
     "KubeOS-Rust/cli",
     "KubeOS-Rust/kbimg",
+    "KubeOS-Rust/kbosctl",
     "KubeOS-Rust/manager",
     "KubeOS-Rust/proxy",
 ]

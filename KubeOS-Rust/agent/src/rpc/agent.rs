@@ -10,7 +10,7 @@
  * See the Mulan PSL v2 for more details.
  */
 
-use manager::api::{ConfigureRequest, Response, UpgradeRequest};
+use manager::api::{CmdRequest, ConfigureRequest, Response, UpgradeRequest};
 
 use super::function::{rpc, RpcResult};
 
@@ -27,4 +27,7 @@ pub trait Agent {
 
     #[rpc(name = "rollback")]
     fn rollback(&self) -> RpcResult<Response>;
+
+    #[rpc(name = "prepare_cmd")]
+    fn prepare_cmd(&self, req: CmdRequest) -> RpcResult<Response>;
 }
