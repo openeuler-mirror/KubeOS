@@ -59,6 +59,7 @@ impl CreateImage for OciImgInfo {
         // Reuse the repo-based rootfs preparation (rpmlist, misc files, grub.cfg, chroot script)
         repo_info.write_rpmlist(config)?;
         repo_info.write_misc_files()?;
+        repo_info.write_security_files(config)?;
         repo_info.write_grub_cfg(config.dm_verity.is_some())?;
         repo_info.write_set_in_chroot(config)?;
 

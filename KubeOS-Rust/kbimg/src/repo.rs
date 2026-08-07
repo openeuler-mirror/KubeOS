@@ -13,6 +13,7 @@
 use std::{
     env,
     fs::{self, File},
+    io::Write,
     path::PathBuf,
 };
 
@@ -48,6 +49,7 @@ impl CreateImage for RepoInfo {
     fn generate_scripts(&self, config: &Config) -> Result<PathBuf> {
         self.write_rpmlist(config)?;
         self.write_misc_files()?;
+        self.write_security_files(config)?;
         self.write_grub_cfg(config.dm_verity.is_some())?;
         self.write_set_in_chroot(config)?;
         let kbimg_path = self.create_kbimg_script(config)?;
@@ -220,6 +222,38 @@ impl RepoInfo {
         let mut dockerfile = File::create(&dockerfile_path)?;
         base_gen(&mut dockerfile, OS_TAR_DOCKERFILE, false)?;
         set_permissions(&dockerfile_path, CONFIG_PERMISSION)?;
+        Ok(())
+    }
+
+    pub(crate) fn write_security_files(&self, config: &Config) -> Result<()> {
+        // Always copy CVE script
+        let cve_src = PathBuf::from("../cve-tools/gen_fixed_cve.sh");
+        if cve_src.exists() {
+            fs::copy(&cve_src, format!("{}/gen_fixed_cve.sh", MISC_FILES_DIR))?;
+        }
+
+        if let Some(sec) = &config.security_config {
+            if sec.security_enable {
+                // Copy security-tools.sh
+                let sec_src = PathBuf::from("../security-tools/security-tools.sh");
+                if sec_src.exists() {
+                    fs::copy(&sec_src, format!("{}/security-tools.sh", MISC_FILES_DIR))?;
+                }
+
+                // Generate modify-stig-dynamic.sh with server params
+                let dst = format!("{}/modify-stig-dynamic.sh", MISC_FILES_DIR);
+                let mut script = File::create(&dst)?;
+                let chrony = sec.chrony_server.as_deref().unwrap_or("0.us.pool.ntp.mil");
+                let rsyslog = sec.rsyslog_server.as_deref().unwrap_or("192.168.1.100");
+                let audit = sec.audit_server.as_deref().unwrap_or("192.168.1.101");
+                writeln!(script, "#!/bin/bash")?;
+                writeln!(script, "CHRONY_SERVER=\"{}\"", chrony)?;
+                writeln!(script, "RSYSLOG_SERVER=\"{}\"", rsyslog)?;
+                writeln!(script, "AUDIT_SERVER=\"{}\"", audit)?;
+                writeln!(script, "{}", MODIFY_STIG_DYNAMIC_SH)?;
+                set_permissions(&dst, EXEC_PERMISSION)?;
+            }
+        }
         Ok(())
     }
 

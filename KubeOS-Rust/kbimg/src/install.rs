@@ -73,6 +73,7 @@ impl InstallImage for InstallConfig {
         let mut install_script = File::create(&install_path)?;
         base_gen(&mut install_script, INSTALL_GLOBAL_VARS, true)?;
         gen_global_func(&mut install_script)?;
+        gen_mount_proc_dev_sys(&mut install_script)?;
         gen_install_script(&mut install_script, self, config)?;
         set_permissions(&install_path, EXEC_PERMISSION)?;
         Ok(PathBuf::from(&install_path))

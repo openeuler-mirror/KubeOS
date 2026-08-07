@@ -270,6 +270,7 @@ EOF
     {COPY_GRUB_CFG}
     {PXE_BOOTUP_FILES}
     {DM_VERITY_FILES}
+    {SECURITY_COPY}
     # custom config
 {CUSTOM_SCRIPT}
 
@@ -319,6 +320,7 @@ mkdir -p /usr/share/factory/var
  	    echo "C $path $perm $owner $group - $factory"
  	fi
 done > /usr/lib/tmpfiles.d/kubeos-var.conf
+{CVE_SCRIPT}
 {PXE_DRACUT}
 {DM_VERITY_DRACUT}"#;
 
@@ -373,6 +375,7 @@ pub const CREATE_IMAGE: &str = r#"function create_img() {{
 
     losetup -D
     parted "${{SCRIPTS_DIR}}"/system.img -- set 1 boot on
+{SELINUX_FIXUP}
     {DMV_MAIN}
     qemu-img convert "${{SCRIPTS_DIR}}"/system.img -O qcow2 "${{SCRIPTS_DIR}}"/system.qcow2
 }}
@@ -1996,6 +1999,54 @@ elif [ -z "${config_directory}" -a -f  $prefix/custom.cfg ]; then
 fi
 ### END /etc/grub.d/41_custom ###"#;
 
+pub const MODIFY_STIG_DYNAMIC_SH: &str = r##"#!/bin/bash
+set -eux
+
+# ===== 服务器参数 =====
+
+echo "=== 修复 chrony ==="
+if grep -qE "^server\s+\S+\s+maxpoll\s+16" /etc/chrony.conf; then
+    echo "chrony 已满足要求，跳过。"
+else
+    cp /etc/chrony.conf /etc/chrony.conf.bak
+    sed -i '/^server.*maxpoll/d' /etc/chrony.conf
+    echo "server ${CHRONY_SERVER} maxpoll 16" >> /etc/chrony.conf
+    echo "chrony 已修复"
+fi
+
+echo "=== 修复 rsyslog ==="
+udp_ok=false
+tcp_ok=false
+grep -qE "^\*\.\*\s+@${RSYSLOG_SERVER}:514" /etc/rsyslog.conf && udp_ok=true
+grep -qE "^\*\.\*\s+@@${RSYSLOG_SERVER}:514" /etc/rsyslog.conf && tcp_ok=true
+if $udp_ok && $tcp_ok; then
+    echo "rsyslog 已满足要求，跳过。"
+else
+    cp /etc/rsyslog.conf /etc/rsyslog.conf.bak
+    if ! $udp_ok; then
+        echo "*.* @${RSYSLOG_SERVER}:514" >> /etc/rsyslog.conf
+    fi
+    if ! $tcp_ok; then
+        echo "*.* @@${RSYSLOG_SERVER}:514" >> /etc/rsyslog.conf
+    fi
+    echo "rsyslog 已修复"
+fi
+
+echo "=== 修复 audit ==="
+if grep -qE "^remote_server\s*=\s*${AUDIT_SERVER}" /etc/audit/audisp-remote.conf; then
+    echo "audit 已满足要求，跳过。"
+else
+    cp /etc/audit/audisp-remote.conf /etc/audit/audisp-remote.conf.bak
+    if grep -q "^remote_server" /etc/audit/audisp-remote.conf; then
+        sed -i "s/^remote_server\s*=.*/remote_server = ${AUDIT_SERVER}/" /etc/audit/audisp-remote.conf
+    else
+        echo "remote_server = ${AUDIT_SERVER}" >> /etc/audit/audisp-remote.conf
+    fi
+    echo "audit 已修复"
+fi
+
+echo "全部完成。""##;
+
 pub const INSTALL_GLOBAL_VARS: &str = r#"set -eux
 set -o pipefail
 
@@ -2219,6 +2270,8 @@ install_kubeos
 ret=$?
 if [ $ret -eq 0 ]; then
     echo "KubeOS installation completed successfully"
+{SECURITY_RUN}
+{SELINUX_FIXUP_INSTALL}
 {REBOOT_CMD}
 fi
 exit $ret"#;

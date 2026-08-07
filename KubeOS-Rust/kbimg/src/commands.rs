@@ -159,6 +159,7 @@ pub struct Config {
     pub persist_mkdir: Option<PersistMkdir>,
     pub dm_verity: Option<DmVerity>,
     pub install: Option<InstallConfig>,
+    pub security_config: Option<SecurityConfig>,
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -239,6 +240,18 @@ pub struct DmVerity {
     #[serde(deserialize_with = "reject_empty_string")]
     pub grub_key: String,
     pub keys_dir: Option<PathBuf>,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct SecurityConfig {
+    #[serde(default)]
+    pub security_enable: bool,
+    #[serde(default, deserialize_with = "reject_empty_option_string")]
+    pub chrony_server: Option<String>,
+    #[serde(default, deserialize_with = "reject_empty_option_string")]
+    pub rsyslog_server: Option<String>,
+    #[serde(default, deserialize_with = "reject_empty_option_string")]
+    pub audit_server: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Clone)]

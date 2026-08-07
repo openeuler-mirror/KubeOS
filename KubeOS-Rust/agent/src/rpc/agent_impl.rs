@@ -24,7 +24,7 @@ use manager::{
         AgentStatus, CmdRequest, ConfigureRequest, ImageType, Response, UpgradeRequest,
     },
     sys_mgmt::{
-            backup_etc_overlay, inject_config, CtrImageHandler, DiskImageHandler,
+            backup_etc_overlay,             inject_config, run_security_scripts, CtrImageHandler, DiskImageHandler,
         DockerImageHandler, SkopeoImageHandler, CONFIG_TEMPLATE, DEFAULT_GRUBENV_PATH,
     },
     utils::{
@@ -203,6 +203,7 @@ impl AgentImpl {
                 inject_config(&handler.paths.mount_path, &c.src, &c.dst, req.skip_tls)?;
             }
 
+            run_security_scripts(&handler.paths.mount_path)?;
             let (_, next) = get_partition_info(&RealCommandExecutor {})?;
             backup_etc_overlay(&next.menuentry)?;
 
