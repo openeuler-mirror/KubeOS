@@ -249,18 +249,23 @@ pub struct InstallConfig {
     /// Required: OCI image name to pull via skopeo (e.g., "docker://myregistry/kubeos-oci:v1")
     #[serde(deserialize_with = "reject_empty_string")]
     pub oci_image: String,
-    /// Optional: Cloud-init config file path or URL
-    #[serde(default, deserialize_with = "reject_empty_option_string")]
-    pub cloud_init_config: Option<String>,
-    /// Optional: Ignition config file path or URL
-    #[serde(default, deserialize_with = "reject_empty_option_string")]
-    pub ignition_config: Option<String>,
+    /// Optional: Config files to inject, each with src and dst
+    #[serde(default)]
+    pub configs: Vec<ConfigEntry>,
     /// Optional: Skip TLS verification when downloading config from URL
     #[serde(default)]
     pub skip_tls: bool,
     /// Optional: Reboot after installation, default false
     #[serde(default)]
     pub reboot: bool,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct ConfigEntry {
+    #[serde(deserialize_with = "reject_empty_string")]
+    pub src: String,
+    #[serde(deserialize_with = "reject_empty_string")]
+    pub dst: String,
 }
 
 #[derive(Debug, Deserialize, Clone, Default, PartialEq)]

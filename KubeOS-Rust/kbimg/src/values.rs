@@ -2116,54 +2116,28 @@ function set_partuuid_install() {{
 function setup_cloud_init() {{
     local target="$1"
 
-    if [ -n "{CLOUD_INIT_SRC}" ]; then
-        _install_config_file "$target" "{CLOUD_INIT_SRC}" "cloud-init" "/var/lib/cloud/seed/nocloud-net" "user-data"
-    fi
-
-    if [ -n "{IGNITION_SRC}" ]; then
-        _install_config_file "$target" "{IGNITION_SRC}" "ignition" "/usr/lib/dracut/modules.d/30ignition" "config.ign"
-    fi
-
-    if [ -d "$target/var/lib/cloud/seed/nocloud-net" ]; then
-        echo "instance-id: KubeOS" > "$target/var/lib/cloud/seed/nocloud-net/meta-data"
-    fi
-
+{CONFIG_ENTRIES}
     return 0
 }}
 
-function _install_config_file() {{
-    local target="$1"
-    local src="$2"
-    local conf_type="$3"
-    local dest_dir="$4"
-    local dest_file="$5"
-
-    if [ -z "$src" ]; then
-        return 0
-    fi
-
-    local is_url=false
+function _install_config() {{
+    local src="$1"
+    local dst="$2"
+    local dst_path="$ROOT_MOUNT/$dst"
+    local dst_dir
+    dst_dir=$(dirname "$dst_path")
+    mkdir -p "$dst_dir"
     if echo "$src" | grep -qE '^https?://'; then
-        is_url=true
-    fi
-
-    if [ "$is_url" = true ] || [ -f "$src" ]; then
-        mkdir -p "$target$dest_dir"
-        local conf_file="$target$dest_dir/$dest_file"
-
-        if [ "$is_url" = true ]; then
-            local curl_opts="-sSL --fail"
-            if [ "{SKIP_TLS}" = "true" ]; then
-                curl_opts="$curl_opts --insecure"
-            fi
-            curl $curl_opts -o "$conf_file" "$src"
-        else
-            cp "$src" "$conf_file"
+        local curl_opts="-sSL --fail"
+        if [ "{SKIP_TLS}" = "true" ]; then
+            curl_opts="$curl_opts --insecure"
         fi
+        curl $curl_opts -o "$dst_path" "$src"
+    else
+        cp "$src" "$dst_path"
     fi
-
-    return 0
 }}
+
 
 function format_rootb() {{
     mkfs.ext4 -L "ROOT-B" "${{PART_PREFIX}}3"

@@ -876,8 +876,14 @@ pub(crate) fn gen_install_script(
     let roota_end = boot_size + root_size;
     let rootb_end = boot_size + root_size + root_size;
 
-    let cloud_init_src = install_cfg.cloud_init_config.as_deref().unwrap_or("");
-    let ignition_src = install_cfg.ignition_config.as_deref().unwrap_or("");
+    let mut config_entries = String::new();
+    for c in &install_cfg.configs {
+        config_entries.push_str(&format!(
+            r#"    _install_config "{}" "{}"
+"#,
+            c.src, c.dst
+        ));
+    }
 
     let mut persist_mkdir_cmds = String::new();
     if let Some(persist_mkdir) = &config.persist_mkdir {
@@ -904,10 +910,9 @@ pub(crate) fn gen_install_script(
     vars.insert("BOOT_END".to_string(), boot_end.to_string());
     vars.insert("ROOTA_END".to_string(), roota_end.to_string());
     vars.insert("ROOTB_END".to_string(), rootb_end.to_string());
-    vars.insert("CLOUD_INIT_SRC".to_string(), cloud_init_src.to_string());
-    vars.insert("IGNITION_SRC".to_string(), ignition_src.to_string());
-    vars.insert("SKIP_TLS".to_string(), install_cfg.skip_tls.to_string());
+    vars.insert("CONFIG_ENTRIES".to_string(), config_entries);
     vars.insert("PERSIST_MKDIR_CMDS".to_string(), persist_mkdir_cmds);
+    vars.insert("SKIP_TLS".to_string(), install_cfg.skip_tls.to_string());
     vars.insert("REBOOT_CMD".to_string(), reboot_cmd.to_string());
 
     let dynamic_script = strfmt(INSTALL_SCRIPT, &vars)?;

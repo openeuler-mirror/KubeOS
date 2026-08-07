@@ -109,7 +109,14 @@ version = "v1"
 # [install]
 # target_disk = "/dev/sda"
 # oci_image = "docker://myregistry/kubeos-oci:v1"
-# cloud_init_config = "https://example.com/user-data"
-# ignition_config = "https://example.com/config.ign"
-# skip_tls = false
 # reboot = false
+
+# [[install.configs]]
+# src = "https://example.com/user-data"
+# dst = "/etc/cloud/cloud.cfg.d/99_kubeos.cfg"
+#
+# [[install.configs]]
+# src = "/path/to/config.ign"
+# dst = "/boot/efi/ignition/config.ign"
+# skip_tls = false
+
