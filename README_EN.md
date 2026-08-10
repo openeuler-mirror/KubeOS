@@ -1,4 +1,5 @@
 # KubeOS
+English | [简体中文](./README.md)
 
 In cloud computing scenarios, the use of containers and Kubernetes is becoming increasingly prevalent. However, the current approach of independently managing containers and operating systems (OSs) often leads to function redundancy and challenges in coordinating two separate scheduling systems. There are also many challenges in OS version management. Even for OSs of the same version, differences will gradually emerge over time due to the installation, update, or deletion of different software packages, leading to version split. Moreover, as the OS is tightly coupled with services, it is difficult to upgrade major versions, which further complicates O&M.
 
