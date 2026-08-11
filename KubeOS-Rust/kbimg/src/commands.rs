@@ -134,9 +134,6 @@ pub struct IsoImgInfo {
     /// Optional: GRUB menu entry name, default "KubeOS"
     #[serde(default, deserialize_with = "reject_empty_option_string")]
     pub grub_entry_name: Option<String>,
-    /// Optional: ISO volume label, default "COS_LIVE"
-    #[serde(default, deserialize_with = "reject_empty_option_string")]
-    pub label: Option<String>,
     /// Optional: ISO file name prefix (without .iso), default "KubeOS"
     #[serde(default, deserialize_with = "reject_empty_option_string")]
     pub name: Option<String>,
@@ -159,7 +156,7 @@ pub struct Config {
     pub persist_mkdir: Option<PersistMkdir>,
     pub dm_verity: Option<DmVerity>,
     pub install: Option<InstallConfig>,
-    pub security_config: Option<SecurityConfig>,
+    pub security_stig: Option<SecurityStig>,
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -243,9 +240,11 @@ pub struct DmVerity {
 }
 
 #[derive(Debug, Deserialize, Clone)]
-pub struct SecurityConfig {
+pub struct SecurityStig {
     #[serde(default)]
     pub security_enable: bool,
+    #[serde(default, deserialize_with = "reject_empty_option_string")]
+    pub security_scripts_path: Option<String>,
     #[serde(default, deserialize_with = "reject_empty_option_string")]
     pub chrony_server: Option<String>,
     #[serde(default, deserialize_with = "reject_empty_option_string")]

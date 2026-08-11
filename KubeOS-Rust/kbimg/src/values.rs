@@ -271,12 +271,19 @@ EOF
     {PXE_BOOTUP_FILES}
     {DM_VERITY_FILES}
     {SECURITY_COPY}
-    # custom config
-{CUSTOM_SCRIPT}
 
     cp "${{SCRIPTS_DIR}}"/set_in_chroot.sh "${{RPM_ROOT}}"
     ROOT_PASSWD="${{ROOT_PASSWD}}" chroot "${{RPM_ROOT}}" bash /set_in_chroot.sh
     rm "${{RPM_ROOT}}/set_in_chroot.sh"
+
+    # Run security hardening (fips-mode-setup) before user dracut so
+    # fips runs first and initramfs is not overwritten.
+    {SECURITY_RUN_CHROOT}
+    # custom config
+{CUSTOM_SCRIPT}
+    # Relabel all files after every modification so SELinux labels are correct
+    # in the packaged rootfs (recovered by tar --selinux on install/upgrade).
+    {SECURITY_SETFILES_CHROOT}
 }}
 "#;
 
@@ -320,7 +327,6 @@ mkdir -p /usr/share/factory/var
  	    echo "C $path $perm $owner $group - $factory"
  	fi
 done > /usr/lib/tmpfiles.d/kubeos-var.conf
-{CVE_SCRIPT}
 {PXE_DRACUT}
 {DM_VERITY_DRACUT}"#;
 
@@ -888,10 +894,11 @@ RUN ln -s /usr/lib/sysmaster/system/set-ssh-pub-key.service /etc/sysmaster/syste
 CMD ["/usr/lib/sysmaster/init"]"#;
 
 pub const OCI_ROOTFS_DOCKERFILE: &str = r#"FROM scratch
-ADD rootfs.tar /
+COPY rootfs.tar /
 CMD ["/bin/bash"]"#;
 
-pub const ISO_DOCKERFILE: &str = r#"FROM {OCI_IMAGE} AS base
+pub const ISO_DOCKERFILE: &str = r#"FROM scratch
+ADD rootfs.tar /
 
 # Copy elemental-cli into the image
 COPY elemental-cli /usr/bin/elemental
@@ -960,6 +967,13 @@ RUN ARCH=$(uname -m) && \
     fi; \
     elemental --debug init --force ${FEATURES}
 
+# elemental init may re-enable KubeOS disk-only mount units; mask them so ISO
+# live boot does not wait for a PERSIST partition that does not exist.
+RUN for unit in persist.mount var.mount etc.mount opt-cni.mount boot-efi.mount boot-grub2.mount; do \
+      ln -sf /dev/null "/etc/systemd/system/${unit}"; \
+      rm -f "/lib/systemd/system/local-fs.target.wants/${unit}"; \
+    done
+
 # Update os-release file with elemental metadata
 RUN echo IMAGE_REPO="{OCI_IMAGE}"             >> /etc/os-release && \
     echo IMAGE_TAG="{VERSION}"                >> /etc/os-release && \
@@ -1017,7 +1031,7 @@ fi
 
 menuentry "KubeOS Live" --class os --unrestricted {
     echo Loading kernel...
-    $linux ($root)/boot/kernel.xz cdroot root=live:CDLABEL=COS_LIVE rd.live.dir=/ rd.live.squashimg=rootfs.squashfs console=tty1 console=ttyS0 rd.cos.disable
+    $linux ($root)/boot/kernel.xz cdroot root=live:CDLABEL=OS_LIVE rd.live.dir=/ rd.live.squashimg=rootfs.squashfs console=tty1 console=ttyS0 console=ttyAMA0,115200 rd.cos.disable
     echo Loading initrd...
     $initrd ($root)/boot/rootfs.xz
 }
@@ -1026,8 +1040,16 @@ menuentry "KubeOS Live" --class os --unrestricted {
 pub const CREATE_ISO_IMAGE: &str = r#"function create_iso_image() {
     # Build ISO-specific image (base image + elemental init)
     cp "${ELEMENTAL_CLI_PATH}" "${ISO_DIR}"/elemental-cli
+
+    # The OCI image stores rootfs.tar as a single file; extract it into the
+    # build context so the ISO Dockerfile can ADD it (ISO live is selinux=0).
+    local cid
+    cid=$(docker create "${OCI_IMAGE}")
+    docker cp "${cid}:/rootfs.tar" "${ISO_DIR}"/rootfs.tar
+    docker rm "${cid}"
+
     docker build -t "${ISO_IMAGE}" -f "${ISO_DIR}"/Dockerfile "${ISO_DIR}"
-    rm -f "${ISO_DIR}"/elemental-cli
+    rm -f "${ISO_DIR}"/elemental-cli "${ISO_DIR}"/rootfs.tar
 
     # Build ISO using elemental-cli (--local: use image from local docker cache)
     "${ELEMENTAL_CLI_PATH}" --debug build-iso \
@@ -2064,7 +2086,7 @@ pub const INSTALL_SCRIPT: &str = r#"function check_target_disk() {{
         return 1
     fi
     local disk_size
-    disk_size=$(parted -s "{TARGET_DISK}" unit GiB print 2>/dev/null | grep "Disk {TARGET_DISK}" | awk '{{print $3}}' | sed 's/GiB//')
+    disk_size=$(parted -s "{TARGET_DISK}" unit GiB print 2>/dev/null | grep "Disk {TARGET_DISK}" | awk '{{print $3}}' | sed 's/GiB//' || true)
     if [ -z "$disk_size" ]; then
         echo "Failed to get disk size for {TARGET_DISK}"
         return 1
@@ -2118,14 +2140,17 @@ function pull_and_extract_oci() {{
     local manifest_file="${{oci_dir}}/blobs/${{manifest_hash}}"
     echo "Extracting rootfs from OCI image..."
 
+    local rootfs_tar="${{oci_dir}}/rootfs.tar"
     for layer_digest in $(grep -o '"layers":\[.*\]' "$manifest_file" | grep -o '"digest":"sha256:[a-f0-9]*"' | grep -o 'sha256:[a-f0-9]*' | tr ':' '/'); do
         local layer_file="${{oci_dir}}/blobs/${{layer_digest}}"
         if file "$layer_file" | grep -qi "gzip"; then
-            zcat "$layer_file" | tar --selinux -x -C "$target"
+            zcat "$layer_file" | tar -x -O rootfs.tar > "$rootfs_tar"
         else
-            cat "$layer_file" | tar --selinux -x -C "$target"
+            cat "$layer_file" | tar -x -O rootfs.tar > "$rootfs_tar"
         fi
     done
+
+    tar --selinux -x -C "$target" -f "$rootfs_tar"
 
     rm -rf "$oci_dir"
     return 0
@@ -2174,6 +2199,7 @@ function setup_cloud_init() {{
 function _install_config() {{
     local src="$1"
     local dst="$2"
+    dst="${{dst#/}}"
     local dst_path="$ROOT_MOUNT/$dst"
     local dst_dir
     dst_dir=$(dirname "$dst_path")
@@ -2270,7 +2296,6 @@ install_kubeos
 ret=$?
 if [ $ret -eq 0 ]; then
     echo "KubeOS installation completed successfully"
-{SECURITY_RUN}
 {SELINUX_FIXUP_INSTALL}
 {REBOOT_CMD}
 fi

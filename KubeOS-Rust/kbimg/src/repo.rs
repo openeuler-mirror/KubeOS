@@ -226,30 +226,29 @@ impl RepoInfo {
     }
 
     pub(crate) fn write_security_files(&self, config: &Config) -> Result<()> {
-        // Always copy CVE script
-        let cve_src = PathBuf::from("../cve-tools/gen_fixed_cve.sh");
-        if cve_src.exists() {
-            fs::copy(&cve_src, format!("{}/gen_fixed_cve.sh", MISC_FILES_DIR))?;
-        }
-
-        if let Some(sec) = &config.security_config {
+        if let Some(sec) = &config.security_stig {
             if sec.security_enable {
-                // Copy security-tools.sh
-                let sec_src = PathBuf::from("../security-tools/security-tools.sh");
+                let sec_path = sec.security_scripts_path.as_deref().unwrap_or("../security-tools/security-tools.sh");
+                let sec_src = PathBuf::from(sec_path);
                 if sec_src.exists() {
                     fs::copy(&sec_src, format!("{}/security-tools.sh", MISC_FILES_DIR))?;
                 }
 
-                // Generate modify-stig-dynamic.sh with server params
-                let dst = format!("{}/modify-stig-dynamic.sh", MISC_FILES_DIR);
-                let mut script = File::create(&dst)?;
                 let chrony = sec.chrony_server.as_deref().unwrap_or("0.us.pool.ntp.mil");
                 let rsyslog = sec.rsyslog_server.as_deref().unwrap_or("192.168.1.100");
                 let audit = sec.audit_server.as_deref().unwrap_or("192.168.1.101");
+                for v in [chrony, rsyslog, audit] {
+                    if !utils::is_valid_param(v) {
+                        bail!("Invalid security server param: {}", v);
+                    }
+                }
+
+                let dst = format!("{}/modify-stig-dynamic.sh", MISC_FILES_DIR);
+                let mut script = File::create(&dst)?;
                 writeln!(script, "#!/bin/bash")?;
-                writeln!(script, "CHRONY_SERVER=\"{}\"", chrony)?;
-                writeln!(script, "RSYSLOG_SERVER=\"{}\"", rsyslog)?;
-                writeln!(script, "AUDIT_SERVER=\"{}\"", audit)?;
+                writeln!(script, r#"CHRONY_SERVER="{}""#, chrony)?;
+                writeln!(script, r#"RSYSLOG_SERVER="{}""#, rsyslog)?;
+                writeln!(script, r#"AUDIT_SERVER="{}""#, audit)?;
                 writeln!(script, "{}", MODIFY_STIG_DYNAMIC_SH)?;
                 set_permissions(&dst, EXEC_PERMISSION)?;
             }

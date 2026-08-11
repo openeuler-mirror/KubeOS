@@ -51,7 +51,7 @@ Options:
 ## 注意事项
 
 * 请确保已安装`qemu-img bc parted tar yum docker dosfstools`
-* 使用ISO镜像制作功能请确保已安装`elemental mtools xorriso`
+* 使用ISO镜像制作功能请确保已安装`elemental mtools xorriso rsync`
 * 制作启用dm-verity功能的镜像，需要安装`pesign nss openssl veritysetup crypto-policies`
 * KubeOS镜像制作需要使用root权限
 * 制作镜像时提供的 repo 文件中，yum 源建议同时配置 openEuler 具体版本的 everything 仓库和 EPOL 仓库

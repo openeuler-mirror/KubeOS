@@ -24,11 +24,12 @@ use manager::{
         AgentStatus, CmdRequest, ConfigureRequest, ImageType, Response, UpgradeRequest,
     },
     sys_mgmt::{
-            backup_etc_overlay,             inject_config, run_security_scripts, CtrImageHandler, DiskImageHandler,
+            backup_etc_overlay, inject_config, CtrImageHandler, DiskImageHandler,
         DockerImageHandler, SkopeoImageHandler, CONFIG_TEMPLATE, DEFAULT_GRUBENV_PATH,
     },
     utils::{
-        get_partition_info, is_dmv_mode, switch_boot_menuentry, CommandExecutor, PreparePath, RealCommandExecutor,
+        get_partition_info, is_dmv_mode, is_valid_image_name, switch_boot_menuentry, CommandExecutor,
+        PreparePath, RealCommandExecutor,
     },
 };
 use nix::{sys::reboot::RebootMode, unistd::sync};
@@ -196,6 +197,10 @@ impl AgentImpl {
         }
 
         if !req.is_rollback {
+            // Strip skopeo transport prefix (docker://, oci:, etc.) before validation
+            let image = req.oci_image.split("://").last().unwrap_or(&req.oci_image);
+            is_valid_image_name(image)?;
+
             let handler = SkopeoImageHandler { paths: PreparePath::default(), executor: RealCommandExecutor {} };
             let img_manager = handler.download_image(&req)?;
 
@@ -203,7 +208,6 @@ impl AgentImpl {
                 inject_config(&handler.paths.mount_path, &c.src, &c.dst, req.skip_tls)?;
             }
 
-            run_security_scripts(&handler.paths.mount_path)?;
             let (_, next) = get_partition_info(&RealCommandExecutor {})?;
             backup_etc_overlay(&next.menuentry)?;
 

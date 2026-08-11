@@ -201,9 +201,8 @@ pub(crate) fn gen_install_misc(
 
     let mut security_copy = String::new();
     security_copy.push_str(r#"mkdir -p "${RPM_ROOT}"/usr/local/kubeos
-cp "${SCRIPTS_DIR}"/misc-files/gen_fixed_cve.sh "${RPM_ROOT}"/usr/local/kubeos/
 "#);
-    if let Some(sec) = &config.security_config {
+    if let Some(sec) = &config.security_stig {
         if sec.security_enable {
             security_copy.push_str(r#"cp "${SCRIPTS_DIR}"/misc-files/security-tools.sh "${RPM_ROOT}"/usr/local/kubeos/
 cp "${SCRIPTS_DIR}"/misc-files/modify-stig-dynamic.sh "${RPM_ROOT}"/usr/local/kubeos/
@@ -211,6 +210,35 @@ cp "${SCRIPTS_DIR}"/misc-files/modify-stig-dynamic.sh "${RPM_ROOT}"/usr/local/ku
         }
     }
     vars.insert("SECURITY_COPY".to_string(), security_copy);
+
+    let mut security_run_chroot = String::new();
+    if let Some(sec) = &config.security_stig {
+        if sec.security_enable {
+            security_run_chroot.push_str(
+                r#"if [ -f "${RPM_ROOT}"/usr/local/kubeos/security-tools.sh ]; then
+    chroot "${RPM_ROOT}" bash /usr/local/kubeos/security-tools.sh
+fi
+if [ -f "${RPM_ROOT}"/usr/local/kubeos/modify-stig-dynamic.sh ]; then
+    chroot "${RPM_ROOT}" bash /usr/local/kubeos/modify-stig-dynamic.sh
+fi
+"#,
+            );
+        }
+    }
+    vars.insert("SECURITY_RUN_CHROOT".to_string(), security_run_chroot);
+
+    let mut security_setfiles_chroot = String::new();
+    if let Some(sec) = &config.security_stig {
+        if sec.security_enable {
+            security_setfiles_chroot.push_str(
+                r#"if [ -f "${RPM_ROOT}"/etc/selinux/targeted/policy/policy.33 ]; then
+    chroot "${RPM_ROOT}" bash -c 'setfiles -c /etc/selinux/targeted/policy/policy.33 /etc/selinux/targeted/contexts/files/file_contexts /'
+fi
+"#,
+            );
+        }
+    }
+    vars.insert("SECURITY_SETFILES_CHROOT".to_string(), security_setfiles_chroot);
 
     let mut custom_script = String::new();
     if let Some(_) = &config.copy_files {
@@ -581,13 +609,6 @@ grub2-editenv /boot/efi/EFI/openEuler/grubenv create"#
             .to_string();
     }
     vars.insert("DM_VERITY_DRACUT".into(), dm_verity_dracut);
-
-    let cve_script = r#"if [ -f /usr/local/kubeos/gen_fixed_cve.sh ]; then
-    echo "Running CVE report generation script..."
-    bash /usr/local/kubeos/gen_fixed_cve.sh
-fi"#.to_string();
-    vars.insert("CVE_SCRIPT".into(), cve_script);
-
     let dynamic_script = strfmt(SET_IN_CHROOT, &vars)?;
     writeln!(file, "{dynamic_script}")?;
 
@@ -813,7 +834,7 @@ VERSION="{}"
 OUTPUT_DIR="{}"
 ISO_DIR="${{SCRIPTS_DIR}}"/iso
 GRUB_ENTRY_NAME="{}"
-LABEL="{}"
+LABEL="OS_LIVE"
 ISO_NAME="{}"
 "#,
         info.elemental_cli_path.to_str().unwrap(),
@@ -822,7 +843,6 @@ ISO_NAME="{}"
         version,
         output_dir,
         info.grub_entry_name.as_deref().unwrap_or("KubeOS"),
-        info.label.as_deref().unwrap_or("COS_LIVE"),
         info.name.as_deref().unwrap_or("KubeOS"),
     )?;
     Ok(())
@@ -837,7 +857,7 @@ pub(crate) fn write_iso_manifest(info: &IsoImgInfo) -> Result<()> {
     let mut vars = HashMap::new();
     vars.insert("GRUB_ENTRY_NAME".to_string(), info.grub_entry_name.as_deref().unwrap_or("KubeOS").to_string());
     vars.insert("ISO_IMAGE".to_string(), info.iso_image.clone());
-    vars.insert("LABEL".to_string(), info.label.as_deref().unwrap_or("COS_LIVE").to_string());
+    vars.insert("LABEL".to_string(), "KOS_LIVE".to_string());
     vars.insert("ISO_NAME".to_string(), info.name.as_deref().unwrap_or("KubeOS").to_string());
     let dynamic_manifest = strfmt(ELEMENTAL_ISO_MANIFEST, &vars)?;
     writeln!(manifest, "{dynamic_manifest}")?;
@@ -936,35 +956,24 @@ pub(crate) fn gen_install_script(
     vars.insert("PERSIST_MKDIR_CMDS".to_string(), persist_mkdir_cmds);
     vars.insert("SKIP_TLS".to_string(), install_cfg.skip_tls.to_string());
     vars.insert("REBOOT_CMD".to_string(), reboot_cmd.to_string());
-    vars.insert("SECURITY_RUN".to_string(), gen_security_run_install(config));
-    vars.insert("SELINUX_FIXUP_INSTALL".to_string(), gen_selinux_fixup_install(config));
+    vars.insert("SELINUX_FIXUP_INSTALL".to_string(), gen_selinux_fixup_install(config, install_cfg));
 
     let dynamic_script = strfmt(INSTALL_SCRIPT, &vars)?;
     writeln!(file, "{dynamic_script}")?;
     Ok(())
 }
-fn gen_security_run_install(config: &Config) -> String {
-    if let Some(sec) = &config.security_config {
-        if sec.security_enable {
-            return "    mount \"${PART_PREFIX}2\" \"${ROOT_MOUNT}\"\n\
-    mount_proc_dev_sys \"${ROOT_MOUNT}\"\n\
-    chroot \"${ROOT_MOUNT}\" bash -c '\n\
-        if [ -f /usr/local/kubeos/security-tools.sh ]; then bash /usr/local/kubeos/security-tools.sh; fi\n\
-        if [ -f /usr/local/kubeos/modify-stig-dynamic.sh ]; then bash /usr/local/kubeos/modify-stig-dynamic.sh; fi\n\
-    '\n\
-    unmount_dir \"${ROOT_MOUNT}\"\n".to_string();
-        }
-    }
-    String::new()
-}
-
-fn gen_selinux_fixup_install(config: &Config) -> String {
+fn gen_selinux_fixup_install(config: &Config, install_cfg: &InstallConfig) -> String {
+    let target_disk = &install_cfg.target_disk;
+    let mount_cmds = format!(
+        "    if echo \"{target_disk}\" | grep -qE 'nvme|mmcblk'; then PART_PREFIX=\"{target_disk}p\"; else PART_PREFIX=\"{target_disk}\"; fi\n\
+         mount \"${{PART_PREFIX}}2\" \"${{ROOT_MOUNT}}\"\n\
+         mount \"${{PART_PREFIX}}4\" \"${{ROOT_MOUNT}}/persist\"\n\
+         mount_proc_dev_sys \"${{ROOT_MOUNT}}\""
+    );
     gen_selinux_fixup_shell(
         config,
         "${ROOT_MOUNT}",
-        "    mount \"${PART_PREFIX}2\" \"${ROOT_MOUNT}\"\n\
-         mount \"${PART_PREFIX}4\" \"${ROOT_MOUNT}/persist\"\n\
-         mount_proc_dev_sys \"${ROOT_MOUNT}\"",
+        &mount_cmds,
         "    unmount_dir \"${ROOT_MOUNT}/persist\"\n\
          unmount_dir \"${ROOT_MOUNT}\"",
     )
@@ -992,15 +1001,17 @@ fn gen_selinux_fixup_shell(
     mount_cmds: &str,
     unmount_cmds: &str,
 ) -> String {
-    if let Some(sec) = &config.security_config {
+    if let Some(sec) = &config.security_stig {
         if sec.security_enable {
             let chroot_script = "\
         semanage fcontext -a -e /var /persist/var\n\
         semanage fcontext -a -e /etc /persist/etc\n\
         setfiles -c /etc/selinux/targeted/policy/policy.33 \
+            /etc/selinux/targeted/contexts/files/file_contexts /\n\
+        setfiles -c /etc/selinux/targeted/policy/policy.33 \
             /etc/selinux/targeted/contexts/files/file_contexts /persist";
             return format!(
-                "    echo \"Fixing SELinux labels on /persist...\"\n\
+                "    echo \"Fixing SELinux labels on / and /persist...\"\n\
                  {}\n\
                  chroot {} bash -c '{}'\n\
                  {}\n",
