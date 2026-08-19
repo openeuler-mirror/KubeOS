@@ -17,7 +17,7 @@ use cli::{
     client::Client,
     method::{callable_method::RpcMethod, prepare::PrepareCmdMethod},
 };
-use manager::api::{CmdRequest, CertsInfo};
+use manager::api::{CmdRequest, CertsInfo, ConfigItem};
 
 const SOCK_PATH: &str = "/run/os-agent/os-agent.sock";
 
@@ -34,10 +34,9 @@ enum Commands {
     Upgrade {
         #[clap(long)]
         os_image: String,
-        #[clap(long)]
-        cloud_init_config: Option<String>,
-        #[clap(long)]
-        ignition_config: Option<String>,
+        /// Inject config file: <SRC> <DST>, can be specified multiple times
+        #[clap(long = "config", num_args = 2)]
+        configs: Vec<String>,
         #[clap(long)]
         skip_tls: bool,
         #[clap(long)]
@@ -54,13 +53,15 @@ fn main() {
     let client = Client::new(SOCK_PATH);
 
     let req = match cli.command {
-        Commands::Upgrade { os_image, cloud_init_config, ignition_config, skip_tls, reboot } => CmdRequest {
+        Commands::Upgrade { os_image, configs, skip_tls, reboot } => CmdRequest {
             version: String::new(),
             image_url: String::new(),
             certs: CertsInfo { ca_cert: String::new(), client_cert: String::new(), client_key: String::new() },
             oci_image: os_image,
-            cloud_init_config,
-            ignition_config,
+            configs: configs
+                .chunks(2)
+                .map(|chunk| ConfigItem { src: chunk[0].clone(), dst: chunk[1].clone() })
+                .collect(),
             skip_tls,
             reboot,
             is_rollback: false,
@@ -70,8 +71,7 @@ fn main() {
             image_url: String::new(),
             certs: CertsInfo { ca_cert: String::new(), client_cert: String::new(), client_key: String::new() },
             oci_image: String::new(),
-            cloud_init_config: None,
-            ignition_config: None,
+            configs: vec![],
             skip_tls: false,
             reboot,
             is_rollback: true,

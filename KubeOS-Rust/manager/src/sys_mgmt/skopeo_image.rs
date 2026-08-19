@@ -129,15 +129,17 @@ impl<T: CommandExecutor> SkopeoImageHandler<T> {
                 .output()
                 .map(|o| String::from_utf8_lossy(&o.stdout).to_lowercase().contains("gzip"))
                 .unwrap_or(false);
+            // The OCI image stores rootfs.tar as a single file; extract it to
+            // preserve SELinux xattrs which docker ADD would otherwise strip.
             if is_gzip {
                 self.executor.run_command(
                     "bash",
-                    &["-c", &format!("zcat {} > {}", layer_file.to_str().unwrap(), tar_str)],
+                    &["-c", &format!("zcat {} | tar -x -O rootfs.tar > {}", layer_file.to_str().unwrap(), tar_str)],
                 )?;
             } else {
                 self.executor.run_command(
                     "bash",
-                    &["-c", &format!("cat {} > {}", layer_file.to_str().unwrap(), tar_str)],
+                    &["-c", &format!("cat {} | tar -x -O rootfs.tar > {}", layer_file.to_str().unwrap(), tar_str)],
                 )?;
             }
         }

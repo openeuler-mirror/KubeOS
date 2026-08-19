@@ -51,7 +51,6 @@ version = "v1"
 # elemental_cli_path = "./bin/elemental-cli"
 # output_dir = "./output"
 # grub_entry_name = "KubeOS"
-# label = "COS_LIVE"
 # name = "KubeOS"
 
 # [pxe_config]
@@ -109,7 +108,20 @@ version = "v1"
 # [install]
 # target_disk = "/dev/sda"
 # oci_image = "docker://myregistry/kubeos-oci:v1"
-# cloud_init_config = "https://example.com/user-data"
-# ignition_config = "https://example.com/config.ign"
-# skip_tls = false
 # reboot = false
+
+# [[install.configs]]
+# src = "https://example.com/user-data"
+# dst = "/etc/cloud/cloud.cfg.d/99_kubeos.cfg"
+#
+# [[install.configs]]
+# src = "/path/to/config.ign"
+# dst = "/boot/efi/ignition/config.ign"
+# skip_tls = false
+
+# [security_stig]
+# security_enable = true
+# security_scripts_path = "/opt/kubeOS/security-tools/security-tools.sh"
+# chrony_server = "0.us.pool.ntp.mil"
+# rsyslog_server = "192.168.1.100"
+# audit_server = "192.168.1.101"

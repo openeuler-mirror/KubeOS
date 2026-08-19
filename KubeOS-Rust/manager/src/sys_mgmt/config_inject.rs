@@ -15,25 +15,18 @@ use std::{
     path::Path,
 };
 
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use log::info;
 
-pub fn inject_cloud_init(mount_path: &Path, src: &str, skip_tls: bool) -> Result<()> {
-    let seed_dir = mount_path.join("var/lib/cloud/seed/nocloud-net");
-    fs::create_dir_all(&seed_dir)
-        .with_context(|| format!("Failed to create cloud-init seed dir {}", seed_dir.display()))?;
-    copy_or_download(src, &seed_dir.join("user-data"), skip_tls)?;
-    fs::write(seed_dir.join("meta-data"), "instance-id: KubeOS\n")?;
-    info!("Cloud-init config injected to {}", seed_dir.display());
-    Ok(())
-}
-
-pub fn inject_ignition(mount_path: &Path, src: &str, skip_tls: bool) -> Result<()> {
-    let ign_dir = mount_path.join("usr/lib/dracut/modules.d/30ignition");
-    fs::create_dir_all(&ign_dir)
-        .with_context(|| format!("Failed to create ignition dir {}", ign_dir.display()))?;
-    copy_or_download(src, &ign_dir.join("config.ign"), skip_tls)?;
-    info!("Ignition config injected to {}", ign_dir.display());
+pub fn inject_config(mount_path: &Path, src: &str, dst: &str, skip_tls: bool) -> Result<()> {
+    let dst = dst.trim_start_matches('/');
+    let dst_path = mount_path.join(dst);
+    if let Some(parent) = dst_path.parent() {
+        fs::create_dir_all(parent)
+            .with_context(|| format!("Failed to create dir {}", parent.display()))?;
+    }
+    copy_or_download(src, &dst_path, skip_tls)?;
+    info!("Config injected: {} -> {}", src, dst_path.display());
     Ok(())
 }
 
@@ -50,10 +43,13 @@ fn copy_or_download(src: &str, dest: &Path, skip_tls: bool) -> Result<()> {
             args.push("--insecure");
         }
         args.push(src);
-        std::process::Command::new("curl")
+        let status = std::process::Command::new("curl")
             .args(&args)
             .status()
             .with_context(|| format!("Failed to execute curl for {}", src))?;
+        if !status.success() {
+            bail!("Failed to download config from {}: curl exited with status {}", src, status);
+        }
     } else {
         info!("Copying config from file: {}", src);
         fs::copy(src, dest)

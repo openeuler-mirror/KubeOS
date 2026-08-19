@@ -28,10 +28,21 @@ impl CreateImage for IsoImgInfo {
     fn prepare(&self, _config: &mut Config) -> Result<()> {
         verify_iso_input(&self.oci_image)?;
         verify_iso_input(&self.iso_image)?;
+        verify_iso_input(self.elemental_cli_path.to_str().unwrap_or(""))?;
         utils::is_file_valid("elemental-cli binary", &self.elemental_cli_path)?;
         if let Some(output_dir) = &self.output_dir {
             if !utils::is_valid_param(output_dir) {
                 bail!("params {} is invalid, please check input", output_dir);
+            }
+        }
+        if let Some(ref entry) = self.grub_entry_name {
+            if !utils::is_valid_param(entry) {
+                bail!("params {} is invalid, please check input", entry);
+            }
+        }
+        if let Some(ref name) = self.name {
+            if !utils::is_valid_param(name) {
+                bail!("params {} is invalid, please check input", name);
             }
         }
         check_iso_disk_space()?;

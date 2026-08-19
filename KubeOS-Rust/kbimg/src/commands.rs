@@ -134,9 +134,6 @@ pub struct IsoImgInfo {
     /// Optional: GRUB menu entry name, default "KubeOS"
     #[serde(default, deserialize_with = "reject_empty_option_string")]
     pub grub_entry_name: Option<String>,
-    /// Optional: ISO volume label, default "COS_LIVE"
-    #[serde(default, deserialize_with = "reject_empty_option_string")]
-    pub label: Option<String>,
     /// Optional: ISO file name prefix (without .iso), default "KubeOS"
     #[serde(default, deserialize_with = "reject_empty_option_string")]
     pub name: Option<String>,
@@ -159,6 +156,7 @@ pub struct Config {
     pub persist_mkdir: Option<PersistMkdir>,
     pub dm_verity: Option<DmVerity>,
     pub install: Option<InstallConfig>,
+    pub security_stig: Option<SecurityStig>,
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -242,6 +240,20 @@ pub struct DmVerity {
 }
 
 #[derive(Debug, Deserialize, Clone)]
+pub struct SecurityStig {
+    #[serde(default)]
+    pub security_enable: bool,
+    #[serde(default, deserialize_with = "reject_empty_option_string")]
+    pub security_scripts_path: Option<String>,
+    #[serde(default, deserialize_with = "reject_empty_option_string")]
+    pub chrony_server: Option<String>,
+    #[serde(default, deserialize_with = "reject_empty_option_string")]
+    pub rsyslog_server: Option<String>,
+    #[serde(default, deserialize_with = "reject_empty_option_string")]
+    pub audit_server: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Clone)]
 pub struct InstallConfig {
     /// Required: Target disk device (e.g., /dev/sda, /dev/nvme0n1)
     #[serde(deserialize_with = "reject_empty_string")]
@@ -249,18 +261,23 @@ pub struct InstallConfig {
     /// Required: OCI image name to pull via skopeo (e.g., "docker://myregistry/kubeos-oci:v1")
     #[serde(deserialize_with = "reject_empty_string")]
     pub oci_image: String,
-    /// Optional: Cloud-init config file path or URL
-    #[serde(default, deserialize_with = "reject_empty_option_string")]
-    pub cloud_init_config: Option<String>,
-    /// Optional: Ignition config file path or URL
-    #[serde(default, deserialize_with = "reject_empty_option_string")]
-    pub ignition_config: Option<String>,
+    /// Optional: Config files to inject, each with src and dst
+    #[serde(default)]
+    pub configs: Vec<ConfigEntry>,
     /// Optional: Skip TLS verification when downloading config from URL
     #[serde(default)]
     pub skip_tls: bool,
     /// Optional: Reboot after installation, default false
     #[serde(default)]
     pub reboot: bool,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct ConfigEntry {
+    #[serde(deserialize_with = "reject_empty_string")]
+    pub src: String,
+    #[serde(deserialize_with = "reject_empty_string")]
+    pub dst: String,
 }
 
 #[derive(Debug, Deserialize, Clone, Default, PartialEq)]

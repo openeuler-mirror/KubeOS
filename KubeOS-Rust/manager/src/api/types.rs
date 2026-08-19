@@ -32,14 +32,19 @@ pub struct UpgradeRequest {
     pub certs: CertsInfo,
 }
 
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct ConfigItem {
+    pub src: String,
+    pub dst: String,
+}
+
 #[derive(Deserialize, Serialize, Debug)]
 pub struct CmdRequest {
     pub version: String,
     pub image_url: String,
     pub certs: CertsInfo,
     pub oci_image: String,
-    pub cloud_init_config: Option<String>,
-    pub ignition_config: Option<String>,
+    pub configs: Vec<ConfigItem>,
     pub skip_tls: bool,
     pub reboot: bool,
     pub is_rollback: bool,

@@ -51,7 +51,7 @@ Options:
 ## 注意事项
 
 * 请确保已安装`qemu-img bc parted tar yum docker dosfstools`
-* 使用ISO镜像制作功能请确保已安装`elemental mtools xorriso`
+* 使用ISO镜像制作功能请确保已安装`elemental mtools xorriso rsync`
 * 制作启用dm-verity功能的镜像，需要安装`pesign nss openssl veritysetup crypto-policies`
 * KubeOS镜像制作需要使用root权限
 * 制作镜像时提供的 repo 文件中，yum 源建议同时配置 openEuler 具体版本的 everything 仓库和 EPOL 仓库
@@ -93,6 +93,18 @@ Options:
   | --- | --- |
   | image_name | 指定生成的 OCI 容器镜像名，例如 "kubeos-oci:v1" |
 
+### security_stig
+
+[可选项] 制作安全加固（STIG）镜像配置。**此配置在 OCI 镜像构建阶段生效**，开启后构建时执行安全加固脚本并打 SELinux 标签，生成的 OCI 镜像包含已加固的系统。
+
+  | 参数 | 描述 |
+  | --- | --- |
+  | security_enable | 是否启用安全加固，默认 false |
+  | security_scripts_path | security-tools.sh 脚本完整路径，例如 "/opt/kubeOS/security-tools/security-tools.sh" |
+  | chrony_server | [可选项] chrony 时间同步服务器地址 |
+  | rsyslog_server | [可选项] rsyslog 日志服务器地址 |
+  | audit_server | [可选项] audit 远程审计服务器地址 |
+
 ### iso_img
 
 制作ISO安装镜像，基于已有的 OCI 镜像生成可用于物理机安装的 ISO 文件
@@ -104,7 +116,6 @@ Options:
   | elemental_cli_path | elemental 二进制文件路径 |
   | output_dir | [可选项] ISO 文件输出目录，默认当前 scripts-auto 目录 |
   | grub_entry_name | [可选项] GRUB 引导菜单项名称，默认 "KubeOS" |
-  | label | [可选项] ISO 卷标，默认 "COS_LIVE" |
   | name | [可选项] ISO 文件名前缀（不含 .iso），默认 "KubeOS" |
 
 ### install
@@ -115,10 +126,18 @@ Options:
   | --- | --- |
   | target_disk | 目标磁盘设备，例如 "/dev/sda"、"/dev/nvme0n1" |
   | oci_image | skopeo 拉取用的 OCI 镜像地址，例如 "docker://192.168.1.1:5000/kubeos-oci:v1" |
-  | cloud_init_config | [可选项] cloud-init 配置文件路径或 URL，将写入 /var/lib/cloud/seed/nocloud-net/user-data |
-  | ignition_config | [可选项] ignition 配置文件路径或 URL，将写入 /usr/lib/dracut/modules.d/30ignition/config.ign |
+  | configs | [可选项] 配置文件注入列表，每个条目包含 src（本地文件或URL）和 dst（rootfs 内目标路径） |
   | skip_tls | [可选项] 从 URL 下载配置文件时跳过 TLS 证书校验，默认 false |
   | reboot | [可选项] 安装完成后是否自动重启，默认 false |
+
+#### [[install.configs]]
+
+配置注入列表，用于在安装时将 cloud-init、ignition 等配置文件写入目标系统。每条包含：
+
+  | 参数 | 描述 |
+  | --- | --- |
+  | src | 配置文件来源，可为本地文件路径或 http/https URL |
+  | dst | 配置文件在目标 rootfs 中的目标路径，例如 "/etc/cloud/cloud.cfg.d/99_kubeos.cfg" |
 
 ### pxe_config
 
@@ -281,7 +300,33 @@ Options:
       "e2fsprogs",
       "util-linux",
       "shim",
-      "mokutil"
+      "mokutil",
+      # 如构建满足stig规范的镜像则需要安装以下包
+      "nfs-utils",
+      "aide",
+      "audispd-plugins",
+      "audit",
+      "autofs",
+      "chrony",
+      "firewalld",
+      "kbd",
+      "openssh",
+      "pam",
+      "pam_pkcs11",
+      "nss",
+      "nss-util",
+      "ccid",
+      "pcsc-lite",
+      "pcsc-tools",
+      "opensc",
+      "policycoreutils",
+      "policycoreutils-python-utils",
+      "rsyslog",
+      "selinux-policy",
+      "sssd",
+      "sudo",
+      "openscap",
+      "scap-security-guide",
 
   ]
   upgrade_img = "<registry>/kubeos-upgrade:v1"
@@ -289,6 +334,14 @@ Options:
 
   [oci_img]
   image_name = "kubeos-oci:v1"
+
+  # 可选：如需满足stig规范则进行此项配置
+  # [security_stig]
+  # security_enable = true
+  # security_scripts_path = "/opt/kubeOS/security-tools/security-tools.sh"
+  # chrony_server = "0.us.pool.ntp.mil"
+  # rsyslog_server = "192.168.1.100"
+  # audit_server = "192.168.1.101"
   ```
 
 * 执行命令
@@ -357,7 +410,6 @@ Options:
   elemental_cli_path = "./bin/elemental"
   output_dir = "./output"
   # grub_entry_name = "KubeOS"
-  # label = "COS_LIVE"
   # name = "KubeOS"
   ```
 
@@ -396,17 +448,45 @@ Options:
 2. 准备安装配置文件 kbimg.toml（在目标机器上），参考以下示例：
 
    ```toml
+   [from_repo]
+   agent_path = "/opt/kubeOS/bin/os-agent"
+   legacy_bios = false
+   repo_path = "/etc/yum.repos.d/openEuler.repo"
+   root_passwd = "$1$xyz$RdLyKTL32WEvK3lg8CXID0"
+   rpmlist = ["kernel", "passwd"]
+   version = "v1"
+
    [install]
    target_disk = "/dev/sda"
    oci_image = "docker://<registry>/kubeos-oci:v1"
-   # 以下为可选配置
-   # cloud_init_config = "https://example.com/user-data"
-   # ignition_config = "/path/to/config.ign"
    # skip_tls = true
    # reboot = true
+   
+   # 以下为可选配置
+   # 可以注入cloud-init 和 ignition 配置到指定目录
+   # [[install.configs]]
+   # src = "https://example.com/user-data"
+   # dst = "/etc/cloud/cloud.cfg.d/99_kubeos.cfg"
+   
+   # [[install.configs]]
+   # src = "/root/user-data"
+   # dst = "/var/lib/cloud/user-data"
+
+   # 配置进行磁盘分区时根分区的大小，注意需要和oci-img的大小匹配，如根分区大小不足安装会失败
+   # [disk_partition]
+   # root = 5000   # 根分区大小，单位 MiB（默认 2560）
+   
+   # 配置在persist目录创建的目录
+   # [persist_mkdir]
+   # name = ["bar", "foo"]
+
+   # 如果oci-image镜像中进行了stig规范的安装加固对应install时也需要执行此参数，否则安全加固不生效
+   # [security_stig]
+   # security_enable = true
+
    ```
 
-   如果使用了 `cloud_init_config` 或 `ignition_config` 为 URL，可通过 `skip_tls = true` 跳过 TLS 证书校验。
+   如果配置文件来源为 URL，可通过 `skip_tls = true` 跳过 TLS 证书校验，实际使用curl命令进行下载，如不跳过TLS证书校验，请提前进行证书配置。
 
 3. 在目标机器上执行安装
 
@@ -415,40 +495,6 @@ Options:
    ```
 
    安装成功后，若配置了 `reboot = true`，机器会自动重启进入新安装的 KubeOS 系统。
-
-#### cloud-init 和 ignition 配置
-
-安装时支持注入 cloud-init 或 ignition 配置文件：
-
-* **cloud-init**：配置文件（user-data）写入 `/var/lib/cloud/seed/nocloud-net/`，同时自动生成 `meta-data` 文件。确保 rpmlist 中包含 `cloud-init` 包。
-* **ignition**：配置文件（config.ign）写入 `/usr/lib/dracut/modules.d/30ignition/`。确保 rpmlist 中包含相关 ignition 包。
-
-配置来源支持本地文件路径或 HTTP/HTTPS URL：
-
-```toml
-[install]
-target_disk = "/dev/sda"
-oci_image = "docker://192.168.1.100:5000/kubeos-oci:v1"
-cloud_init_config = "./user-data"
-ignition_config = "https://example.com/config.ign"
-skip_tls = true
-```
-
-#### 自定义分区
-
-通过 `[disk_partition]` 调整根分区大小：
-
-```toml
-[disk_partition]
-root = 5000   # 根分区大小，单位 MiB（默认 2560）
-```
-
-通过 `[persist_mkdir]` 在持久化分区创建自定义目录：
-
-```toml
-[persist_mkdir]
-name = ["bar", "foo"]
-```
 
 #### 磁盘分区布局
 
@@ -746,7 +792,6 @@ version = "v1"
 # elemental_cli_path = "./bin/elemental-cli"
 # output_dir = "./output"
 # grub_entry_name = "KubeOS"
-# label = "COS_LIVE"
 # name = "KubeOS"
 
 # [pxe_config]
@@ -804,8 +849,21 @@ version = "v1"
 # [install]
 # target_disk = "/dev/sda"
 # oci_image = "docker://192.168.1.100:5000/kubeos-oci:v1"
-# cloud_init_config = "https://example.com/user-data"
-# ignition_config = "/path/to/config.ign"
 # skip_tls = false
 # reboot = false
+
+# [[install.configs]]
+# src = "https://example.com/user-data"
+# dst = "/etc/cloud/cloud.cfg.d/99_kubeos.cfg"
+
+# [[install.configs]]
+# src = "/path/to/config.ign"
+# dst = "/boot/efi/ignition/config.ign"
+
+# [security_stig]
+# security_enable = true
+# security_scripts_path = "/opt/kubeOS/security-tools/security-tools.sh"
+# chrony_server = "0.us.pool.ntp.mil"
+# rsyslog_server = "192.168.1.100"
+# audit_server = "192.168.1.101"
 ```

@@ -270,12 +270,20 @@ EOF
     {COPY_GRUB_CFG}
     {PXE_BOOTUP_FILES}
     {DM_VERITY_FILES}
-    # custom config
-{CUSTOM_SCRIPT}
+    {SECURITY_COPY}
 
     cp "${{SCRIPTS_DIR}}"/set_in_chroot.sh "${{RPM_ROOT}}"
     ROOT_PASSWD="${{ROOT_PASSWD}}" chroot "${{RPM_ROOT}}" bash /set_in_chroot.sh
     rm "${{RPM_ROOT}}/set_in_chroot.sh"
+
+    # Run security hardening (fips-mode-setup) before user dracut so
+    # fips runs first and initramfs is not overwritten.
+    {SECURITY_RUN_CHROOT}
+    # custom config
+{CUSTOM_SCRIPT}
+    # Relabel all files after every modification so SELinux labels are correct
+    # in the packaged rootfs (recovered by tar --selinux on install/upgrade).
+    {SECURITY_SETFILES_CHROOT}
 }}
 "#;
 
@@ -373,6 +381,7 @@ pub const CREATE_IMAGE: &str = r#"function create_img() {{
 
     losetup -D
     parted "${{SCRIPTS_DIR}}"/system.img -- set 1 boot on
+{SELINUX_FIXUP}
     {DMV_MAIN}
     qemu-img convert "${{SCRIPTS_DIR}}"/system.img -O qcow2 "${{SCRIPTS_DIR}}"/system.qcow2
 }}
@@ -885,10 +894,11 @@ RUN ln -s /usr/lib/sysmaster/system/set-ssh-pub-key.service /etc/sysmaster/syste
 CMD ["/usr/lib/sysmaster/init"]"#;
 
 pub const OCI_ROOTFS_DOCKERFILE: &str = r#"FROM scratch
-ADD rootfs.tar /
+COPY rootfs.tar /
 CMD ["/bin/bash"]"#;
 
-pub const ISO_DOCKERFILE: &str = r#"FROM {OCI_IMAGE} AS base
+pub const ISO_DOCKERFILE: &str = r#"FROM scratch
+ADD rootfs.tar /
 
 # Copy elemental-cli into the image
 COPY elemental-cli /usr/bin/elemental
@@ -957,6 +967,13 @@ RUN ARCH=$(uname -m) && \
     fi; \
     elemental --debug init --force ${FEATURES}
 
+# elemental init may re-enable KubeOS disk-only mount units; mask them so ISO
+# live boot does not wait for a PERSIST partition that does not exist.
+RUN for unit in persist.mount var.mount etc.mount opt-cni.mount boot-efi.mount boot-grub2.mount; do \
+      ln -sf /dev/null "/etc/systemd/system/${unit}"; \
+      rm -f "/lib/systemd/system/local-fs.target.wants/${unit}"; \
+    done
+
 # Update os-release file with elemental metadata
 RUN echo IMAGE_REPO="{OCI_IMAGE}"             >> /etc/os-release && \
     echo IMAGE_TAG="{VERSION}"                >> /etc/os-release && \
@@ -1014,7 +1031,7 @@ fi
 
 menuentry "KubeOS Live" --class os --unrestricted {
     echo Loading kernel...
-    $linux ($root)/boot/kernel.xz cdroot root=live:CDLABEL=COS_LIVE rd.live.dir=/ rd.live.squashimg=rootfs.squashfs console=tty1 console=ttyS0 rd.cos.disable
+    $linux ($root)/boot/kernel.xz cdroot root=live:CDLABEL=OS_LIVE rd.live.dir=/ rd.live.squashimg=rootfs.squashfs console=tty1 console=ttyS0 console=ttyAMA0,115200 rd.cos.disable
     echo Loading initrd...
     $initrd ($root)/boot/rootfs.xz
 }
@@ -1023,8 +1040,16 @@ menuentry "KubeOS Live" --class os --unrestricted {
 pub const CREATE_ISO_IMAGE: &str = r#"function create_iso_image() {
     # Build ISO-specific image (base image + elemental init)
     cp "${ELEMENTAL_CLI_PATH}" "${ISO_DIR}"/elemental-cli
+
+    # The OCI image stores rootfs.tar as a single file; extract it into the
+    # build context so the ISO Dockerfile can ADD it (ISO live is selinux=0).
+    local cid
+    cid=$(docker create "${OCI_IMAGE}")
+    docker cp "${cid}:/rootfs.tar" "${ISO_DIR}"/rootfs.tar
+    docker rm "${cid}"
+
     docker build -t "${ISO_IMAGE}" -f "${ISO_DIR}"/Dockerfile "${ISO_DIR}"
-    rm -f "${ISO_DIR}"/elemental-cli
+    rm -f "${ISO_DIR}"/elemental-cli "${ISO_DIR}"/rootfs.tar
 
     # Build ISO using elemental-cli (--local: use image from local docker cache)
     "${ELEMENTAL_CLI_PATH}" --debug build-iso \
@@ -1996,6 +2021,54 @@ elif [ -z "${config_directory}" -a -f  $prefix/custom.cfg ]; then
 fi
 ### END /etc/grub.d/41_custom ###"#;
 
+pub const MODIFY_STIG_DYNAMIC_SH: &str = r##"#!/bin/bash
+set -eux
+
+# ===== 服务器参数 =====
+
+echo "=== 修复 chrony ==="
+if grep -qE "^server\s+\S+\s+maxpoll\s+16" /etc/chrony.conf; then
+    echo "chrony 已满足要求，跳过。"
+else
+    cp /etc/chrony.conf /etc/chrony.conf.bak
+    sed -i '/^server.*maxpoll/d' /etc/chrony.conf
+    echo "server ${CHRONY_SERVER} maxpoll 16" >> /etc/chrony.conf
+    echo "chrony 已修复"
+fi
+
+echo "=== 修复 rsyslog ==="
+udp_ok=false
+tcp_ok=false
+grep -qE "^\*\.\*\s+@${RSYSLOG_SERVER}:514" /etc/rsyslog.conf && udp_ok=true
+grep -qE "^\*\.\*\s+@@${RSYSLOG_SERVER}:514" /etc/rsyslog.conf && tcp_ok=true
+if $udp_ok && $tcp_ok; then
+    echo "rsyslog 已满足要求，跳过。"
+else
+    cp /etc/rsyslog.conf /etc/rsyslog.conf.bak
+    if ! $udp_ok; then
+        echo "*.* @${RSYSLOG_SERVER}:514" >> /etc/rsyslog.conf
+    fi
+    if ! $tcp_ok; then
+        echo "*.* @@${RSYSLOG_SERVER}:514" >> /etc/rsyslog.conf
+    fi
+    echo "rsyslog 已修复"
+fi
+
+echo "=== 修复 audit ==="
+if grep -qE "^remote_server\s*=\s*${AUDIT_SERVER}" /etc/audit/audisp-remote.conf; then
+    echo "audit 已满足要求，跳过。"
+else
+    cp /etc/audit/audisp-remote.conf /etc/audit/audisp-remote.conf.bak
+    if grep -q "^remote_server" /etc/audit/audisp-remote.conf; then
+        sed -i "s/^remote_server\s*=.*/remote_server = ${AUDIT_SERVER}/" /etc/audit/audisp-remote.conf
+    else
+        echo "remote_server = ${AUDIT_SERVER}" >> /etc/audit/audisp-remote.conf
+    fi
+    echo "audit 已修复"
+fi
+
+echo "全部完成。""##;
+
 pub const INSTALL_GLOBAL_VARS: &str = r#"set -eux
 set -o pipefail
 
@@ -2013,7 +2086,7 @@ pub const INSTALL_SCRIPT: &str = r#"function check_target_disk() {{
         return 1
     fi
     local disk_size
-    disk_size=$(parted -s "{TARGET_DISK}" unit GiB print 2>/dev/null | grep "Disk {TARGET_DISK}" | awk '{{print $3}}' | sed 's/GiB//')
+    disk_size=$(parted -s "{TARGET_DISK}" unit GiB print 2>/dev/null | grep "Disk {TARGET_DISK}" | awk '{{print $3}}' | sed 's/GiB//' || true)
     if [ -z "$disk_size" ]; then
         echo "Failed to get disk size for {TARGET_DISK}"
         return 1
@@ -2067,14 +2140,17 @@ function pull_and_extract_oci() {{
     local manifest_file="${{oci_dir}}/blobs/${{manifest_hash}}"
     echo "Extracting rootfs from OCI image..."
 
+    local rootfs_tar="${{oci_dir}}/rootfs.tar"
     for layer_digest in $(grep -o '"layers":\[.*\]' "$manifest_file" | grep -o '"digest":"sha256:[a-f0-9]*"' | grep -o 'sha256:[a-f0-9]*' | tr ':' '/'); do
         local layer_file="${{oci_dir}}/blobs/${{layer_digest}}"
         if file "$layer_file" | grep -qi "gzip"; then
-            zcat "$layer_file" | tar --selinux -x -C "$target"
+            zcat "$layer_file" | tar -x -O rootfs.tar > "$rootfs_tar"
         else
-            cat "$layer_file" | tar --selinux -x -C "$target"
+            cat "$layer_file" | tar -x -O rootfs.tar > "$rootfs_tar"
         fi
     done
+
+    tar --selinux -x -C "$target" -f "$rootfs_tar"
 
     rm -rf "$oci_dir"
     return 0
@@ -2116,54 +2192,29 @@ function set_partuuid_install() {{
 function setup_cloud_init() {{
     local target="$1"
 
-    if [ -n "{CLOUD_INIT_SRC}" ]; then
-        _install_config_file "$target" "{CLOUD_INIT_SRC}" "cloud-init" "/var/lib/cloud/seed/nocloud-net" "user-data"
-    fi
-
-    if [ -n "{IGNITION_SRC}" ]; then
-        _install_config_file "$target" "{IGNITION_SRC}" "ignition" "/usr/lib/dracut/modules.d/30ignition" "config.ign"
-    fi
-
-    if [ -d "$target/var/lib/cloud/seed/nocloud-net" ]; then
-        echo "instance-id: KubeOS" > "$target/var/lib/cloud/seed/nocloud-net/meta-data"
-    fi
-
+{CONFIG_ENTRIES}
     return 0
 }}
 
-function _install_config_file() {{
-    local target="$1"
-    local src="$2"
-    local conf_type="$3"
-    local dest_dir="$4"
-    local dest_file="$5"
-
-    if [ -z "$src" ]; then
-        return 0
-    fi
-
-    local is_url=false
+function _install_config() {{
+    local src="$1"
+    local dst="$2"
+    dst="${{dst#/}}"
+    local dst_path="$ROOT_MOUNT/$dst"
+    local dst_dir
+    dst_dir=$(dirname "$dst_path")
+    mkdir -p "$dst_dir"
     if echo "$src" | grep -qE '^https?://'; then
-        is_url=true
-    fi
-
-    if [ "$is_url" = true ] || [ -f "$src" ]; then
-        mkdir -p "$target$dest_dir"
-        local conf_file="$target$dest_dir/$dest_file"
-
-        if [ "$is_url" = true ]; then
-            local curl_opts="-sSL --fail"
-            if [ "{SKIP_TLS}" = "true" ]; then
-                curl_opts="$curl_opts --insecure"
-            fi
-            curl $curl_opts -o "$conf_file" "$src"
-        else
-            cp "$src" "$conf_file"
+        local curl_opts="-sSL --fail"
+        if [ "{SKIP_TLS}" = "true" ]; then
+            curl_opts="$curl_opts --insecure"
         fi
+        curl $curl_opts -o "$dst_path" "$src"
+    else
+        cp "$src" "$dst_path"
     fi
-
-    return 0
 }}
+
 
 function format_rootb() {{
     mkfs.ext4 -L "ROOT-B" "${{PART_PREFIX}}3"
@@ -2245,6 +2296,7 @@ install_kubeos
 ret=$?
 if [ $ret -eq 0 ]; then
     echo "KubeOS installation completed successfully"
+{SELINUX_FIXUP_INSTALL}
 {REBOOT_CMD}
 fi
 exit $ret"#;

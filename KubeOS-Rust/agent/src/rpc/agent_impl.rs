@@ -24,11 +24,12 @@ use manager::{
         AgentStatus, CmdRequest, ConfigureRequest, ImageType, Response, UpgradeRequest,
     },
     sys_mgmt::{
-        backup_etc_overlay, inject_cloud_init, inject_ignition, CtrImageHandler, DiskImageHandler,
+            backup_etc_overlay, inject_config, CtrImageHandler, DiskImageHandler,
         DockerImageHandler, SkopeoImageHandler, CONFIG_TEMPLATE, DEFAULT_GRUBENV_PATH,
     },
     utils::{
-        get_partition_info, is_dmv_mode, switch_boot_menuentry, CommandExecutor, PreparePath, RealCommandExecutor,
+        get_partition_info, is_dmv_mode, is_valid_image_name, switch_boot_menuentry, CommandExecutor,
+        PreparePath, RealCommandExecutor,
     },
 };
 use nix::{sys::reboot::RebootMode, unistd::sync};
@@ -196,14 +197,15 @@ impl AgentImpl {
         }
 
         if !req.is_rollback {
+            // Strip skopeo transport prefix (docker://, oci:, etc.) before validation
+            let image = req.oci_image.split("://").last().unwrap_or(&req.oci_image);
+            is_valid_image_name(image)?;
+
             let handler = SkopeoImageHandler { paths: PreparePath::default(), executor: RealCommandExecutor {} };
             let img_manager = handler.download_image(&req)?;
 
-            if let Some(ref ci) = req.cloud_init_config {
-                inject_cloud_init(&handler.paths.mount_path, ci, req.skip_tls)?;
-            }
-            if let Some(ref ig) = req.ignition_config {
-                inject_ignition(&handler.paths.mount_path, ig, req.skip_tls)?;
+            for c in &req.configs {
+                inject_config(&handler.paths.mount_path, &c.src, &c.dst, req.skip_tls)?;
             }
 
             let (_, next) = get_partition_info(&RealCommandExecutor {})?;
