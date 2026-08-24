@@ -15,7 +15,6 @@ mod config_inject;
 mod containerd_image;
 mod disk_image;
 mod docker_image;
-mod etc_backup;
 mod skopeo_image;
 mod values;
 
@@ -24,6 +23,5 @@ pub use config_inject::*;
 pub use containerd_image::*;
 pub use disk_image::*;
 pub use docker_image::*;
-pub use etc_backup::*;
 pub use skopeo_image::*;
 pub use values::*;

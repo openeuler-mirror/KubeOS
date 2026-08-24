@@ -240,15 +240,18 @@ fi
     }
     vars.insert("SECURITY_SETFILES_CHROOT".to_string(), security_setfiles_chroot);
 
-    let mut custom_script = String::new();
+    let mut custom_pre = String::new();
     if let Some(_) = &config.copy_files {
-        custom_script.push_str("    copy_files\n");
+        custom_pre.push_str("    copy_files\n");
     }
     if let Some(_) = &config.grub {
         if config.dm_verity.is_none() {
-            custom_script.push_str("    grub_config\n");
+            custom_pre.push_str("    grub_config\n");
         }
     }
+    vars.insert("CUSTOM_PRE".to_string(), custom_pre);
+
+    let mut custom_script = String::new();
     if let Some(_) = &config.chroot_script {
         custom_script.push_str("    chroot_script\n");
     }

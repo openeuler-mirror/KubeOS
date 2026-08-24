@@ -271,6 +271,9 @@ EOF
     {PXE_BOOTUP_FILES}
     {DM_VERITY_FILES}
     {SECURITY_COPY}
+    # custom config: copy files and grub config before set_in_chroot so
+    # systemctl enable in set_in_chroot finds the units.
+{CUSTOM_PRE}
 
     cp "${{SCRIPTS_DIR}}"/set_in_chroot.sh "${{RPM_ROOT}}"
     ROOT_PASSWD="${{ROOT_PASSWD}}" chroot "${{RPM_ROOT}}" bash /set_in_chroot.sh
@@ -279,7 +282,7 @@ EOF
     # Run security hardening (fips-mode-setup) before user dracut so
     # fips runs first and initramfs is not overwritten.
     {SECURITY_RUN_CHROOT}
-    # custom config
+    # user dracut (chroot script) after fips
 {CUSTOM_SCRIPT}
     # Relabel all files after every modification so SELinux labels are correct
     # in the packaged rootfs (recovered by tar --selinux on install/upgrade).
