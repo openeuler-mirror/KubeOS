@@ -205,7 +205,15 @@ impl AgentImpl {
             let img_manager = handler.download_image(&req)?;
 
             for c in &req.configs {
-                inject_config(&handler.paths.mount_path, &c.src, &c.dst, req.skip_tls)?;
+                if c.dst.starts_with("/boot/efi/") {
+                    // Files under /boot/efi live on the shared BOOT partition
+                    // (sda1, mounted at /boot/efi). Writing into the new rootfs
+                    // would be shadowed by the BOOT partition at boot time, so
+                    // inject them directly into the running BOOT partition.
+                    inject_config(std::path::Path::new("/"), &c.src, &c.dst, req.skip_tls)?;
+                } else {
+                    inject_config(&handler.paths.mount_path, &c.src, &c.dst, req.skip_tls)?;
+                }
             }
 
             handler.finish()?;
