@@ -461,12 +461,9 @@ fips-mode-setup --enable
 #默认开启enforcing模式，在/etc/selinux/config中配置"SELINUX=enforcing"不起作用
 setfiles -c /etc/selinux/targeted/policy/policy.33 /etc/selinux/targeted/contexts/files/file_contexts  /
 find / -type f -name grub.cfg 2>/dev/null | while read file; do
-  if grep -q 'enforcing=0' "$file"; then
-    continue
-  elif grep -q 'selinux=0' "$file"; then
-    sed -i 's/selinux=0/enforcing=0/g' "$file"
-  else
-    sed -i '/vmlinuz/ { s/$/ enforcing=0/ }' "$file"
+  if grep -q 'selinux=0' "$file"; then
+    echo "修改selinux=0为1"
+    sed -i 's/selinux=0/selinux=1/g' "$file"
   fi
 done
 
