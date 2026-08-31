@@ -56,9 +56,6 @@ impl CreateImage for IsoImgInfo {
         // Write the ISO Dockerfile (base image + elemental init)
         write_iso_dockerfile(self, config.from_repo.as_ref())?;
 
-        // Write the GRUB config overlay for custom boot menu
-        write_iso_grub_cfg(self)?;
-
         // Generate the main kbimg.sh script
         let kbimg_path = format!("{}/{}", SCRIPTS_DIR, KBIMG_SH);
         let mut kbimg = File::create(&kbimg_path)?;

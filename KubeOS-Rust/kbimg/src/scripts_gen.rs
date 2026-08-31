@@ -884,21 +884,6 @@ pub(crate) fn write_iso_dockerfile(info: &IsoImgInfo, repo_info: Option<&RepoInf
     Ok(())
 }
 
-pub(crate) fn write_iso_grub_cfg(info: &IsoImgInfo) -> Result<()> {
-    let overlay_grub_dir = format!("{}/boot/grub2", ISO_OVERLAY_DIR);
-    create_dir_all(&overlay_grub_dir)?;
-    utils::set_permissions(&overlay_grub_dir, DIR_PERMISSION)?;
-    let grub_cfg_path = format!("{}/{}", overlay_grub_dir, ISO_GRUB_CFG);
-    let mut grub_cfg = std::fs::File::create(&grub_cfg_path)?;
-    gen_copyright(&mut grub_cfg)?;
-    let mut grub_content = ISO_GRUB_CFG_CONTENT.to_string();
-    let entry_name = info.grub_entry_name.as_deref().unwrap_or("KubeOS");
-    grub_content = grub_content.replace(r#"menuentry "KubeOS Live""#, &format!(r#"menuentry "{entry_name} Live""#));
-    writeln!(grub_cfg, "{grub_content}")?;
-    utils::set_permissions(&grub_cfg_path, CONFIG_PERMISSION)?;
-    Ok(())
-}
-
 pub(crate) fn gen_create_iso_image(file: &mut dyn Write) -> Result<()> {
     writeln!(file, "{CREATE_ISO_IMAGE}")?;
     Ok(())
