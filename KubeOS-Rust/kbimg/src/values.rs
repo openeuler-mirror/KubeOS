@@ -41,8 +41,6 @@ pub(crate) const OCI_DIR: &str = "./scripts-auto/oci";
 pub(crate) const OCI_DOCKERFILE: &str = "Dockerfile";
 pub(crate) const ISO_DIR: &str = "./scripts-auto/iso";
 pub(crate) const ISO_MANIFEST: &str = "manifest.yaml";
-pub(crate) const ISO_GRUB_CFG: &str = "grub.cfg";
-pub(crate) const ISO_OVERLAY_DIR: &str = "./scripts-auto/iso/overlay";
 
 pub(crate) const DMV_DIR: &str = "./scripts-auto/dm-verity";
 pub(crate) const DMV_CHROOT: &str = "chroot_new_grub.sh";
@@ -1005,40 +1003,10 @@ pub const ELEMENTAL_ISO_MANIFEST: &str = r#"iso:
   bootloader-in-rootfs: true
   grub-entry-name: "{GRUB_ENTRY_NAME}"
   extra-cmdline: "security=selinux enforcing=0 console=tty1 console=ttyS0 console=ttyAMA0,115200"
-  rootfs:
-  - docker:{ISO_IMAGE}
-  image:
-  - docker:{ISO_IMAGE}
   label: "{LABEL}"
 
 name: "{ISO_NAME}"
 date: true"#;
-
-pub const ISO_GRUB_CFG_CONTENT: &str = r#"search --file --set=root /boot/kernel.xz
-set default=0
-set timeout=10
-set timeout_style=menu
-set linux=linux
-set initrd=initrd
-if [ "${grub_cpu}" = "x86_64" -o "${grub_cpu}" = "i386" ];then
-    if [ "${grub_platform}" = "efi" ]; then
-        set linux=linuxefi
-        set initrd=initrdefi
-    fi
-fi
-
-set font=($root)/boot/x86_64/loader/grub2/fonts/unicode.pf2
-if [ -f ${font} ];then
-    loadfont ${font}
-fi
-
-menuentry "KubeOS Live" --class os --unrestricted {
-    echo Loading kernel...
-    $linux ($root)/boot/kernel.xz cdroot root=live:CDLABEL=OS_LIVE rd.live.dir=/ rd.live.squashimg=rootfs.squashfs console=tty1 console=ttyS0 console=ttyAMA0,115200 rd.cos.disable
-    echo Loading initrd...
-    $initrd ($root)/boot/rootfs.xz
-}
-"#;
 
 pub const CREATE_ISO_IMAGE: &str = r#"function create_iso_image() {
     # Build ISO-specific image (base image + elemental init)
@@ -1058,7 +1026,6 @@ pub const CREATE_ISO_IMAGE: &str = r#"function create_iso_image() {
     "${ELEMENTAL_CLI_PATH}" --debug build-iso \
         --local \
         --config-dir "${ISO_DIR}" \
-        --overlay-iso "${ISO_DIR}"/overlay \
         -o "${OUTPUT_DIR}" \
         "docker:${ISO_IMAGE}"
 }
