@@ -427,7 +427,7 @@ log "--- AUDIT 已按要求配置 ---"
 
 
 #审计日志/配置文件权限设置正确(可以通过chmod/chown设置文件权限)
-mkdir -p /var/log/audit && [ ! -f /var/log/audit/audit.log ] && touch /var/log/audit/audit.log; chown root:root /var/log/audit && chmod 600 /var/log/audit; chown root:root /var/log/audit/audit.log && chmod 600 /var/log/audit/audit.log
+mkdir -p /var/log/audit && [ ! -f /var/log/audit/audit.log ] && touch /var/log/audit/audit.log; chown root:root /var/log/audit && chmod 700 /var/log/audit; chown root:root /var/log/audit/audit.log && chmod 600 /var/log/audit/audit.log
 mkdir -p /etc/audit && [ ! -f /etc/audit/audit.rules ] && touch /etc/audit/audit.rules; chown root:root /etc/audit/audit.rules && chmod 640 /etc/audit/audit.rules
 mkdir -p /etc/audit/rules.d && [ ! -f /etc/audit/rules.d/audit.rules ] && touch /etc/audit/rules.d/audit.rules; chown root:root /etc/audit/rules.d/audit.rules && chmod 640 /etc/audit/rules.d/audit.rules
 
