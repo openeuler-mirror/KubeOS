@@ -895,11 +895,10 @@ RUN ln -s /usr/lib/sysmaster/system/set-ssh-pub-key.service /etc/sysmaster/syste
 CMD ["/usr/lib/sysmaster/init"]"#;
 
 pub const OCI_ROOTFS_DOCKERFILE: &str = r#"FROM scratch
-COPY rootfs.tar /
+ADD rootfs.tar /
 CMD ["/bin/bash"]"#;
 
-pub const ISO_DOCKERFILE: &str = r#"FROM scratch
-ADD rootfs.tar /
+pub const ISO_DOCKERFILE: &str = r#"FROM {OCI_IMAGE}
 
 # Copy elemental-cli into the image
 COPY elemental-cli /usr/bin/elemental
@@ -1012,15 +1011,8 @@ pub const CREATE_ISO_IMAGE: &str = r#"function create_iso_image() {
     # Build ISO-specific image (base image + elemental init)
     cp "${ELEMENTAL_CLI_PATH}" "${ISO_DIR}"/elemental-cli
 
-    # The OCI image stores rootfs.tar as a single file; extract it into the
-    # build context so the ISO Dockerfile can ADD it (ISO live is selinux=0).
-    local cid
-    cid=$(docker create "${OCI_IMAGE}")
-    docker cp "${cid}:/rootfs.tar" "${ISO_DIR}"/rootfs.tar
-    docker rm "${cid}"
-
     docker build -t "${ISO_IMAGE}" -f "${ISO_DIR}"/Dockerfile "${ISO_DIR}"
-    rm -f "${ISO_DIR}"/elemental-cli "${ISO_DIR}"/rootfs.tar
+    rm -f "${ISO_DIR}"/elemental-cli
 
     # Build ISO using elemental-cli (--local: use image from local docker cache)
     "${ELEMENTAL_CLI_PATH}" --debug build-iso \
@@ -2108,19 +2100,16 @@ function pull_and_extract_oci() {{
     manifest_hash=$(grep -o '"digest":"sha256:[a-f0-9]*"' "${{oci_dir}}/index.json" | head -1 | grep -o 'sha256:[a-f0-9]*' | tr ':' '/')
 
     local manifest_file="${{oci_dir}}/blobs/${{manifest_hash}}"
-    echo "Extracting rootfs from OCI image..."
+    echo "Extracting rootfs from OCI image layers..."
 
-    local rootfs_tar="${{oci_dir}}/rootfs.tar"
     for layer_digest in $(grep -o '"layers":\[.*\]' "$manifest_file" | grep -o '"digest":"sha256:[a-f0-9]*"' | grep -o 'sha256:[a-f0-9]*' | tr ':' '/'); do
         local layer_file="${{oci_dir}}/blobs/${{layer_digest}}"
         if file "$layer_file" | grep -qi "gzip"; then
-            zcat "$layer_file" | tar -x -O rootfs.tar > "$rootfs_tar"
+            zcat "$layer_file" | tar --selinux -x -C "$target" -f -
         else
-            cat "$layer_file" | tar -x -O rootfs.tar > "$rootfs_tar"
+            tar --selinux -x -C "$target" -f "$layer_file"
         fi
     done
-
-    tar --selinux -x -C "$target" -f "$rootfs_tar"
 
     rm -rf "$oci_dir"
     return 0
