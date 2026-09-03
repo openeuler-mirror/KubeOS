@@ -216,6 +216,12 @@ impl AgentImpl {
                 }
             }
 
+            // Restore SELinux labels on the whole mounted rootfs. The OCI image
+            // layers lost their security.selinux xattrs when Docker flattened
+            // rootfs.tar (ADD strips them), so this must run after config
+            // injection to also label the injected files.
+            handler.relabel_selinux()?;
+
             handler.finish()?;
             info!("Ready to install image: {:?}", img_manager.paths.image_path.display());
             img_manager.install()?;

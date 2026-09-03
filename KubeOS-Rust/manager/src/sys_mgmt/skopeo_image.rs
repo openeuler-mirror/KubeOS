@@ -150,4 +150,49 @@ impl<T: CommandExecutor> SkopeoImageHandler<T> {
         info!("OCI layers extracted successfully");
         Ok(())
     }
+
+    /// Restores SELinux labels on the mounted target rootfs.
+    ///
+    /// The OCI rootfs image is built from `FROM scratch` + `ADD rootfs.tar /`,
+    /// and Docker's ADD strips security.selinux xattrs when flattening the tar
+    /// into layers. So even tar --selinux has no labels to restore during
+    /// extraction. Relabel the whole mounted rootfs (including any configs
+    /// injected afterwards) from the policy shipped inside it, so files on the
+    /// target partition are not left unlabeled. Must be called after config
+    /// injection and before finish()/install().
+    ///
+    /// The relabel only runs when it is both needed and possible:
+    /// - the target image is built with SELinux (policy.33 present, only shipped
+    ///   in STIG builds) and ships setfiles;
+    /// - the currently booted system has SELinux active (/sys/fs/selinux
+    ///   mounted), otherwise setfiles cannot write security.selinux xattrs and
+    ///   would fail the upgrade.
+    pub fn relabel_selinux(&self) -> Result<()> {
+        let mount = &self.paths.mount_path;
+        // Only relabel when it is both needed and possible:
+        // - the target image is built with SELinux (policy.33 present, only
+        //   shipped in STIG builds) and ships setfiles;
+        // - the currently booted system has SELinux active (/sys/fs/selinux
+        //   mounted), otherwise setfiles cannot write security.selinux xattrs
+        //   and would fail the upgrade.
+        if !Path::new("/sys/fs/selinux").is_dir() {
+            info!("SELinux not active on current system, skip relabeling");
+            return Ok(());
+        }
+        if !mount.join("etc/selinux/targeted/policy/policy.33").exists()
+            || !mount.join("usr/sbin/setfiles").is_file()
+        {
+            info!("Target rootfs is not built with SELinux, skip relabeling");
+            return Ok(());
+        }
+        let target_str = mount.to_str().context("Failed to convert mount path to string")?;
+        let relabel_cmd = format!(
+            "chroot {target} bash -c 'setfiles -c /etc/selinux/targeted/policy/policy.33 \
+             /etc/selinux/targeted/contexts/files/file_contexts /'",
+            target = target_str
+        );
+        info!("Restoring SELinux labels on {}", mount.display());
+        self.executor.run_command("bash", &["-c", &relabel_cmd])?;
+        Ok(())
+    }
 }
