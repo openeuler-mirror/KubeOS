@@ -271,7 +271,7 @@ EOF
     {SECURITY_COPY}
     # custom config: copy files and grub config before set_in_chroot so
     # systemctl enable in set_in_chroot finds the units.
-{CUSTOM_PRE}
+    {CUSTOM_PRE}
 
     cp "${{SCRIPTS_DIR}}"/set_in_chroot.sh "${{RPM_ROOT}}"
     ROOT_PASSWD="${{ROOT_PASSWD}}" chroot "${{RPM_ROOT}}" bash /set_in_chroot.sh
@@ -281,7 +281,10 @@ EOF
     # fips runs first and initramfs is not overwritten.
     {SECURITY_RUN_CHROOT}
     # user dracut (chroot script) after fips
-{CUSTOM_SCRIPT}
+    {CUSTOM_SCRIPT}
+    # Snapshot /var after all hardening so systemd-tmpfiles restores the
+    # final (hardened) modes/owners at boot.
+    {GEN_TMPFILES}
     # Relabel all files after every modification so SELinux labels are correct
     # in the packaged rootfs (recovered by tar --selinux on install/upgrade).
     {SECURITY_SETFILES_CHROOT}
@@ -304,32 +307,45 @@ echo "root:""${{ROOT_PASSWD}}""${{str:1}}" >/etc/shadow
 cat /etc/shadow_bak >>/etc/shadow
 rm -rf /etc/shadow_bak
 
-# Auto-generate tmpfiles.d entries for /var content.
+{PXE_DRACUT}
+{DM_VERITY_DRACUT}"#;
+
+pub const GEN_TMPFILES: &str = r#"# Snapshot /var AFTER all hardening (security-tools.sh, user chroot script)
+# so systemd-tmpfiles restores the final modes/owners at boot instead of the
+# pre-hardening ones (e.g. /var/log files are recorded as 640, not 644).
 # /var is a bind mount from /persist/var which starts empty, shadowing the
-# original /var from the read-only root. systemd-tmpfiles-setup runs after
-# var.mount and recreates the required directory tree and seed files.
-# During A/B upgrades, new images include updated tmpfiles config covering
-# directories and files added by new RPMs.
+# original /var from the read-only root; systemd-tmpfiles-setup runs after
+# var.mount and recreates the tree from this snapshot.
+# Run in a separate chroot script without 'set -x' so the per-file traversal
+# does not flood the build log.
+set +x
+mkdir -p "${RPM_ROOT}"/usr/local/kubeos
+cat > "${RPM_ROOT}"/usr/local/kubeos/gen-tmpfiles.sh <<'TMPEOF'
+set -e
+echo "generating /var tmpfiles snapshot (kubeos-var.conf)..."
 mkdir -p /usr/share/factory/var
 ( find /var -type d -mindepth 1 2>/dev/null | sort ;
   find /var -type f 2>/dev/null ) | while read path; do
- 	if [ -d "$path" ]; then
- 	    perm=$(stat -c "%a" "$path" 2>/dev/null || echo "0755")
- 	    owner=$(stat -c "%U" "$path" 2>/dev/null || echo "root")
- 	    group=$(stat -c "%G" "$path" 2>/dev/null || echo "root")
- 	    echo "d $path $perm $owner $group -"
- 	elif [ -f "$path" ]; then
- 	    factory="/usr/share/factory/var${{path#/var}}"
- 	    mkdir -p "$(dirname "$factory")"
- 	    cp -a "$path" "$factory"
- 	    perm=$(stat -c "%a" "$path" 2>/dev/null || echo "0644")
- 	    owner=$(stat -c "%U" "$path" 2>/dev/null || echo "root")
- 	    group=$(stat -c "%G" "$path" 2>/dev/null || echo "root")
- 	    echo "C $path $perm $owner $group - $factory"
- 	fi
+	if [ -d "$path" ]; then
+	    perm=$(stat -c "%a" "$path" 2>/dev/null || echo "0755")
+	    owner=$(stat -c "%U" "$path" 2>/dev/null || echo "root")
+	    group=$(stat -c "%G" "$path" 2>/dev/null || echo "root")
+	    echo "d $path $perm $owner $group -"
+	elif [ -f "$path" ]; then
+	    factory="/usr/share/factory/var${path#/var}"
+	    mkdir -p "$(dirname "$factory")"
+	    cp -a "$path" "$factory"
+	    perm=$(stat -c "%a" "$path" 2>/dev/null || echo "0644")
+	    owner=$(stat -c "%U" "$path" 2>/dev/null || echo "root")
+	    group=$(stat -c "%G" "$path" 2>/dev/null || echo "root")
+	    echo "C $path $perm $owner $group - $factory"
+	fi
 done > /usr/lib/tmpfiles.d/kubeos-var.conf
-{PXE_DRACUT}
-{DM_VERITY_DRACUT}"#;
+TMPEOF
+chroot "${RPM_ROOT}" bash /usr/local/kubeos/gen-tmpfiles.sh
+rm -f "${RPM_ROOT}"/usr/local/kubeos/gen-tmpfiles.sh
+set -x
+"#;
 
 pub const SET_PARTUUID: &str = r#"function set_partuuid() {{
     root_path=$1

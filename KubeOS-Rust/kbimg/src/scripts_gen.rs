@@ -240,6 +240,8 @@ fi
     }
     vars.insert("SECURITY_SETFILES_CHROOT".to_string(), security_setfiles_chroot);
 
+    vars.insert("GEN_TMPFILES".to_string(), GEN_TMPFILES.to_string());
+
     let mut custom_pre = String::new();
     if let Some(_) = &config.copy_files {
         custom_pre.push_str("    copy_files\n");

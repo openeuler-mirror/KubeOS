@@ -43,8 +43,6 @@ impl<T: CommandExecutor> SkopeoImageHandler<T> {
             ],
         )?;
 
-        self.extract_oci_layers(&oci_dir, &self.paths.tar_path)?;
-
         let (_, next_partition_info) = get_partition_info(&self.executor)?;
         let img_manager = UpgradeImageManager::new(
             self.paths.clone(),
@@ -52,13 +50,15 @@ impl<T: CommandExecutor> SkopeoImageHandler<T> {
             self.executor.clone(),
             false,
         );
-        // Individual steps: create image, format, mount, extract tar.
+        // Individual steps: create image, format, mount, then extract each OCI
+        // layer straight into the mounted image (the OCI rootfs image now
+        // stores a flat rootfs instead of a single rootfs.tar).
         // Do NOT call create_os_image (which includes clean_env) so the
         // caller can inject configs into the still-mounted image.
         img_manager.create_image_file(IMAGE_PERMISSION)?;
         img_manager.format_image()?;
         img_manager.mount_image()?;
-        img_manager.extract_tar_to_image()?;
+        self.extract_oci_layers(&oci_dir, &self.paths.mount_path)?;
         Ok(img_manager)
     }
 
@@ -68,7 +68,7 @@ impl<T: CommandExecutor> SkopeoImageHandler<T> {
         clean_env(&self.paths.update_path, &self.paths.mount_path, &PathBuf::new())
     }
 
-    fn extract_oci_layers(&self, oci_dir: &Path, tar_path: &Path) -> Result<()> {
+    fn extract_oci_layers(&self, oci_dir: &Path, target: &Path) -> Result<()> {
         let index_path = oci_dir.join("index.json");
         if !index_path.exists() {
             bail!("OCI index.json not found at {}", index_path.display());
@@ -115,9 +115,9 @@ impl<T: CommandExecutor> SkopeoImageHandler<T> {
         if layer_digests.is_empty() {
             bail!("No layers found in OCI manifest");
         }
-        info!("Extracting {} OCI layers to {}", layer_digests.len(), tar_path.display());
+        info!("Extracting {} OCI layers to {}", layer_digests.len(), target.display());
 
-        let tar_str = tar_path.to_str().context("Failed to convert tar path")?;
+        let target_str = target.to_str().context("Failed to convert target path")?;
         for layer_digest in layer_digests {
             let layer_file = oci_dir.join("blobs").join(&layer_digest);
             if !layer_file.exists() {
@@ -129,23 +129,70 @@ impl<T: CommandExecutor> SkopeoImageHandler<T> {
                 .output()
                 .map(|o| String::from_utf8_lossy(&o.stdout).to_lowercase().contains("gzip"))
                 .unwrap_or(false);
-            // The OCI image stores rootfs.tar as a single file; extract it to
-            // preserve SELinux xattrs which docker ADD would otherwise strip.
+            // The OCI rootfs image now stores the rootfs as flat layers
+            // (docker ADD extracts rootfs.tar at build time), so extract each
+            // layer directly into the target directory, keeping --selinux so
+            // SELinux xattrs are preserved (docker ADD would strip them).
             if is_gzip {
                 self.executor.run_command(
                     "bash",
-                    &["-c", &format!("zcat {} | tar -x -O rootfs.tar > {}", layer_file.to_str().unwrap(), tar_str)],
+                    &["-c", &format!("zcat {} | tar --selinux -x -C {} -f -", layer_file.to_str().unwrap(), target_str)],
                 )?;
             } else {
                 self.executor.run_command(
                     "bash",
-                    &["-c", &format!("cat {} | tar -x -O rootfs.tar > {}", layer_file.to_str().unwrap(), tar_str)],
+                    &["-c", &format!("tar --selinux -x -C {} -f {}", target_str, layer_file.to_str().unwrap())],
                 )?;
             }
         }
 
         fs::remove_dir_all(oci_dir)?;
         info!("OCI layers extracted successfully");
+        Ok(())
+    }
+
+    /// Restores SELinux labels on the mounted target rootfs.
+    ///
+    /// The OCI rootfs image is built from `FROM scratch` + `ADD rootfs.tar /`,
+    /// and Docker's ADD strips security.selinux xattrs when flattening the tar
+    /// into layers. So even tar --selinux has no labels to restore during
+    /// extraction. Relabel the whole mounted rootfs (including any configs
+    /// injected afterwards) from the policy shipped inside it, so files on the
+    /// target partition are not left unlabeled. Must be called after config
+    /// injection and before finish()/install().
+    ///
+    /// The relabel only runs when it is both needed and possible:
+    /// - the target image is built with SELinux (policy.33 present, only shipped
+    ///   in STIG builds) and ships setfiles;
+    /// - the currently booted system has SELinux active (/sys/fs/selinux
+    ///   mounted), otherwise setfiles cannot write security.selinux xattrs and
+    ///   would fail the upgrade.
+    pub fn relabel_selinux(&self) -> Result<()> {
+        let mount = &self.paths.mount_path;
+        // Only relabel when it is both needed and possible:
+        // - the target image is built with SELinux (policy.33 present, only
+        //   shipped in STIG builds) and ships setfiles;
+        // - the currently booted system has SELinux active (/sys/fs/selinux
+        //   mounted), otherwise setfiles cannot write security.selinux xattrs
+        //   and would fail the upgrade.
+        if !Path::new("/sys/fs/selinux").is_dir() {
+            info!("SELinux not active on current system, skip relabeling");
+            return Ok(());
+        }
+        if !mount.join("etc/selinux/targeted/policy/policy.33").exists()
+            || !mount.join("usr/sbin/setfiles").is_file()
+        {
+            info!("Target rootfs is not built with SELinux, skip relabeling");
+            return Ok(());
+        }
+        let target_str = mount.to_str().context("Failed to convert mount path to string")?;
+        let relabel_cmd = format!(
+            "chroot {target} bash -c 'setfiles -c /etc/selinux/targeted/policy/policy.33 \
+             /etc/selinux/targeted/contexts/files/file_contexts /'",
+            target = target_str
+        );
+        info!("Restoring SELinux labels on {}", mount.display());
+        self.executor.run_command("bash", &["-c", &relabel_cmd])?;
         Ok(())
     }
 }
