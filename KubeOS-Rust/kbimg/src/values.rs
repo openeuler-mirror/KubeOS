@@ -920,14 +920,12 @@ pub const ISO_DOCKERFILE: &str = r#"FROM {OCI_IMAGE}
 COPY elemental-cli /usr/bin/elemental
 RUN chmod +x /usr/bin/elemental
 
-# Disable KubeOS disk-only mount units (persist/etc/var/opt-cni).
+# Delete KubeOS disk-only mount units (persist/etc/var/opt-cni).
 # These depend on a PERSIST partition that does not exist in ISO live mode.
-RUN rm -f /lib/systemd/system/local-fs.target.wants/etc.mount \
-         /lib/systemd/system/local-fs.target.wants/opt-cni.mount \
-         /lib/systemd/system/local-fs.target.wants/persist.mount \
-         /lib/systemd/system/local-fs.target.wants/var.mount \
-         /lib/systemd/system/local-fs.target.wants/boot-efi.mount \
-         /lib/systemd/system/local-fs.target.wants/boot-grub2.mount
+RUN for unit in persist.mount var.mount etc.mount opt-cni.mount boot-efi.mount boot-grub2.mount; do \
+      rm -f "/usr/lib/systemd/system/${unit}"; \
+      rm -f "/usr/lib/systemd/system/local-fs.target.wants/${unit}"; \
+    done
 
 # Create /boot/initrd symlink (elemental expects /boot/initrd)
 RUN if [ ! -L /boot/initrd ]; then ln -sf initramfs.img /boot/initrd; fi
@@ -982,13 +980,6 @@ RUN ARCH=$(uname -m) && \
       FEATURES="${FEATURES} arm-firmware grub-default-bootargs"; \
     fi; \
     elemental --debug init --force ${FEATURES}
-
-# elemental init may re-enable KubeOS disk-only mount units; mask them so ISO
-# live boot does not wait for a PERSIST partition that does not exist.
-RUN for unit in persist.mount var.mount etc.mount opt-cni.mount boot-efi.mount boot-grub2.mount; do \
-      ln -sf /dev/null "/etc/systemd/system/${unit}"; \
-      rm -f "/lib/systemd/system/local-fs.target.wants/${unit}"; \
-    done
 
 # Update os-release file with elemental metadata
 RUN echo IMAGE_REPO="{OCI_IMAGE}"             >> /etc/os-release && \
