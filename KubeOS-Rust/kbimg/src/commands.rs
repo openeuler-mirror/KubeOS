@@ -137,6 +137,13 @@ pub struct IsoImgInfo {
     /// Optional: ISO file name prefix (without .iso), default "KubeOS"
     #[serde(default, deserialize_with = "reject_empty_option_string")]
     pub name: Option<String>,
+    /// Optional: If true, kbimg prepares everything for the ISO build (writes the
+    /// Dockerfile and elemental manifest.yaml, copies elemental-cli next to the
+    /// Dockerfile, generates build-iso.sh) but does NOT run docker build or
+    /// elemental build-iso. Users customize the generated files and build manually.
+    /// Default: false
+    #[serde(default)]
+    pub generate_only: bool,
 }
 
 #[derive(Debug, Deserialize, Default, Clone)]

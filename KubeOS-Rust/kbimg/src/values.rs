@@ -1035,6 +1035,31 @@ trap 'rm -f "${LOCK}"' ERR
 
 create_iso_image"#;
 
+pub const BUILD_ISO_SH: &str = r#"# 手动构建 ISO 辅助脚本，由 kbimg 在 generate_only 模式下生成。
+# elemental-cli 已由 kbimg 拷贝至本目录（Dockerfile 中 COPY elemental-cli /usr/bin/elemental 需要它）。
+# 可自由修改本目录下的 Dockerfile 与 manifest.yaml 后重新执行：
+#   bash build-iso.sh
+# 或参考下方命令手动执行。
+
+set -eux
+
+ISO_DIR=$(cd "$(dirname "$0")" && pwd)
+ELEMENTAL_CLI_PATH="@ELEMENTAL_CLI_PATH@"
+OCI_IMAGE="@OCI_IMAGE@"
+ISO_IMAGE="@ISO_IMAGE@"
+OUTPUT_DIR="@OUTPUT_DIR@"
+
+# 第 1 步：构建 ISO 专用镜像（基础 OCI 镜像 + elemental init）
+docker build -t "${ISO_IMAGE}" -f "${ISO_DIR}/Dockerfile" "${ISO_DIR}"
+
+# 第 2 步：使用 elemental 生成 ISO（--local 表示使用本地 docker 缓存中的镜像）
+"${ELEMENTAL_CLI_PATH}" --debug build-iso \
+    --local \
+    --config-dir "${ISO_DIR}" \
+    -o "${OUTPUT_DIR}" \
+    "docker:${ISO_IMAGE}"
+"#;
+
 pub const SET_SSH_PUB_KEY_SERVICE: &str = r#"[Unit]
 Description=set ssh authorized keys according to the secret which is set by user
 
