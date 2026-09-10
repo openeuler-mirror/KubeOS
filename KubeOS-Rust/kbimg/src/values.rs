@@ -926,6 +926,7 @@ RUN for unit in persist.mount var.mount etc.mount opt-cni.mount boot-efi.mount b
       rm -f "/usr/lib/systemd/system/${unit}"; \
       rm -f "/usr/lib/systemd/system/local-fs.target.wants/${unit}"; \
     done
+RUN rm -rf /usr/lib/dracut/modules.d/30persist 
 
 # Create /boot/initrd symlink (elemental expects /boot/initrd)
 RUN if [ ! -L /boot/initrd ]; then ln -sf initramfs.img /boot/initrd; fi
