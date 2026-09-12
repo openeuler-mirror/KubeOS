@@ -10,3 +10,4 @@ anyhow = { workspace = true }
 clap = { workspace = true, features = ["derive", "help", "std", "usage"] }
 cli = { workspace = true }
 manager = { workspace = true }
+nix = { workspace = true }

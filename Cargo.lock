@@ -1157,6 +1157,7 @@ dependencies = [
  "clap",
  "cli",
  "manager",
+ "nix",
 ]
 
 [[package]]
