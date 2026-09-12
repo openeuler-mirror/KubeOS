@@ -2236,6 +2236,7 @@ function install_kubeos() {{
     partition_and_format
 
     mkdir -p "$ROOT_MOUNT"
+    chmod 750 "$ROOT_MOUNT"
     mount "${{PART_PREFIX}}2" "$ROOT_MOUNT"
 
     mkdir -p "$ROOT_MOUNT"/boot/efi

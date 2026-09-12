@@ -90,7 +90,7 @@ fn acquire_lock(lock_path: &str) -> Result<RawFd, String> {
                 .map_err(|e| format!("Failed to create lock directory {}: {}", dir.display(), e))?;
         }
     }
-    let fd = open(lock_path, OFlag::O_CREAT | OFlag::O_RDWR | OFlag::O_CLOEXEC, Mode::from_bits_truncate(0o644))
+    let fd = open(lock_path, OFlag::O_CREAT | OFlag::O_RDWR | OFlag::O_CLOEXEC, Mode::from_bits_truncate(0o640))
         .map_err(|e| format!("Failed to open lock file {}: {}", lock_path, e))?;
     match flock(fd, FlockArg::LockExclusiveNonblock) {
         Ok(()) => Ok(fd),
@@ -116,7 +116,7 @@ extern "C" fn handle_sigint(sig: c_int) {
     unsafe {
         let _ = write(STDERR_FILENO, CANCEL_MSG);
         if let Ok(fd) =
-            open(CANCEL_PATH, OFlag::O_CREAT | OFlag::O_WRONLY | OFlag::O_TRUNC, Mode::from_bits_truncate(0o644))
+            open(CANCEL_PATH, OFlag::O_CREAT | OFlag::O_WRONLY | OFlag::O_TRUNC, Mode::from_bits_truncate(0o640))
         {
             let _ = write(fd, b"cancel");
             let _ = close(fd);
