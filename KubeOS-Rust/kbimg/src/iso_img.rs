@@ -28,6 +28,8 @@ impl CreateImage for IsoImgInfo {
     fn prepare(&self, _config: &mut Config) -> Result<()> {
         verify_iso_input(&self.oci_image)?;
         verify_iso_input(&self.iso_image)?;
+        // elemental-cli is needed in both modes: normal mode runs it, generate_only
+        // mode copies it next to the Dockerfile for the user's manual docker build.
         verify_iso_input(self.elemental_cli_path.to_str().unwrap_or(""))?;
         utils::is_file_valid("elemental-cli binary", &self.elemental_cli_path)?;
         if let Some(output_dir) = &self.output_dir {
@@ -45,7 +47,10 @@ impl CreateImage for IsoImgInfo {
                 bail!("params {} is invalid, please check input", name);
             }
         }
-        check_iso_disk_space()?;
+        // generate_only mode only prepares files, no build happens, so no disk check
+        if !self.generate_only {
+            check_iso_disk_space()?;
+        }
         Ok(())
     }
 
@@ -55,6 +60,14 @@ impl CreateImage for IsoImgInfo {
 
         // Write the ISO Dockerfile (base image + elemental init)
         write_iso_dockerfile(self, config.from_repo.as_ref())?;
+
+        if self.generate_only {
+            // generate_only: prepare everything for a manual build (Dockerfile,
+            // manifest.yaml, elemental-cli next to the Dockerfile, build-iso.sh)
+            // but do NOT run docker build / elemental build-iso.
+            std::fs::copy(&self.elemental_cli_path, format!("{}/elemental-cli", ISO_DIR))?;
+            return gen_build_iso_script(self);
+        }
 
         // Generate the main kbimg.sh script
         let kbimg_path = format!("{}/{}", SCRIPTS_DIR, KBIMG_SH);

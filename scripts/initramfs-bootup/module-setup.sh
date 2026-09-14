@@ -14,9 +14,18 @@ depends() {
 }
 
 install() {
+    # relabel 脚本通过 chroot 在 /sysroot 内调用 restorecon，需保证 initramfs 内有 chroot
+    inst_multiple chroot
+
     inst_simple "$moddir/persist-mount.service" \
         "$systemdsystemunitdir/persist-mount.service"
     systemctl -q --root="$initdir" enable persist-mount.service
+
+    inst_simple "$moddir/kubeos-selinux-relabel.service" \
+        "$systemdsystemunitdir/kubeos-selinux-relabel.service"
+    inst_simple "$moddir/kubeos-selinux-relabel.sh" \
+        "/usr/libexec/kubeos/kubeos-selinux-relabel.sh"
+    systemctl -q --root="$initdir" enable kubeos-selinux-relabel.service
 }
 
 installkernel() {

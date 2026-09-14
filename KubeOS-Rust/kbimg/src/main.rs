@@ -112,6 +112,7 @@ fn main() {
             debug!("Config: {:?}", data);
 
             let info;
+            let mut generate_only = false;
             match image_type {
                 commands::CreateType::VM => {
                     check_config_toml(&data).unwrap();
@@ -178,6 +179,7 @@ fn main() {
                 },
                 commands::CreateType::Iso => {
                     if let Some(i) = data.iso_img.clone() {
+                        generate_only = i.generate_only;
                         info = Some(Box::new(i) as Box<dyn CreateImage>)
                     } else {
                         error!("Missing iso_img in config file for creating iso image");
@@ -187,7 +189,9 @@ fn main() {
             }
 
             if let Some(i) = info {
-                if let Err(e) = process(i, data, cli.debug) {
+                // generate_only mode: prepare the ISO build files but do not execute
+                // docker build / elemental build-iso, leave it to the user.
+                if let Err(e) = process(i, data, cli.debug || generate_only) {
                     error!("Failed to create image: {:?}", e);
                     exit(1);
                 }

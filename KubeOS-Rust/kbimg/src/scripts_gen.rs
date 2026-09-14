@@ -890,6 +890,25 @@ pub(crate) fn gen_create_iso_image(file: &mut dyn Write) -> Result<()> {
     writeln!(file, "{CREATE_ISO_IMAGE}")?;
     Ok(())
 }
+
+/// Generate the manual ISO build helper script (generate_only mode).
+/// Everything needed for docker build is prepared by kbimg beforehand
+/// (Dockerfile, manifest.yaml, elemental-cli), only execution is left to the user.
+pub(crate) fn gen_build_iso_script(info: &IsoImgInfo) -> Result<PathBuf> {
+    let script_path = format!("{}/{}", ISO_DIR, "build-iso.sh");
+    let mut script = std::fs::File::create(&script_path)?;
+    writeln!(script, "#!/bin/bash")?;
+    gen_copyright(&mut script)?;
+    let output_dir = info.output_dir.as_deref().unwrap_or(SCRIPTS_DIR);
+    let dynamic = BUILD_ISO_SH
+        .replace("@ELEMENTAL_CLI_PATH@", info.elemental_cli_path.to_str().unwrap())
+        .replace("@OCI_IMAGE@", &info.oci_image)
+        .replace("@ISO_IMAGE@", &info.iso_image)
+        .replace("@OUTPUT_DIR@", output_dir);
+    writeln!(script, "{dynamic}")?;
+    utils::set_permissions(&script_path, EXEC_PERMISSION)?;
+    Ok(PathBuf::from(script_path))
+}
 /* endregion */
 
 pub(crate) fn gen_install_script(

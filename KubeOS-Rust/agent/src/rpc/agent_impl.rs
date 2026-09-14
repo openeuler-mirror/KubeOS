@@ -11,7 +11,9 @@
  */
 
 use std::{
+    fs,
     io::Write,
+    path::Path,
     sync::{atomic::AtomicBool, atomic::Ordering, Mutex},
     thread,
     time::Duration,
@@ -28,11 +30,15 @@ use manager::{
         DockerImageHandler, SkopeoImageHandler, CONFIG_TEMPLATE, DEFAULT_GRUBENV_PATH,
     },
     utils::{
-        get_partition_info, is_dmv_mode, is_valid_image_name, switch_boot_menuentry, CommandExecutor,
-        PreparePath, RealCommandExecutor,
+        get_partition_info, is_dmv_mode, is_valid_image_name, switch_boot_menuentry, CommandExecutor, PreparePath,
+        RealCommandExecutor,
     },
 };
-use nix::{sys::reboot::RebootMode, unistd::sync};
+use nix::{
+    fcntl::{flock, open, FlockArg, OFlag},
+    sys::{reboot::RebootMode, stat::Mode},
+    unistd::{close, sync},
+};
 
 use super::{
     agent::Agent,
@@ -42,6 +48,38 @@ use super::{
 pub struct AgentImpl {
     mutex: Mutex<()>,
     disable_reboot: AtomicBool,
+}
+
+/// Cancel flag file: kbosctl writes it on Ctrl+C to ask os-agent to abort the
+/// running operation at the next checkpoint.
+const CANCEL_PATH: &str = "/run/os-agent/cancel";
+/// kbosctl single-instance lock file. While a kbosctl process is running it
+/// holds an exclusive flock on this file; when the lock is not held, kbosctl
+/// is gone (e.g. SIGKILL, crash) and the operation must be aborted.
+const KBOSCTL_LOCK_PATH: &str = "/run/os-agent/kbosctl.lock";
+
+/// Returns whether a kbosctl process is still running, by probing the
+/// exclusive flock on the kbosctl single-instance lock file:
+/// - lock file missing → no kbosctl ever ran → considered gone;
+/// - flock(LOCK_EX|LOCK_NB) succeeds → nobody holds it → kbosctl is gone;
+/// - flock fails with EWOULDBLOCK → lock is held → kbosctl is alive.
+/// This covers interruptions that kbosctl itself cannot report, such as
+/// SIGKILL, crashes or power loss.
+fn kbosctl_alive(lock_path: &Path) -> bool {
+    if !lock_path.exists() {
+        return false;
+    }
+    match open(lock_path, OFlag::O_RDONLY | OFlag::O_CLOEXEC, Mode::empty()) {
+        Ok(fd) => {
+            let alive = match flock(fd, FlockArg::LockExclusiveNonblock) {
+                Ok(()) => false,
+                Err(_) => true,
+            };
+            let _ = close(fd);
+            alive
+        },
+        Err(_) => true,
+    }
 }
 
 impl Agent for AgentImpl {
@@ -183,6 +221,23 @@ impl AgentImpl {
         Ok(())
     }
 
+    /// Aborts the operation if the client (kbosctl) asked for cancellation:
+    /// either via the cancel flag (writable interrupt signals such as Ctrl+C)
+    /// or because the kbosctl lock is no longer held (SIGKILL, crash, etc.).
+    /// Any cancel reason is detected at the checkpoints, and the cancel flag
+    /// is consumed so the next operation starts with a clean state.
+    fn check_canceled(&self) -> Result<()> {
+        let cancel_path = Path::new(CANCEL_PATH);
+        if cancel_path.exists() {
+            let _ = fs::remove_file(cancel_path);
+            bail!("Operation cancelled by user (kbosctl interrupted)");
+        }
+        if !kbosctl_alive(Path::new(KBOSCTL_LOCK_PATH)) {
+            bail!("kbosctl client is no longer alive (interrupted), cancelling the operation");
+        }
+        Ok(())
+    }
+
     fn prepare_cmd_impl(&self, req: CmdRequest) -> Result<Response> {
         let lock = self.mutex.try_lock();
         if lock.is_err() {
@@ -190,6 +245,8 @@ impl AgentImpl {
         }
         debug!("Received a 'prepare' request (rollback={}): {:?}", req.is_rollback, req);
         info!("Start prepare, is_rollback: {}", req.is_rollback);
+
+        self.check_canceled()?;
 
         let dmv_mode = is_dmv_mode(&RealCommandExecutor {});
         if dmv_mode {
@@ -205,6 +262,7 @@ impl AgentImpl {
             let img_manager = handler.download_image(&req)?;
 
             for c in &req.configs {
+                self.check_canceled()?;
                 if c.dst.starts_with("/boot/efi/") {
                     // Files under /boot/efi live on the shared BOOT partition
                     // (sda1, mounted at /boot/efi). Writing into the new rootfs
@@ -216,16 +274,23 @@ impl AgentImpl {
                 }
             }
 
+            self.check_canceled()?;
+
             // Restore SELinux labels on the whole mounted rootfs. The OCI image
             // layers lost their security.selinux xattrs when Docker flattened
             // rootfs.tar (ADD strips them), so this must run after config
             // injection to also label the injected files.
             handler.relabel_selinux()?;
 
+            self.check_canceled()?;
             handler.finish()?;
+
+            self.check_canceled()?;
             info!("Ready to install image: {:?}", img_manager.paths.image_path.display());
             img_manager.install()?;
         }
+
+        self.check_canceled()?;
 
         // upgrade & rollback: switch boot + optional reboot
         let command_executor = RealCommandExecutor {};
@@ -248,11 +313,28 @@ impl AgentImpl {
 
 #[cfg(test)]
 mod test {
-    use std::collections::HashMap;
+    use std::{collections::HashMap, os::unix::io::AsRawFd};
 
     use manager::api::{CertsInfo, Sysconfig};
 
     use super::*;
+
+    #[test]
+    fn test_kbosctl_alive() {
+        let lock_path = std::env::temp_dir().join(format!("kbosctl-alive-test-{}.lock", std::process::id()));
+        // no lock file -> considered gone
+        let _ = std::fs::remove_file(&lock_path);
+        assert!(!kbosctl_alive(&lock_path));
+        // lock file exists and the lock is held -> alive
+        let file = std::fs::OpenOptions::new().create(true).read(true).write(true).open(&lock_path).unwrap();
+        let fd = file.as_raw_fd();
+        assert!(flock(fd, FlockArg::LockExclusive).is_ok());
+        assert!(kbosctl_alive(&lock_path));
+        drop(file);
+        // lock file exists but the lock is released -> gone
+        assert!(!kbosctl_alive(&lock_path));
+        let _ = std::fs::remove_file(&lock_path);
+    }
 
     #[test]
     fn test_reboot() {
