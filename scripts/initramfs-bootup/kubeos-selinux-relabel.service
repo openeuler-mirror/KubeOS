@@ -7,24 +7,28 @@
  # IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY OR FIT FOR A PARTICULAR
  # PURPOSE.
 ## See the Mulan PSL v2 for more details.
+#
+# 在 ignition files 阶段完成、persist 挂载之后，switch-root 之前，对 persist（overlay
+# upperdir）执行全树 restorecon，修复 ignition 仅对登记过的路径打标导致目录漏标的问题。
+# 时序：sysroot.mount → ignition-files.service / persist-mount.service → 本服务
+#       → initrd-switch-root.service
 
 [Unit]
-Description=PERSIST Dir (/persist)
+Description=Restore SELinux contexts on persist after ignition
 DefaultDependencies=no
 Conflicts=umount.target
-After=local-fs.target
 After=sysroot.mount
-# overlay 必须先挂载，ignition 的写入才能落入 upperdir(/sysroot/persist/etc)，
-# 后续 setfiles 补标才能覆盖到
-Before=ignition-files.service
+After=ignition-files.service
+After=persist-mount.service
 Before=initrd-switch-root.service
 Before=initrd-cleanup.service
+ConditionPathExists=/sysroot/etc/selinux/config
+ConditionKernelCommandLine=!selinux=0
 
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-ExecStart=/bin/mount -t ext4 /dev/disk/by-label/PERSIST /sysroot/persist
-ExecStart=/bin/mount -t overlay overlay -o upperdir=/sysroot/persist/etc,lowerdir=/sysroot/etc,workdir=/sysroot/persist/etcwork /sysroot/etc
+ExecStart=/bin/bash /usr/libexec/kubeos/kubeos-selinux-relabel.sh
 
 [Install]
-WantedBy=local-fs.target
+WantedBy=initrd.target
