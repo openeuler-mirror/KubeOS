@@ -5,6 +5,8 @@ kbosctl 是 KubeOS 的运维命令行工具，通过 Unix Socket 与 os-agent �
 ## 命令介绍
 
 ```text
+CLI tool for KubeOS upgrade and rollback
+
 Usage: kbosctl <COMMAND>
 
 Commands:
@@ -28,35 +30,46 @@ Options:
 使用 skopeo 从容器镜像仓库拉取 KubeOS OCI 镜像并升级到非活跃分区。
 
 ```text
+Upgrade KubeOS to a new version via OCI image
+
 Usage: kbosctl upgrade [OPTIONS] --os-image <OS_IMAGE>
 
 Options:
-      --os-image <OS_IMAGE>          OCI 镜像地址（skopeo transport 格式），例如 docker://192.168.1.100:5000/kubeos-oci:v1
-      --config <SRC> <DST>           注入配置文件（可多次指定），SRC 为本地文件或 URL，DST 为升级后 rootfs 内目标路径
-      --skip-tls                     从 URL 下载配置文件时跳过 TLS 证书校验
-      --reboot                       升级完成后重启
-  -h, --help                         Print help
+      --os-image <OS_IMAGE>  OCI image address (skopeo transport format), e.g. docker://registry.example.com/kubeos-oci:v1
+      --config <SRC> <DST>   Inject config file: <SRC> <DST>, can be specified multiple times
+      --skip-tls             Skip TLS certificate verification when downloading config files from URL
+      --reboot               Reboot after upgrade completes
+  -h, --help                 Print help
 ```
 
+### 参数说明
+
+| 参数 | 说明 |
+| --- | --- |
+| `--os-image <OS_IMAGE>` | OCI 镜像地址（skopeo transport 格式），例如 `docker://registry.example.com/kubeos-oci:v1` |
+| `--config <SRC> <DST>` | 注入配置文件，可多次指定；SRC 为本地文件或 URL，DST 为升级后 rootfs 内目标路径 |
+| `--skip-tls` | 从 URL 下载配置文件时跳过 TLS 证书校验 |
+| `--reboot` | 升级完成后重启 |
+ 	 
 ### 使用示例
 
 * 升级到新版本（不重启）
 
   ```bash
-  kbosctl upgrade --os-image docker://192.168.1.100:5000/kubeos-oci:v1.0.1
+  kbosctl upgrade --os-image docker://registry.example.com/kubeos-oci:v1.0.1
   ```
 
 * 升级并重启
 
   ```bash
-  kbosctl upgrade --os-image docker://192.168.1.100:5000/kubeos-oci:v1.0.1 --reboot
+  kbosctl upgrade --os-image docker://registry.example.com/kubeos-oci:v1.0.1 --reboot
   ```
 
 * 升级并注入 cloud-init 配置
 
   ```bash
   kbosctl upgrade \
-    --os-image docker://192.168.1.100:5000/kubeos-oci:v1.0.1 \
+    --os-image docker://registry.example.com/kubeos-oci:v1.0.1 \
     --config https://example.com/user-data /etc/cloud/cloud.cfg.d/99_kubeos.cfg \
     --config /path/to/config.ign /boot/efi/ignition/config.ign \
     --skip-tls \
@@ -73,12 +86,20 @@ Options:
 回滚到上一个版本（切换引导分区到另一个分区）。
 
 ```text
+Rollback KubeOS to the previous version
+
 Usage: kbosctl rollback [OPTIONS]
 
 Options:
-      --reboot  回滚完成后重启
+      --reboot  Reboot after rollback completes
   -h, --help    Print help
 ```
+
+### 参数说明
+ 	 
+| 参数 | 说明 |
+| --- | --- |
+| `--reboot` | 回滚完成后重启 |
 
 ### 使用示例
 
