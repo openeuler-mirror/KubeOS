@@ -58,18 +58,24 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
+    /// Upgrade KubeOS to a new version via OCI image
     Upgrade {
+        /// OCI image address (skopeo transport format), e.g. docker://registry.example.com:5000/kubeos-oci:v1
         #[clap(long)]
         os_image: String,
         /// Inject config file: <SRC> <DST>, can be specified multiple times
-        #[clap(long = "config", num_args = 2)]
+        #[clap(long = "config", num_args = 2, value_names = ["SRC", "DST"])]
         configs: Vec<String>,
+        /// Skip TLS certificate verification when downloading config files from URL
         #[clap(long)]
         skip_tls: bool,
+        /// Reboot after upgrade completes
         #[clap(long)]
         reboot: bool,
     },
+    /// Rollback KubeOS to the previous version
     Rollback {
+        /// Reboot after rollback completes
         #[clap(long)]
         reboot: bool,
     },
