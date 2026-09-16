@@ -14,8 +14,11 @@ depends() {
 }
 
 install() {
-    # relabel 脚本通过 chroot 在 /sysroot 内调用 restorecon，需保证 initramfs 内有 chroot
+    # relabel 脚本通过 chroot 在 /sysroot 内调用 setfiles，需保证 initramfs 内有 chroot
     inst_multiple chroot
+    # setfiles 优先用 initramfs 自带的（dracut 打包时依赖库齐全），不依赖 rootfs
+ 	# 内的动态库环境，避免目标镜像库缺失时 chroot exec 失败（exit 127）
+ 	inst_multiple setfiles
 
     inst_simple "$moddir/persist-mount.service" \
         "$systemdsystemunitdir/persist-mount.service"
