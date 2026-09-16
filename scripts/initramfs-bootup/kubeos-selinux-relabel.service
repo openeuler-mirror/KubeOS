@@ -8,13 +8,14 @@
  # PURPOSE.
 ## See the Mulan PSL v2 for more details.
 #
-# 在 ignition files 阶段完成、persist 挂载之后，switch-root 之前，对 persist（overlay
-# upperdir）执行全树 restorecon，修复 ignition 仅对登记过的路径打标导致目录漏标的问题。
+# 在 ignition files 阶段完成、/etc overlay 挂载之后，switch-root 之前，对 /etc 的
+# overlay 合并视图执行全树补标（setxattr 经 overlay 落到 upperdir /persist/etc），
+# 修复 ignition 仅对登记过的路径打标导致目录漏标、以及策略加载前 copy-up 丢标签的问题。
 # 时序：sysroot.mount → ignition-files.service / persist-mount.service → 本服务
 #       → initrd-switch-root.service
 
 [Unit]
-Description=Restore SELinux contexts on persist after ignition
+Description=Restore SELinux contexts on after ignition
 DefaultDependencies=no
 Conflicts=umount.target
 After=sysroot.mount
