@@ -52,6 +52,7 @@ version = "v1"
 # output_dir = "./output"
 # grub_entry_name = "KubeOS"
 # name = "KubeOS"
+# generate_only = "true"
 
 # [pxe_config]
 # dhcp = false
