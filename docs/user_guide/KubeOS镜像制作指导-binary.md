@@ -6,7 +6,7 @@ kbimg是使用Rust语言编写的二进制工具，通过解析用户的[toml配
 
 ## 命令介绍
 
-kbimg - CLI tool for generating various types of image for KubeOS
+kbimg - CLI tool for generating various types of image for KubeOS.
 
 ```text
 Usage: kbimg [OPTIONS] <COMMAND> 
@@ -50,15 +50,16 @@ Options:
 
 ## 注意事项
 
-* 请确保已安装`qemu-img bc parted tar yum docker dosfstools`
-* 使用ISO镜像制作功能请确保已安装`elemental mtools xorriso rsync`
-* 制作启用dm-verity功能的镜像，需要安装`pesign nss openssl veritysetup crypto-policies`
-* KubeOS镜像制作需要使用root权限
-* 制作镜像时提供的 repo 文件中，yum 源建议同时配置 openEuler 具体版本的 everything 仓库和 EPOL 仓库
-* KubeOS镜像制作之前需要先将当前机器上的selinux关闭或者设为允许模式
-* 使用默认rpmlist进行KubeOS镜像制作至少需要有25G的剩余空间
-* KubeOS镜像制作工具执行异常中断，可能会残留文件、目录或挂载，需用户手动清理，对于可能残留的rootfs目录，该目录虽然权限为555，但容器OS镜像制作在开发环境进行，不会对生产环境产生影响
-* 请确保os-agent属主和属组为root，建议os-agent文件权限为500
+* kbimg 不是默认安装到 `/usr/bin` 等系统目录下的工具，需先将其拷贝到指定目录（如 `/opt/kubeOS/scripts`）或在 kbimg 二进制所在目录执行；本文示例统一假设 kbimg 已位于 `/opt/kubeOS/scripts` 目录下（`cd /opt/kubeOS/scripts` 后执行 `./kbimg ...`），若 kbimg 位于其他目录，请将示例命令中的 `./kbimg` 替换为实际的二进制路径。
+* 请确保已安装`qemu-img bc parted tar yum docker dosfstools`。
+* 使用ISO镜像制作功能请确保已安装`elemental mtools xorriso rsync`。
+* 制作启用dm-verity功能的镜像，需要安装`pesign nss openssl veritysetup crypto-policies`。
+* KubeOS镜像制作需要使用root权限。
+* 制作镜像时提供的 repo 文件中，yum 源建议同时配置 openEuler 具体版本的 everything 仓库和 EPOL 仓库。
+* KubeOS镜像制作之前需要先将当前机器上的selinux关闭或者设为允许模式。
+* 使用默认rpmlist进行KubeOS虚拟机镜像制作至少需要有25G的剩余空间。
+* KubeOS镜像制作工具执行异常中断，可能会残留文件、目录或挂载，需用户手动清理，对于可能残留的rootfs目录，该目录虽然权限为555，但容器OS镜像制作在开发环境进行，不会对生产环境产生影响。
+* 请确保os-agent属主和属组为root，建议os-agent文件权限为500。
 
 ## 配置文件说明
 
@@ -95,7 +96,7 @@ Options:
 
 ### security_stig
 
-[可选项] 制作安全加固（STIG）镜像配置。**此配置在 OCI 镜像构建阶段生效**，开启后构建时执行安全加固脚本并打 SELinux 标签，生成的 OCI 镜像包含已加固的系统。
+[可选项] 制作安全加固（STIG）镜像配置。**此配置在 OCI 镜像构建阶段生效和通过ISO镜像安装时生效**，开启后构建时执行安全加固脚本并打 SELinux 标签，生成的 OCI 镜像包含已加固的系统。
 
   | 参数 | 描述 |
   | --- | --- |
@@ -117,6 +118,7 @@ Options:
   | output_dir | [可选项] ISO 文件输出目录，默认当前 scripts-auto 目录 |
   | grub_entry_name | [可选项] GRUB 引导菜单项名称，默认 "KubeOS" |
   | name | [可选项] ISO 文件名前缀（不含 .iso），默认 "KubeOS" |
+  | generate_only | [可选项] 仅生成构建文件不执行构建，默认 false。设为 true 时 kbimg 只生成 ISO 构建所需的全部文件（Dockerfile、manifest.yaml、elemental-cli、build-iso.sh，位于 scripts-auto 目录下 iso 子目录），不执行 docker build 和 elemental build-iso；用户可自行修改 Dockerfile 与 manifest.yaml 后执行 `bash build-iso.sh` 完成 ISO 构建，或参考其中的命令手动执行。适用于需要自定义 Dockerfile/manifest 再构建的场景 |
 
 ### install
 
@@ -126,7 +128,7 @@ Options:
   | --- | --- |
   | target_disk | 目标磁盘设备，例如 "/dev/sda"、"/dev/nvme0n1" |
   | oci_image | skopeo 拉取用的 OCI 镜像地址，例如 "docker://192.168.1.1:5000/kubeos-oci:v1" |
-  | configs | [可选项] 配置文件注入列表，每个条目包含 src（本地文件或URL）和 dst（rootfs 内目标路径） |
+  | configs | [可选项] 配置文件注入列表，每个条目包含 src（本地文件或URL）和 dst（rootfs 内目标路径）,详细说明见[install.configs](#installconfigs) |
   | skip_tls | [可选项] 从 URL 下载配置文件时跳过 TLS 证书校验，默认 false |
   | reboot | [可选项] 安装完成后是否自动重启，默认 false |
 
@@ -252,7 +254,7 @@ Options:
 
 #### 注意事项
 
-* 制作出的 OCI 镜像可用于后续的 ISO 镜像制作、物理机安装和KubeOS单节点通过命令行升级
+* 制作出的 OCI 镜像可用于后续的 ISO 镜像制作、物理机安装和KubeOS单节点通过命令行升级。
 * 使用示例 rpmlist 进行容器OS镜像制作时所需磁盘空间至少为10G，若使用自定义 rpmlist 可能会超过10G，rpmlist需至少包含示例中给出的rpm包。
 * KubeOS OCI镜像当前不支持dm-verity场景。
 
@@ -347,12 +349,13 @@ Options:
 * 执行命令
 
   ```bash
-  kbimg create -f kbimg.toml oci-img
+  cd /opt/kubeOS/scripts
+  ./kbimg create -f kbimg.toml oci-img
   ```
 
 * 结果说明
-  * 制作完成后，通过`docker images`查看制作出来的 OCI 容器镜像
-  * OCI 镜像可推送到容器镜像仓库，供后续 ISO 制作和裸金属安装使用
+  * 制作完成后，通过`docker images`查看制作出来的 OCI 容器镜像。
+  * OCI 镜像可推送到容器镜像仓库，供后续 ISO 制作和裸金属安装使用。
 
   ```bash
   docker push <registry>/kubeos-oci:v1
@@ -362,10 +365,13 @@ Options:
 
 #### 注意事项
 
-* ISO 镜像基于已有的 OCI 镜像制作，需先完成 [OCI 镜像制作](#kubeos-oci-镜像制作)并推送至镜像仓库或本地 docker 缓存
-* 制作 ISO 镜像需要安装 elemental 工具
-* ISO 镜像用于物理机 UEFI 启动安装，不支持BIOS模式
-* ISO 制作完成后的文件默认输出到 kbimg 执行目录下的 `scripts-auto` 目录，可通过 `output_dir` 指定
+* ISO 镜像基于已有的 OCI 镜像制作，需先完成 [OCI 镜像制作](#kubeos-oci-镜像制作)并推送至镜像仓库或本地 docker 缓存。
+* 制作 ISO 镜像需要安装 elemental 工具。
+* ISO 镜像用于物理机 UEFI 启动安装，不支持BIOS模式。
+* ISO 制作完成后的文件默认输出到 kbimg 执行目录下的 `scripts-auto` 目录，可通过 `output_dir` 指定。
+* elemental 制作 ISO 时会将镜像的 rootfs 完整解包到 `/tmp` 下的临时目录，并在其中生成 squashfs（ISO 根文件系统压缩镜像）和 ISO 目录树，解包后的 rootfs 与 squashfs 在打包完成前会同时存在，`/tmp` 峰值占用约为镜像解压后 rootfs 大小的 1.5 倍以上。建议 `/tmp` 至少预留 2 倍镜像解压后 rootfs 大小的空间（如 rootfs 解压后为 5G，则 `/tmp` 至少需要 10G）。制作前可通过 `df -h /tmp` 确认剩余空间；空间不足时可通过 `export TMPDIR=<大磁盘目录>` 将 elemental 的临时目录重定向（elemental 遵循 `TMPDIR` 环境变量）。制作正常完成后临时文件会自动清理，异常中断时可能残留 `/tmp` 下的临时目录，需手动清理。
+* ISO 制作各阶段串行执行，docker build、rootfs 解包、squashfs 多线程压缩、xorriso 打包叠加，建议构建机器保证充足内存。需注意内存不足会导致制作失败，可通过 `dmesg | grep -i "killed process"` 确认是否发生 OOM。
+* ISO 镜像基于 OCI 镜像制作，ISO 启动的临时系统与 OCI 镜像基本保持一致，但 ISO 构建时会删除 KubeOS 磁盘安装专用的挂载单元（persist/var/etc/opt-cni 等依赖 PERSIST 分区的 mount unit，ISO live 模式下不存在该分区）。若 OCI 镜像中启用了依赖这些挂载（或其他磁盘分区环境）的用户自定义服务，ISO 安装后该服务可能因依赖条件不满足而启动失败。
 
 #### 使用示例
 
@@ -416,32 +422,51 @@ Options:
 * 执行命令
 
   ```bash
+  cd /opt/kubeOS/scripts
   # 首先制作 OCI 镜像
-  kbimg create oci-img -f kbimg.toml
+  ./kbimg create oci-img -f kbimg.toml
   # 然后制作 ISO 镜像
-  kbimg create iso-img -f kbimg.toml
+  ./kbimg create iso-img -f kbimg.toml
   ```
 
 * 结果说明
-  * 制作完成后，在 `output_dir` 目录下生成 `.iso` 文件
-  * 将 ISO 文件写入 U盘 或挂载到 BMC 虚拟光驱，物理机从 UEFI 引导即可进入安装流程
+  * 制作完成后，在 `output_dir` 目录下生成 `.iso` 文件。
+  * 将 ISO 文件写入 U盘 或挂载到 BMC 虚拟光驱，物理机从 UEFI 引导即可进入安装流程。
+
+* 仅生成构建文件（自定义后再构建）
+
+  在 `iso_img` 配置中设置 `generate_only = true`，执行 `./kbimg create iso-img -f kbimg.toml` 后不会执行构建，只生成构建所需文件（位于 scripts-auto 目录下 iso 子目录）：
+
+  ```text
+  scripts-auto/iso/
+  ├── Dockerfile     # ISO 专用镜像的 Dockerfile（基于 oci_image）
+  ├── manifest.yaml  # elemental build-iso 配置
+  ├── elemental-cli  # elemental 二进制
+  └── build-iso.sh   # 构建辅助脚本
+  ```
+
+  可自行修改 Dockerfile 与 manifest.yaml（如调整内核参数、增删文件等），然后执行 `bash build-iso.sh` 完成 ISO 构建；也可参考 build-iso.sh 中的命令手动执行 docker build 与 elemental build-iso
 
 ### KubeOS 裸金属安装
 
 #### 注意事项
 
-* 裸金属安装需要先将 OCI 镜像推送到容器镜像仓库，目标机器能够通过网络访问该仓库
-* 仅支持 UEFI 引导（x86_64 和 aarch64），不支持 legacy BIOS
-* 安装过程会格式化目标磁盘的全部数据，请确认磁盘上没有需要保留的数据
-* 不支持多个磁盘同时安装 KubeOS，可能导致启动失败或挂载紊乱
-* 安装过程中 skopeo 拉取 OCI 镜像可能耗时较长，取决于网络状况
+* 裸金属安装需要先将 OCI 镜像推送到容器镜像仓库，目标机器能够通过网络访问该仓库。
+* 仅支持 UEFI 引导（x86_64 和 aarch64），不支持 legacy BIOS。
+* 安装过程会格式化目标磁盘的全部数据，请确认磁盘上没有需要保留的数据。
+* 不支持多个磁盘同时安装 KubeOS，可能导致启动失败或挂载紊乱。
+* 安装过程中 skopeo 拉取 OCI 镜像可能耗时较长，取决于网络状况。
+* 安装进程如果被 kill异常终止，可能残留临时文件和挂载点，需要自行清理（`umount` 残留挂载点、删除临时工作目录）后重新安装。
+* 安装不支持并发执行：install 会对目标磁盘进行分区和格式化，同一时刻只允许一个 install 进程执行（基于文件锁实现），其余并发调用会立即报错退出，需等待当前操作完成。
+* 请合理规划root分区，由于系统盘启动后无法更改，建议为root分区分配较大的磁盘空间。
 
 #### 准备工作
 
 1. 制作并推送 OCI 镜像到容器镜像仓库
 
    ```bash
-   kbimg create oci-img -f kbimg.toml
+   cd /opt/kubeOS/scripts
+   ./kbimg create oci-img -f kbimg.toml
    docker push <registry>/kubeos-oci:v1
    ```
 
@@ -488,10 +513,11 @@ Options:
 
    如果配置文件来源为 URL，可通过 `skip_tls = true` 跳过 TLS 证书校验，实际使用curl命令进行下载，如不跳过TLS证书校验，请提前进行证书配置。
 
-3. 在目标机器上执行安装
+3. 在目标机器上执行安装。
 
    ```bash
-   kbimg install disk -f kbimg.toml
+   cd /opt/kubeOS/scripts
+   ./kbimg install disk -f kbimg.toml
    ```
 
    安装成功后，若配置了 `reboot = true`，机器会自动重启进入新安装的 KubeOS 系统。
@@ -507,18 +533,18 @@ Options:
 | 3 | root MiB | ext4 | ROOT-B | B 分区（升级备用） |
 | 4 | 剩余空间 | ext4 | PERSIST | 持久化数据分区 |
 
-root 分区大小可通过 `disk_partition.root` 自定义，默认 2560 MiB。A/B 分区大小相同。
+root 分区大小可通过在kbimg install阶段通过kbimg.toml文件中 `disk_partition.root`字段 自定义，默认 2560 MiB。A/B 分区大小相同。
 
 ### KubeOS 虚拟机镜像制作
 
 #### 注意事项
 
 * 制作出来的容器 OS 虚拟机镜像目前只能用于 CPU 架构为 x86 和 AArch64 的虚拟机。
-* 默认root密码为openEuler12#$
+* 默认root密码为openEuler12#$。
 * 使用默认rpmlist进行容器OS镜像制作时所需磁盘空间至少为25G，若使用自定义rpmlist可能会超过25G。
-* 支持CPU 架构为 x86 和 aarch64 的虚拟机场景。若x86架构的虚拟机需要使用 legacy 启动模式，请在`[from_repo]`下配置`legacy_bios`为`true`
+* 支持CPU 架构为 x86 和 aarch64 的虚拟机场景。若x86架构的虚拟机需要使用 legacy 启动模式，请在`[from_repo]`下配置`legacy_bios`为`true`。
 * `repo_path`为制作镜像所需要的 yum 源文件路径，yum 源建议配置为 openEuler 具体版本的 everything 仓库和 EPOL 仓库。
-* 容器OS运行底噪<150M (不包含k8s组件及相关依赖`kubernetes-kubeadm，kubernetes-kubelet， containernetworking-plugins，socat，conntrack-tools，ebtables，ethtool`)
+* 容器OS运行底噪<150M (不包含k8s组件及相关依赖`kubernetes-kubeadm，kubernetes-kubelet， containernetworking-plugins，socat，conntrack-tools，ebtables，ethtool`)。
 
 #### 使用示例
 
@@ -567,10 +593,10 @@ version = "v1"
 
 * 制作出来的容器 OS 物理安装所需的镜像目前只能用于 CPU 架构为 x86 和 AArch64 的物理机安装。
 * 容器OS 目前不支持 x86 架构的物理机使用 legacy 启动模式启动。
-* 首先需要修改```kbimg.toml```中```pxe_config```的配置，对相关参数进行配置，详细参数可见[参数说明](#pxe_config)，ip目前仅支持ipv4，配置示例如下
+* 首先需要修改```kbimg.toml```中```pxe_config```的配置，对相关参数进行配置，详细参数可见[参数说明](#pxe_config)，ip目前仅支持ipv4，配置示例如下。
 * 不支持多个磁盘都安装KubeOS，可能会造成启动失败或挂载紊乱。
 * 使用默认的 rpmlist 进行镜像制作时，所需磁盘空间至少为 5GB。如果使用自定义的 rpmlist，可能需要超过 5GB 的磁盘空间。
-* PXE物理机镜像制作不支持dm-verity功能
+* PXE物理机镜像制作不支持dm-verity功能。
 * 在 PXE 安装阶段，需要从 HTTP 服务器的根目录下载根分区 tar 包（tar包名称为toml配置文件中配置的名称）。请确保机器拥有足够的内存空间以存储根分区 tar 包及临时中间文件。
 
 #### 使用示例
@@ -654,13 +680,13 @@ version = "v1"
   ```
 
 * 结果说明
-  * initramfs.img: 用于pxe启动用的 initramfs 镜像
-  * kubeos.tar: pxe安装所用的根分区文件系统
+  * initramfs.img: 用于pxe启动用的 initramfs 镜像。
+  * kubeos.tar: pxe安装所用的根分区文件系统。
 
 ### admin运维容器镜像制作
 
-* 首先在KubeOS项目根目录下，执行`make hostshell`命令编译hostshell二进制
-* 在toml配置文件内，填入以下示例配置制作admin运维容器镜像
+* 首先在KubeOS项目根目录下，执行`make hostshell`命令编译hostshell二进制。
+* 在toml配置文件内，填入以下示例配置制作admin运维容器镜像。
 
 ```toml
 [admin_container]
@@ -668,14 +694,14 @@ img_name = "kubeos-admin-container:v1"
 hostshell = "./bin/hostshell"
 ```
 
-* 制作完成后，通过`docker images`查看制作出来的KubeOS容器镜像
+* 制作完成后，通过`docker images`查看制作出来的KubeOS容器镜像。
 
 ## 使用说明
 
 ### 使用cloud-init在KubeOS启动时初始化
 
 在`[from_repo]`配置内的`rpmlist`中，配置`cloud-init`包，可在KubeOS启动时使用`cloud-init`进行初始化。
-若用户需要覆盖默认的cloud-init配置，可配置如下示例
+若用户需要覆盖默认的cloud-init配置，可配置如下示例。
 
   ```toml
   [[copy_files]]
@@ -685,7 +711,7 @@ hostshell = "./bin/hostshell"
 
 ### 创建systemd服务
 
-* 新增 systemd 服务需要将对应的 .service 文件或 .mount 文件拷贝至镜像```/etc/systemd/system```目录下
+* 新增 systemd 服务需要将对应的 .service 文件或 .mount 文件拷贝至镜像```/etc/systemd/system```目录下。
 
   ```toml
   [[copy_files]]

@@ -2275,6 +2275,10 @@ function cleanup_install() {{
         echo "Cleaning up root mount..."
         umount "$ROOT_MOUNT" 2>/dev/null || true
     fi
+    if mountpoint -q "${{ROOT_MOUNT}}/persist" 2>/dev/null; then
+        echo "Cleaning up persist mount..."
+        umount "${{ROOT_MOUNT}}/persist" 2>/dev/null || true
+    fi
     rm -rf "${{SCRIPTS_DIR}}/oci-install" 2>/dev/null || true
     rm -f "${{LOCK}}" 2>/dev/null || true
     if [ $ret -ne 0 ]; then
@@ -2282,6 +2286,13 @@ function cleanup_install() {{
     fi
     exit $ret
 }}
+
+
+# 并发控制：install 会对目标磁盘分区、格式化，并发执行会导致分区表和文件系统损坏。
+# file_lock/test_lock 函数已由 gen_global_func 写入（与 create 类脚本共用）。
+# 顺序与其他脚本一致：先 test_lock 再注册 trap——抢锁失败时 trap 尚未生效，直接
+# 干净退出，不会误删正在运行进程持有的锁文件；抢锁成功后 trap 负责在退出时释放锁。
+test_lock
 
 trap cleanup_install EXIT
 
